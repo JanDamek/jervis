@@ -3,8 +3,8 @@ package com.jervis.infrastructure.grpc
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.ProjectId
 import com.jervis.contracts.server.CreateFilterRuleRequest
-import com.jervis.contracts.server.FilterRuleListPayload
-import com.jervis.contracts.server.FilterRulePayload
+import com.jervis.contracts.server.FilterRule
+import com.jervis.contracts.server.FilterRuleList
 import com.jervis.contracts.server.ListFilterRulesRequest
 import com.jervis.contracts.server.RemoveFilterRuleRequest
 import com.jervis.contracts.server.RemoveFilterRuleResponse
@@ -12,10 +12,9 @@ import com.jervis.contracts.server.ServerFilterRulesServiceGrpcKt
 import com.jervis.dto.filtering.FilterAction
 import com.jervis.dto.filtering.FilterConditionType
 import com.jervis.dto.filtering.FilterSourceType
+import com.jervis.dto.filtering.FilteringRule
 import com.jervis.dto.filtering.FilteringRuleRequest
 import com.jervis.filtering.FilteringRulesService
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 import mu.KotlinLogging
 import org.springframework.stereotype.Component
 
@@ -24,9 +23,8 @@ class ServerFilterRulesGrpcImpl(
     private val filteringRulesService: FilteringRulesService,
 ) : ServerFilterRulesServiceGrpcKt.ServerFilterRulesServiceCoroutineImplBase() {
     private val logger = KotlinLogging.logger {}
-    private val json = Json { encodeDefaults = true; ignoreUnknownKeys = true }
 
-    override suspend fun create(request: CreateFilterRuleRequest): FilterRulePayload {
+    override suspend fun create(request: CreateFilterRuleRequest): FilterRule {
         val rule = filteringRulesService.createRule(
             FilteringRuleRequest(
                 sourceType = FilterSourceType.valueOf(request.sourceType),
@@ -38,15 +36,17 @@ class ServerFilterRulesGrpcImpl(
                 projectId = request.projectId.takeIf { it.isNotBlank() },
             ),
         )
-        return FilterRulePayload.newBuilder().setBodyJson(json.encodeToString(rule)).build()
+        return rule.toProto()
     }
 
-    override suspend fun list(request: ListFilterRulesRequest): FilterRuleListPayload {
+    override suspend fun list(request: ListFilterRulesRequest): FilterRuleList {
         val rules = filteringRulesService.listRules(
             clientId = request.clientId.takeIf { it.isNotBlank() }?.let { ClientId.fromString(it) },
             projectId = request.projectId.takeIf { it.isNotBlank() }?.let { ProjectId.fromString(it) },
         )
-        return FilterRuleListPayload.newBuilder().setBodyJson(json.encodeToString(rules)).build()
+        return FilterRuleList.newBuilder()
+            .addAllRules(rules.map { it.toProto() })
+            .build()
     }
 
     override suspend fun remove(request: RemoveFilterRuleRequest): RemoveFilterRuleResponse {
@@ -54,3 +54,17 @@ class ServerFilterRulesGrpcImpl(
         return RemoveFilterRuleResponse.newBuilder().setRemoved(removed).build()
     }
 }
+
+private fun FilteringRule.toProto(): FilterRule =
+    FilterRule.newBuilder()
+        .setId(id)
+        .setScope(scope.name)
+        .setSourceType(sourceType.name)
+        .setConditionType(conditionType.name)
+        .setConditionValue(conditionValue)
+        .setAction(action.name)
+        .setDescription(description ?: "")
+        .setCreatedAt(createdAt)
+        .setCreatedBy(createdBy)
+        .setEnabled(enabled)
+        .build()

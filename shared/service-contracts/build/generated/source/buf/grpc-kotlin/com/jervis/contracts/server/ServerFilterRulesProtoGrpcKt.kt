@@ -23,7 +23,8 @@ import kotlin.jvm.JvmOverloads
 import kotlin.jvm.JvmStatic
 
 /**
- * Holder for Kotlin coroutine-based client and server APIs for jervis.server.ServerFilterRulesService.
+ * Holder for Kotlin coroutine-based client and server APIs for
+ * jervis.server.ServerFilterRulesService.
  */
 public object ServerFilterRulesServiceGrpcKt {
   public const val SERVICE_NAME: String = ServerFilterRulesServiceGrpc.SERVICE_NAME
@@ -32,11 +33,11 @@ public object ServerFilterRulesServiceGrpcKt {
   public val serviceDescriptor: ServiceDescriptor
     get() = getServiceDescriptor()
 
-  public val createMethod: MethodDescriptor<CreateFilterRuleRequest, FilterRulePayload>
+  public val createMethod: MethodDescriptor<CreateFilterRuleRequest, FilterRule>
     @JvmStatic
     get() = ServerFilterRulesServiceGrpc.getCreateMethod()
 
-  public val listMethod: MethodDescriptor<ListFilterRulesRequest, FilterRuleListPayload>
+  public val listMethod: MethodDescriptor<ListFilterRulesRequest, FilterRuleList>
     @JvmStatic
     get() = ServerFilterRulesServiceGrpc.getListMethod()
 
@@ -45,18 +46,22 @@ public object ServerFilterRulesServiceGrpcKt {
     get() = ServerFilterRulesServiceGrpc.getRemoveMethod()
 
   /**
-   * A stub for issuing RPCs to a(n) jervis.server.ServerFilterRulesService service as suspending coroutines.
+   * A stub for issuing RPCs to a(n) jervis.server.ServerFilterRulesService service as suspending
+   * coroutines.
    */
   @StubFor(ServerFilterRulesServiceGrpc::class)
   public class ServerFilterRulesServiceCoroutineStub @JvmOverloads constructor(
     channel: Channel,
     callOptions: CallOptions = DEFAULT,
   ) : AbstractCoroutineStub<ServerFilterRulesServiceCoroutineStub>(channel, callOptions) {
-    override fun build(channel: Channel, callOptions: CallOptions): ServerFilterRulesServiceCoroutineStub = ServerFilterRulesServiceCoroutineStub(channel, callOptions)
+    override fun build(channel: Channel, callOptions: CallOptions):
+        ServerFilterRulesServiceCoroutineStub = ServerFilterRulesServiceCoroutineStub(channel,
+        callOptions)
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -66,7 +71,8 @@ public object ServerFilterRulesServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun create(request: CreateFilterRuleRequest, headers: Metadata = Metadata()): FilterRulePayload = unaryRpc(
+    public suspend fun create(request: CreateFilterRuleRequest, headers: Metadata = Metadata()):
+        FilterRule = unaryRpc(
       channel,
       ServerFilterRulesServiceGrpc.getCreateMethod(),
       request,
@@ -76,7 +82,8 @@ public object ServerFilterRulesServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -86,7 +93,8 @@ public object ServerFilterRulesServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun list(request: ListFilterRulesRequest, headers: Metadata = Metadata()): FilterRuleListPayload = unaryRpc(
+    public suspend fun list(request: ListFilterRulesRequest, headers: Metadata = Metadata()):
+        FilterRuleList = unaryRpc(
       channel,
       ServerFilterRulesServiceGrpc.getListMethod(),
       request,
@@ -96,7 +104,8 @@ public object ServerFilterRulesServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -106,7 +115,8 @@ public object ServerFilterRulesServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun remove(request: RemoveFilterRuleRequest, headers: Metadata = Metadata()): RemoveFilterRuleResponse = unaryRpc(
+    public suspend fun remove(request: RemoveFilterRuleRequest, headers: Metadata = Metadata()):
+        RemoveFilterRuleResponse = unaryRpc(
       channel,
       ServerFilterRulesServiceGrpc.getRemoveMethod(),
       request,
@@ -116,7 +126,8 @@ public object ServerFilterRulesServiceGrpcKt {
   }
 
   /**
-   * Skeletal implementation of the jervis.server.ServerFilterRulesService service based on Kotlin coroutines.
+   * Skeletal implementation of the jervis.server.ServerFilterRulesService service based on Kotlin
+   * coroutines.
    */
   public abstract class ServerFilterRulesServiceCoroutineImplBase(
     coroutineContext: CoroutineContext = EmptyCoroutineContext,
@@ -125,37 +136,44 @@ public object ServerFilterRulesServiceGrpcKt {
      * Returns the response to an RPC for jervis.server.ServerFilterRulesService.Create.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun create(request: CreateFilterRuleRequest): FilterRulePayload = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerFilterRulesService.Create is unimplemented"))
+    public open suspend fun create(request: CreateFilterRuleRequest): FilterRule = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerFilterRulesService.Create is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerFilterRulesService.List.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun list(request: ListFilterRulesRequest): FilterRuleListPayload = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerFilterRulesService.List is unimplemented"))
+    public open suspend fun list(request: ListFilterRulesRequest): FilterRuleList = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerFilterRulesService.List is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerFilterRulesService.Remove.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun remove(request: RemoveFilterRuleRequest): RemoveFilterRuleResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerFilterRulesService.Remove is unimplemented"))
+    public open suspend fun remove(request: RemoveFilterRuleRequest): RemoveFilterRuleResponse =
+        throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerFilterRulesService.Remove is unimplemented"))
 
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(

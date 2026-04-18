@@ -27,11 +27,8 @@ if _version_not_supported:
 
 class ServerFilterRulesServiceStub(object):
     """ServerFilterRulesService exposes the filtering-rules CRUD surface used
-    by the orchestrator agent's tool set. Rule documents carry the same
-    shape as `shared/common-dto` FilteringRule — we keep the body as JSON
-    for the same reason as ServerGuidelinesService (nested rule tree lives
-    under kotlinx.serialization SSOT; typing it twice adds no value for
-    consumers that pass it through).
+    by the orchestrator agent's tool set. Rule documents mirror the
+    kotlinx-serialized `shared/common-dto` FilteringRule typed 1:1.
     """
 
     def __init__(self, channel):
@@ -43,12 +40,12 @@ class ServerFilterRulesServiceStub(object):
         self.Create = channel.unary_unary(
                 '/jervis.server.ServerFilterRulesService/Create',
                 request_serializer=jervis_dot_server_dot_filter__rules__pb2.CreateFilterRuleRequest.SerializeToString,
-                response_deserializer=jervis_dot_server_dot_filter__rules__pb2.FilterRulePayload.FromString,
+                response_deserializer=jervis_dot_server_dot_filter__rules__pb2.FilterRule.FromString,
                 _registered_method=True)
         self.List = channel.unary_unary(
                 '/jervis.server.ServerFilterRulesService/List',
                 request_serializer=jervis_dot_server_dot_filter__rules__pb2.ListFilterRulesRequest.SerializeToString,
-                response_deserializer=jervis_dot_server_dot_filter__rules__pb2.FilterRuleListPayload.FromString,
+                response_deserializer=jervis_dot_server_dot_filter__rules__pb2.FilterRuleList.FromString,
                 _registered_method=True)
         self.Remove = channel.unary_unary(
                 '/jervis.server.ServerFilterRulesService/Remove',
@@ -59,11 +56,8 @@ class ServerFilterRulesServiceStub(object):
 
 class ServerFilterRulesServiceServicer(object):
     """ServerFilterRulesService exposes the filtering-rules CRUD surface used
-    by the orchestrator agent's tool set. Rule documents carry the same
-    shape as `shared/common-dto` FilteringRule — we keep the body as JSON
-    for the same reason as ServerGuidelinesService (nested rule tree lives
-    under kotlinx.serialization SSOT; typing it twice adds no value for
-    consumers that pass it through).
+    by the orchestrator agent's tool set. Rule documents mirror the
+    kotlinx-serialized `shared/common-dto` FilteringRule typed 1:1.
     """
 
     def Create(self, request, context):
@@ -90,12 +84,12 @@ def add_ServerFilterRulesServiceServicer_to_server(servicer, server):
             'Create': grpc.unary_unary_rpc_method_handler(
                     servicer.Create,
                     request_deserializer=jervis_dot_server_dot_filter__rules__pb2.CreateFilterRuleRequest.FromString,
-                    response_serializer=jervis_dot_server_dot_filter__rules__pb2.FilterRulePayload.SerializeToString,
+                    response_serializer=jervis_dot_server_dot_filter__rules__pb2.FilterRule.SerializeToString,
             ),
             'List': grpc.unary_unary_rpc_method_handler(
                     servicer.List,
                     request_deserializer=jervis_dot_server_dot_filter__rules__pb2.ListFilterRulesRequest.FromString,
-                    response_serializer=jervis_dot_server_dot_filter__rules__pb2.FilterRuleListPayload.SerializeToString,
+                    response_serializer=jervis_dot_server_dot_filter__rules__pb2.FilterRuleList.SerializeToString,
             ),
             'Remove': grpc.unary_unary_rpc_method_handler(
                     servicer.Remove,
@@ -112,11 +106,8 @@ def add_ServerFilterRulesServiceServicer_to_server(servicer, server):
  # This class is part of an EXPERIMENTAL API.
 class ServerFilterRulesService(object):
     """ServerFilterRulesService exposes the filtering-rules CRUD surface used
-    by the orchestrator agent's tool set. Rule documents carry the same
-    shape as `shared/common-dto` FilteringRule — we keep the body as JSON
-    for the same reason as ServerGuidelinesService (nested rule tree lives
-    under kotlinx.serialization SSOT; typing it twice adds no value for
-    consumers that pass it through).
+    by the orchestrator agent's tool set. Rule documents mirror the
+    kotlinx-serialized `shared/common-dto` FilteringRule typed 1:1.
     """
 
     @staticmethod
@@ -135,7 +126,7 @@ class ServerFilterRulesService(object):
             target,
             '/jervis.server.ServerFilterRulesService/Create',
             jervis_dot_server_dot_filter__rules__pb2.CreateFilterRuleRequest.SerializeToString,
-            jervis_dot_server_dot_filter__rules__pb2.FilterRulePayload.FromString,
+            jervis_dot_server_dot_filter__rules__pb2.FilterRule.FromString,
             options,
             channel_credentials,
             insecure,
@@ -162,7 +153,7 @@ class ServerFilterRulesService(object):
             target,
             '/jervis.server.ServerFilterRulesService/List',
             jervis_dot_server_dot_filter__rules__pb2.ListFilterRulesRequest.SerializeToString,
-            jervis_dot_server_dot_filter__rules__pb2.FilterRuleListPayload.FromString,
+            jervis_dot_server_dot_filter__rules__pb2.FilterRuleList.FromString,
             options,
             channel_credentials,
             insecure,

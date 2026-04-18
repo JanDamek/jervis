@@ -5,11 +5,8 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
 /**
  * <pre>
  * ServerFilterRulesService exposes the filtering-rules CRUD surface used
- * by the orchestrator agent's tool set. Rule documents carry the same
- * shape as `shared/common-dto` FilteringRule — we keep the body as JSON
- * for the same reason as ServerGuidelinesService (nested rule tree lives
- * under kotlinx.serialization SSOT; typing it twice adds no value for
- * consumers that pass it through).
+ * by the orchestrator agent's tool set. Rule documents mirror the
+ * kotlinx-serialized `shared/common-dto` FilteringRule typed 1:1.
  * </pre>
  */
 @io.grpc.stub.annotations.GrpcGenerated
@@ -21,28 +18,28 @@ public final class ServerFilterRulesServiceGrpc {
 
   // Static method descriptors that strictly reflect the proto.
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.CreateFilterRuleRequest,
-      com.jervis.contracts.server.FilterRulePayload> getCreateMethod;
+      com.jervis.contracts.server.FilterRule> getCreateMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "Create",
       requestType = com.jervis.contracts.server.CreateFilterRuleRequest.class,
-      responseType = com.jervis.contracts.server.FilterRulePayload.class,
+      responseType = com.jervis.contracts.server.FilterRule.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.server.CreateFilterRuleRequest,
-      com.jervis.contracts.server.FilterRulePayload> getCreateMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.server.CreateFilterRuleRequest, com.jervis.contracts.server.FilterRulePayload> getCreateMethod;
+      com.jervis.contracts.server.FilterRule> getCreateMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.CreateFilterRuleRequest, com.jervis.contracts.server.FilterRule> getCreateMethod;
     if ((getCreateMethod = ServerFilterRulesServiceGrpc.getCreateMethod) == null) {
       synchronized (ServerFilterRulesServiceGrpc.class) {
         if ((getCreateMethod = ServerFilterRulesServiceGrpc.getCreateMethod) == null) {
           ServerFilterRulesServiceGrpc.getCreateMethod = getCreateMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.server.CreateFilterRuleRequest, com.jervis.contracts.server.FilterRulePayload>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.CreateFilterRuleRequest, com.jervis.contracts.server.FilterRule>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "Create"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.server.CreateFilterRuleRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.FilterRulePayload.getDefaultInstance()))
+                  com.jervis.contracts.server.FilterRule.getDefaultInstance()))
               .setSchemaDescriptor(new ServerFilterRulesServiceMethodDescriptorSupplier("Create"))
               .build();
         }
@@ -52,28 +49,28 @@ public final class ServerFilterRulesServiceGrpc {
   }
 
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.ListFilterRulesRequest,
-      com.jervis.contracts.server.FilterRuleListPayload> getListMethod;
+      com.jervis.contracts.server.FilterRuleList> getListMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "List",
       requestType = com.jervis.contracts.server.ListFilterRulesRequest.class,
-      responseType = com.jervis.contracts.server.FilterRuleListPayload.class,
+      responseType = com.jervis.contracts.server.FilterRuleList.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.server.ListFilterRulesRequest,
-      com.jervis.contracts.server.FilterRuleListPayload> getListMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.server.ListFilterRulesRequest, com.jervis.contracts.server.FilterRuleListPayload> getListMethod;
+      com.jervis.contracts.server.FilterRuleList> getListMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.ListFilterRulesRequest, com.jervis.contracts.server.FilterRuleList> getListMethod;
     if ((getListMethod = ServerFilterRulesServiceGrpc.getListMethod) == null) {
       synchronized (ServerFilterRulesServiceGrpc.class) {
         if ((getListMethod = ServerFilterRulesServiceGrpc.getListMethod) == null) {
           ServerFilterRulesServiceGrpc.getListMethod = getListMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.server.ListFilterRulesRequest, com.jervis.contracts.server.FilterRuleListPayload>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.ListFilterRulesRequest, com.jervis.contracts.server.FilterRuleList>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "List"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.server.ListFilterRulesRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.FilterRuleListPayload.getDefaultInstance()))
+                  com.jervis.contracts.server.FilterRuleList.getDefaultInstance()))
               .setSchemaDescriptor(new ServerFilterRulesServiceMethodDescriptorSupplier("List"))
               .build();
         }
@@ -175,11 +172,8 @@ public final class ServerFilterRulesServiceGrpc {
   /**
    * <pre>
    * ServerFilterRulesService exposes the filtering-rules CRUD surface used
-   * by the orchestrator agent's tool set. Rule documents carry the same
-   * shape as `shared/common-dto` FilteringRule — we keep the body as JSON
-   * for the same reason as ServerGuidelinesService (nested rule tree lives
-   * under kotlinx.serialization SSOT; typing it twice adds no value for
-   * consumers that pass it through).
+   * by the orchestrator agent's tool set. Rule documents mirror the
+   * kotlinx-serialized `shared/common-dto` FilteringRule typed 1:1.
    * </pre>
    */
   public interface AsyncService {
@@ -187,14 +181,14 @@ public final class ServerFilterRulesServiceGrpc {
     /**
      */
     default void create(com.jervis.contracts.server.CreateFilterRuleRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.FilterRulePayload> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.FilterRule> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getCreateMethod(), responseObserver);
     }
 
     /**
      */
     default void list(com.jervis.contracts.server.ListFilterRulesRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.FilterRuleListPayload> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.FilterRuleList> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getListMethod(), responseObserver);
     }
 
@@ -210,11 +204,8 @@ public final class ServerFilterRulesServiceGrpc {
    * Base class for the server implementation of the service ServerFilterRulesService.
    * <pre>
    * ServerFilterRulesService exposes the filtering-rules CRUD surface used
-   * by the orchestrator agent's tool set. Rule documents carry the same
-   * shape as `shared/common-dto` FilteringRule — we keep the body as JSON
-   * for the same reason as ServerGuidelinesService (nested rule tree lives
-   * under kotlinx.serialization SSOT; typing it twice adds no value for
-   * consumers that pass it through).
+   * by the orchestrator agent's tool set. Rule documents mirror the
+   * kotlinx-serialized `shared/common-dto` FilteringRule typed 1:1.
    * </pre>
    */
   public static abstract class ServerFilterRulesServiceImplBase
@@ -229,11 +220,8 @@ public final class ServerFilterRulesServiceGrpc {
    * A stub to allow clients to do asynchronous rpc calls to service ServerFilterRulesService.
    * <pre>
    * ServerFilterRulesService exposes the filtering-rules CRUD surface used
-   * by the orchestrator agent's tool set. Rule documents carry the same
-   * shape as `shared/common-dto` FilteringRule — we keep the body as JSON
-   * for the same reason as ServerGuidelinesService (nested rule tree lives
-   * under kotlinx.serialization SSOT; typing it twice adds no value for
-   * consumers that pass it through).
+   * by the orchestrator agent's tool set. Rule documents mirror the
+   * kotlinx-serialized `shared/common-dto` FilteringRule typed 1:1.
    * </pre>
    */
   public static final class ServerFilterRulesServiceStub
@@ -252,7 +240,7 @@ public final class ServerFilterRulesServiceGrpc {
     /**
      */
     public void create(com.jervis.contracts.server.CreateFilterRuleRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.FilterRulePayload> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.FilterRule> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getCreateMethod(), getCallOptions()), request, responseObserver);
     }
@@ -260,7 +248,7 @@ public final class ServerFilterRulesServiceGrpc {
     /**
      */
     public void list(com.jervis.contracts.server.ListFilterRulesRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.FilterRuleListPayload> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.FilterRuleList> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getListMethod(), getCallOptions()), request, responseObserver);
     }
@@ -278,11 +266,8 @@ public final class ServerFilterRulesServiceGrpc {
    * A stub to allow clients to do synchronous rpc calls to service ServerFilterRulesService.
    * <pre>
    * ServerFilterRulesService exposes the filtering-rules CRUD surface used
-   * by the orchestrator agent's tool set. Rule documents carry the same
-   * shape as `shared/common-dto` FilteringRule — we keep the body as JSON
-   * for the same reason as ServerGuidelinesService (nested rule tree lives
-   * under kotlinx.serialization SSOT; typing it twice adds no value for
-   * consumers that pass it through).
+   * by the orchestrator agent's tool set. Rule documents mirror the
+   * kotlinx-serialized `shared/common-dto` FilteringRule typed 1:1.
    * </pre>
    */
   public static final class ServerFilterRulesServiceBlockingV2Stub
@@ -300,14 +285,14 @@ public final class ServerFilterRulesServiceGrpc {
 
     /**
      */
-    public com.jervis.contracts.server.FilterRulePayload create(com.jervis.contracts.server.CreateFilterRuleRequest request) throws io.grpc.StatusException {
+    public com.jervis.contracts.server.FilterRule create(com.jervis.contracts.server.CreateFilterRuleRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getCreateMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.FilterRuleListPayload list(com.jervis.contracts.server.ListFilterRulesRequest request) throws io.grpc.StatusException {
+    public com.jervis.contracts.server.FilterRuleList list(com.jervis.contracts.server.ListFilterRulesRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getListMethod(), getCallOptions(), request);
     }
@@ -324,11 +309,8 @@ public final class ServerFilterRulesServiceGrpc {
    * A stub to allow clients to do limited synchronous rpc calls to service ServerFilterRulesService.
    * <pre>
    * ServerFilterRulesService exposes the filtering-rules CRUD surface used
-   * by the orchestrator agent's tool set. Rule documents carry the same
-   * shape as `shared/common-dto` FilteringRule — we keep the body as JSON
-   * for the same reason as ServerGuidelinesService (nested rule tree lives
-   * under kotlinx.serialization SSOT; typing it twice adds no value for
-   * consumers that pass it through).
+   * by the orchestrator agent's tool set. Rule documents mirror the
+   * kotlinx-serialized `shared/common-dto` FilteringRule typed 1:1.
    * </pre>
    */
   public static final class ServerFilterRulesServiceBlockingStub
@@ -346,14 +328,14 @@ public final class ServerFilterRulesServiceGrpc {
 
     /**
      */
-    public com.jervis.contracts.server.FilterRulePayload create(com.jervis.contracts.server.CreateFilterRuleRequest request) {
+    public com.jervis.contracts.server.FilterRule create(com.jervis.contracts.server.CreateFilterRuleRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getCreateMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.FilterRuleListPayload list(com.jervis.contracts.server.ListFilterRulesRequest request) {
+    public com.jervis.contracts.server.FilterRuleList list(com.jervis.contracts.server.ListFilterRulesRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getListMethod(), getCallOptions(), request);
     }
@@ -370,11 +352,8 @@ public final class ServerFilterRulesServiceGrpc {
    * A stub to allow clients to do ListenableFuture-style rpc calls to service ServerFilterRulesService.
    * <pre>
    * ServerFilterRulesService exposes the filtering-rules CRUD surface used
-   * by the orchestrator agent's tool set. Rule documents carry the same
-   * shape as `shared/common-dto` FilteringRule — we keep the body as JSON
-   * for the same reason as ServerGuidelinesService (nested rule tree lives
-   * under kotlinx.serialization SSOT; typing it twice adds no value for
-   * consumers that pass it through).
+   * by the orchestrator agent's tool set. Rule documents mirror the
+   * kotlinx-serialized `shared/common-dto` FilteringRule typed 1:1.
    * </pre>
    */
   public static final class ServerFilterRulesServiceFutureStub
@@ -392,7 +371,7 @@ public final class ServerFilterRulesServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.FilterRulePayload> create(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.FilterRule> create(
         com.jervis.contracts.server.CreateFilterRuleRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getCreateMethod(), getCallOptions()), request);
@@ -400,7 +379,7 @@ public final class ServerFilterRulesServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.FilterRuleListPayload> list(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.FilterRuleList> list(
         com.jervis.contracts.server.ListFilterRulesRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getListMethod(), getCallOptions()), request);
@@ -438,11 +417,11 @@ public final class ServerFilterRulesServiceGrpc {
       switch (methodId) {
         case METHODID_CREATE:
           serviceImpl.create((com.jervis.contracts.server.CreateFilterRuleRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.FilterRulePayload>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.FilterRule>) responseObserver);
           break;
         case METHODID_LIST:
           serviceImpl.list((com.jervis.contracts.server.ListFilterRulesRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.FilterRuleListPayload>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.FilterRuleList>) responseObserver);
           break;
         case METHODID_REMOVE:
           serviceImpl.remove((com.jervis.contracts.server.RemoveFilterRuleRequest) request,
@@ -471,14 +450,14 @@ public final class ServerFilterRulesServiceGrpc {
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.server.CreateFilterRuleRequest,
-              com.jervis.contracts.server.FilterRulePayload>(
+              com.jervis.contracts.server.FilterRule>(
                 service, METHODID_CREATE)))
         .addMethod(
           getListMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.server.ListFilterRulesRequest,
-              com.jervis.contracts.server.FilterRuleListPayload>(
+              com.jervis.contracts.server.FilterRuleList>(
                 service, METHODID_LIST)))
         .addMethod(
           getRemoveMethod(),

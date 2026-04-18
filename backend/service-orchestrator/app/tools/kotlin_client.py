@@ -41,6 +41,24 @@ async def get_mongo_db():
     return _motor_client.get_default_database()
 
 
+def _filter_rule_to_dict(r) -> dict:
+    """Convert a filter_rules_pb2.FilterRule into the camelCase dict
+    shape the LLM tool response expects (matches the kotlinx-serialized
+    FilteringRule JSON)."""
+    return {
+        "id": r.id,
+        "scope": r.scope,
+        "sourceType": r.source_type,
+        "conditionType": r.condition_type,
+        "conditionValue": r.condition_value,
+        "action": r.action,
+        "description": r.description or None,
+        "createdAt": r.created_at,
+        "createdBy": r.created_by,
+        "enabled": r.enabled,
+    }
+
+
 def _task_summary_to_dict(t) -> dict:
     """Convert a task_api_pb2.TaskSummary into the dict shape the LLM tool
     response expects (camelCase keys matching the legacy JSON)."""
@@ -1281,7 +1299,7 @@ class KotlinServerClient:
                 ),
                 timeout=5.0,
             )
-            return json.dumps(json.loads(resp.body_json), ensure_ascii=False, indent=2) if resp.body_json else ""
+            return json.dumps(_filter_rule_to_dict(resp), ensure_ascii=False, indent=2)
         except Exception as e:
             logger.warning("Failed to create filter rule: %s", e)
             return f"Error: {e}"
@@ -1308,7 +1326,7 @@ class KotlinServerClient:
                 ),
                 timeout=5.0,
             )
-            rules = json.loads(resp.body_json) if resp.body_json else []
+            rules = [_filter_rule_to_dict(r) for r in resp.rules]
             if not rules:
                 return "Žádná aktivní filtrační pravidla."
             return json.dumps(rules, ensure_ascii=False, indent=2)

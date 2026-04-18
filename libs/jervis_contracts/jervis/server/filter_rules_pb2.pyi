@@ -1,7 +1,8 @@
 from jervis.common import types_pb2 as _types_pb2
+from google.protobuf.internal import containers as _containers
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
-from collections.abc import Mapping as _Mapping
+from collections.abc import Iterable as _Iterable, Mapping as _Mapping
 from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
@@ -44,17 +45,35 @@ class RemoveFilterRuleRequest(_message.Message):
     rule_id: str
     def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., rule_id: _Optional[str] = ...) -> None: ...
 
-class FilterRulePayload(_message.Message):
-    __slots__ = ("body_json",)
-    BODY_JSON_FIELD_NUMBER: _ClassVar[int]
-    body_json: str
-    def __init__(self, body_json: _Optional[str] = ...) -> None: ...
+class FilterRule(_message.Message):
+    __slots__ = ("id", "scope", "source_type", "condition_type", "condition_value", "action", "description", "created_at", "created_by", "enabled")
+    ID_FIELD_NUMBER: _ClassVar[int]
+    SCOPE_FIELD_NUMBER: _ClassVar[int]
+    SOURCE_TYPE_FIELD_NUMBER: _ClassVar[int]
+    CONDITION_TYPE_FIELD_NUMBER: _ClassVar[int]
+    CONDITION_VALUE_FIELD_NUMBER: _ClassVar[int]
+    ACTION_FIELD_NUMBER: _ClassVar[int]
+    DESCRIPTION_FIELD_NUMBER: _ClassVar[int]
+    CREATED_AT_FIELD_NUMBER: _ClassVar[int]
+    CREATED_BY_FIELD_NUMBER: _ClassVar[int]
+    ENABLED_FIELD_NUMBER: _ClassVar[int]
+    id: str
+    scope: str
+    source_type: str
+    condition_type: str
+    condition_value: str
+    action: str
+    description: str
+    created_at: str
+    created_by: str
+    enabled: bool
+    def __init__(self, id: _Optional[str] = ..., scope: _Optional[str] = ..., source_type: _Optional[str] = ..., condition_type: _Optional[str] = ..., condition_value: _Optional[str] = ..., action: _Optional[str] = ..., description: _Optional[str] = ..., created_at: _Optional[str] = ..., created_by: _Optional[str] = ..., enabled: bool = ...) -> None: ...
 
-class FilterRuleListPayload(_message.Message):
-    __slots__ = ("body_json",)
-    BODY_JSON_FIELD_NUMBER: _ClassVar[int]
-    body_json: str
-    def __init__(self, body_json: _Optional[str] = ...) -> None: ...
+class FilterRuleList(_message.Message):
+    __slots__ = ("rules",)
+    RULES_FIELD_NUMBER: _ClassVar[int]
+    rules: _containers.RepeatedCompositeFieldContainer[FilterRule]
+    def __init__(self, rules: _Optional[_Iterable[_Union[FilterRule, _Mapping]]] = ...) -> None: ...
 
 class RemoveFilterRuleResponse(_message.Message):
     __slots__ = ("removed",)

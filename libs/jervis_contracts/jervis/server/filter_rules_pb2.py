@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from jervis.common import types_pb2 as jervis_dot_common_dot_types__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n jervis/server/filter_rules.proto\x12\rjervis.server\x1a\x19jervis/common/types.proto\"\xd7\x01\n\x17\x43reateFilterRuleRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x13\n\x0bsource_type\x18\x02 \x01(\t\x12\x16\n\x0e\x63ondition_type\x18\x03 \x01(\t\x12\x17\n\x0f\x63ondition_value\x18\x04 \x01(\t\x12\x0e\n\x06\x61\x63tion\x18\x05 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x06 \x01(\t\x12\x11\n\tclient_id\x18\x07 \x01(\t\x12\x12\n\nproject_id\x18\x08 \x01(\t\"k\n\x16ListFilterRulesRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\x12\x12\n\nproject_id\x18\x03 \x01(\t\"V\n\x17RemoveFilterRuleRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x0f\n\x07rule_id\x18\x02 \x01(\t\"&\n\x11\x46ilterRulePayload\x12\x11\n\tbody_json\x18\x01 \x01(\t\"*\n\x15\x46ilterRuleListPayload\x12\x11\n\tbody_json\x18\x01 \x01(\t\"+\n\x18RemoveFilterRuleResponse\x12\x0f\n\x07removed\x18\x01 \x01(\x08\x32\x9e\x02\n\x18ServerFilterRulesService\x12R\n\x06\x43reate\x12&.jervis.server.CreateFilterRuleRequest\x1a .jervis.server.FilterRulePayload\x12S\n\x04List\x12%.jervis.server.ListFilterRulesRequest\x1a$.jervis.server.FilterRuleListPayload\x12Y\n\x06Remove\x12&.jervis.server.RemoveFilterRuleRequest\x1a\'.jervis.server.RemoveFilterRuleResponseB7\n\x1b\x63om.jervis.contracts.serverB\x16ServerFilterRulesProtoP\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n jervis/server/filter_rules.proto\x12\rjervis.server\x1a\x19jervis/common/types.proto\"\xd7\x01\n\x17\x43reateFilterRuleRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x13\n\x0bsource_type\x18\x02 \x01(\t\x12\x16\n\x0e\x63ondition_type\x18\x03 \x01(\t\x12\x17\n\x0f\x63ondition_value\x18\x04 \x01(\t\x12\x0e\n\x06\x61\x63tion\x18\x05 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x06 \x01(\t\x12\x11\n\tclient_id\x18\x07 \x01(\t\x12\x12\n\nproject_id\x18\x08 \x01(\t\"k\n\x16ListFilterRulesRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\x12\x12\n\nproject_id\x18\x03 \x01(\t\"V\n\x17RemoveFilterRuleRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x0f\n\x07rule_id\x18\x02 \x01(\t\"\xcb\x01\n\nFilterRule\x12\n\n\x02id\x18\x01 \x01(\t\x12\r\n\x05scope\x18\x02 \x01(\t\x12\x13\n\x0bsource_type\x18\x03 \x01(\t\x12\x16\n\x0e\x63ondition_type\x18\x04 \x01(\t\x12\x17\n\x0f\x63ondition_value\x18\x05 \x01(\t\x12\x0e\n\x06\x61\x63tion\x18\x06 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x07 \x01(\t\x12\x12\n\ncreated_at\x18\x08 \x01(\t\x12\x12\n\ncreated_by\x18\t \x01(\t\x12\x0f\n\x07\x65nabled\x18\n \x01(\x08\":\n\x0e\x46ilterRuleList\x12(\n\x05rules\x18\x01 \x03(\x0b\x32\x19.jervis.server.FilterRule\"+\n\x18RemoveFilterRuleResponse\x12\x0f\n\x07removed\x18\x01 \x01(\x08\x32\x90\x02\n\x18ServerFilterRulesService\x12K\n\x06\x43reate\x12&.jervis.server.CreateFilterRuleRequest\x1a\x19.jervis.server.FilterRule\x12L\n\x04List\x12%.jervis.server.ListFilterRulesRequest\x1a\x1d.jervis.server.FilterRuleList\x12Y\n\x06Remove\x12&.jervis.server.RemoveFilterRuleRequest\x1a\'.jervis.server.RemoveFilterRuleResponseB7\n\x1b\x63om.jervis.contracts.serverB\x16ServerFilterRulesProtoP\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -39,12 +39,12 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_LISTFILTERRULESREQUEST']._serialized_end=403
   _globals['_REMOVEFILTERRULEREQUEST']._serialized_start=405
   _globals['_REMOVEFILTERRULEREQUEST']._serialized_end=491
-  _globals['_FILTERRULEPAYLOAD']._serialized_start=493
-  _globals['_FILTERRULEPAYLOAD']._serialized_end=531
-  _globals['_FILTERRULELISTPAYLOAD']._serialized_start=533
-  _globals['_FILTERRULELISTPAYLOAD']._serialized_end=575
-  _globals['_REMOVEFILTERRULERESPONSE']._serialized_start=577
-  _globals['_REMOVEFILTERRULERESPONSE']._serialized_end=620
-  _globals['_SERVERFILTERRULESSERVICE']._serialized_start=623
-  _globals['_SERVERFILTERRULESSERVICE']._serialized_end=909
+  _globals['_FILTERRULE']._serialized_start=494
+  _globals['_FILTERRULE']._serialized_end=697
+  _globals['_FILTERRULELIST']._serialized_start=699
+  _globals['_FILTERRULELIST']._serialized_end=757
+  _globals['_REMOVEFILTERRULERESPONSE']._serialized_start=759
+  _globals['_REMOVEFILTERRULERESPONSE']._serialized_end=802
+  _globals['_SERVERFILTERRULESSERVICE']._serialized_start=805
+  _globals['_SERVERFILTERRULESSERVICE']._serialized_end=1077
 # @@protoc_insertion_point(module_scope)

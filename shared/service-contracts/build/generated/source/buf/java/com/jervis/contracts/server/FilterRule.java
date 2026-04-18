@@ -6,13 +6,18 @@
 package com.jervis.contracts.server;
 
 /**
- * Protobuf type {@code jervis.server.CreateFilterRuleRequest}
+ * <pre>
+ * FilterRule mirrors com.jervis.dto.filtering.FilteringRule. Enum values
+ * ride as strings to match the kotlinx-serialized enum names.
+ * </pre>
+ *
+ * Protobuf type {@code jervis.server.FilterRule}
  */
 @com.google.protobuf.Generated
-public final class CreateFilterRuleRequest extends
+public final class FilterRule extends
     com.google.protobuf.GeneratedMessage implements
-    // @@protoc_insertion_point(message_implements:jervis.server.CreateFilterRuleRequest)
-    CreateFilterRuleRequestOrBuilder {
+    // @@protoc_insertion_point(message_implements:jervis.server.FilterRule)
+    FilterRuleOrBuilder {
 private static final long serialVersionUID = 0L;
   static {
     com.google.protobuf.RuntimeVersion.validateProtobufGencodeVersion(
@@ -21,71 +26,132 @@ private static final long serialVersionUID = 0L;
       /* minor= */ 32,
       /* patch= */ 1,
       /* suffix= */ "",
-      CreateFilterRuleRequest.class.getName());
+      FilterRule.class.getName());
   }
-  // Use CreateFilterRuleRequest.newBuilder() to construct.
-  private CreateFilterRuleRequest(com.google.protobuf.GeneratedMessage.Builder<?> builder) {
+  // Use FilterRule.newBuilder() to construct.
+  private FilterRule(com.google.protobuf.GeneratedMessage.Builder<?> builder) {
     super(builder);
   }
-  private CreateFilterRuleRequest() {
+  private FilterRule() {
+    id_ = "";
+    scope_ = "";
     sourceType_ = "";
     conditionType_ = "";
     conditionValue_ = "";
     action_ = "";
     description_ = "";
-    clientId_ = "";
-    projectId_ = "";
+    createdAt_ = "";
+    createdBy_ = "";
   }
 
   public static final com.google.protobuf.Descriptors.Descriptor
       getDescriptor() {
-    return com.jervis.contracts.server.ServerFilterRulesProto.internal_static_jervis_server_CreateFilterRuleRequest_descriptor;
+    return com.jervis.contracts.server.ServerFilterRulesProto.internal_static_jervis_server_FilterRule_descriptor;
   }
 
   @java.lang.Override
   protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internalGetFieldAccessorTable() {
-    return com.jervis.contracts.server.ServerFilterRulesProto.internal_static_jervis_server_CreateFilterRuleRequest_fieldAccessorTable
+    return com.jervis.contracts.server.ServerFilterRulesProto.internal_static_jervis_server_FilterRule_fieldAccessorTable
         .ensureFieldAccessorsInitialized(
-            com.jervis.contracts.server.CreateFilterRuleRequest.class, com.jervis.contracts.server.CreateFilterRuleRequest.Builder.class);
+            com.jervis.contracts.server.FilterRule.class, com.jervis.contracts.server.FilterRule.Builder.class);
   }
 
-  private int bitField0_;
-  public static final int CTX_FIELD_NUMBER = 1;
-  private com.jervis.contracts.common.RequestContext ctx_;
+  public static final int ID_FIELD_NUMBER = 1;
+  @SuppressWarnings("serial")
+  private volatile java.lang.Object id_ = "";
   /**
-   * <code>.jervis.common.RequestContext ctx = 1;</code>
-   * @return Whether the ctx field is set.
+   * <code>string id = 1;</code>
+   * @return The id.
    */
   @java.lang.Override
-  public boolean hasCtx() {
-    return ((bitField0_ & 0x00000001) != 0);
+  public java.lang.String getId() {
+    java.lang.Object ref = id_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      com.google.protobuf.ByteString bs = 
+          (com.google.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      id_ = s;
+      return s;
+    }
   }
   /**
-   * <code>.jervis.common.RequestContext ctx = 1;</code>
-   * @return The ctx.
+   * <code>string id = 1;</code>
+   * @return The bytes for id.
    */
   @java.lang.Override
-  public com.jervis.contracts.common.RequestContext getCtx() {
-    return ctx_ == null ? com.jervis.contracts.common.RequestContext.getDefaultInstance() : ctx_;
-  }
-  /**
-   * <code>.jervis.common.RequestContext ctx = 1;</code>
-   */
-  @java.lang.Override
-  public com.jervis.contracts.common.RequestContextOrBuilder getCtxOrBuilder() {
-    return ctx_ == null ? com.jervis.contracts.common.RequestContext.getDefaultInstance() : ctx_;
+  public com.google.protobuf.ByteString
+      getIdBytes() {
+    java.lang.Object ref = id_;
+    if (ref instanceof java.lang.String) {
+      com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      id_ = b;
+      return b;
+    } else {
+      return (com.google.protobuf.ByteString) ref;
+    }
   }
 
-  public static final int SOURCE_TYPE_FIELD_NUMBER = 2;
+  public static final int SCOPE_FIELD_NUMBER = 2;
+  @SuppressWarnings("serial")
+  private volatile java.lang.Object scope_ = "";
+  /**
+   * <pre>
+   * FilterScope: GLOBAL | CLIENT | PROJECT
+   * </pre>
+   *
+   * <code>string scope = 2;</code>
+   * @return The scope.
+   */
+  @java.lang.Override
+  public java.lang.String getScope() {
+    java.lang.Object ref = scope_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      com.google.protobuf.ByteString bs = 
+          (com.google.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      scope_ = s;
+      return s;
+    }
+  }
+  /**
+   * <pre>
+   * FilterScope: GLOBAL | CLIENT | PROJECT
+   * </pre>
+   *
+   * <code>string scope = 2;</code>
+   * @return The bytes for scope.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getScopeBytes() {
+    java.lang.Object ref = scope_;
+    if (ref instanceof java.lang.String) {
+      com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      scope_ = b;
+      return b;
+    } else {
+      return (com.google.protobuf.ByteString) ref;
+    }
+  }
+
+  public static final int SOURCE_TYPE_FIELD_NUMBER = 3;
   @SuppressWarnings("serial")
   private volatile java.lang.Object sourceType_ = "";
   /**
    * <pre>
-   * FilterSourceType name
+   * FilterSourceType
    * </pre>
    *
-   * <code>string source_type = 2;</code>
+   * <code>string source_type = 3;</code>
    * @return The sourceType.
    */
   @java.lang.Override
@@ -103,10 +169,10 @@ private static final long serialVersionUID = 0L;
   }
   /**
    * <pre>
-   * FilterSourceType name
+   * FilterSourceType
    * </pre>
    *
-   * <code>string source_type = 2;</code>
+   * <code>string source_type = 3;</code>
    * @return The bytes for sourceType.
    */
   @java.lang.Override
@@ -124,15 +190,15 @@ private static final long serialVersionUID = 0L;
     }
   }
 
-  public static final int CONDITION_TYPE_FIELD_NUMBER = 3;
+  public static final int CONDITION_TYPE_FIELD_NUMBER = 4;
   @SuppressWarnings("serial")
   private volatile java.lang.Object conditionType_ = "";
   /**
    * <pre>
-   * FilterConditionType name
+   * FilterConditionType
    * </pre>
    *
-   * <code>string condition_type = 3;</code>
+   * <code>string condition_type = 4;</code>
    * @return The conditionType.
    */
   @java.lang.Override
@@ -150,10 +216,10 @@ private static final long serialVersionUID = 0L;
   }
   /**
    * <pre>
-   * FilterConditionType name
+   * FilterConditionType
    * </pre>
    *
-   * <code>string condition_type = 3;</code>
+   * <code>string condition_type = 4;</code>
    * @return The bytes for conditionType.
    */
   @java.lang.Override
@@ -171,11 +237,11 @@ private static final long serialVersionUID = 0L;
     }
   }
 
-  public static final int CONDITION_VALUE_FIELD_NUMBER = 4;
+  public static final int CONDITION_VALUE_FIELD_NUMBER = 5;
   @SuppressWarnings("serial")
   private volatile java.lang.Object conditionValue_ = "";
   /**
-   * <code>string condition_value = 4;</code>
+   * <code>string condition_value = 5;</code>
    * @return The conditionValue.
    */
   @java.lang.Override
@@ -192,7 +258,7 @@ private static final long serialVersionUID = 0L;
     }
   }
   /**
-   * <code>string condition_value = 4;</code>
+   * <code>string condition_value = 5;</code>
    * @return The bytes for conditionValue.
    */
   @java.lang.Override
@@ -210,15 +276,15 @@ private static final long serialVersionUID = 0L;
     }
   }
 
-  public static final int ACTION_FIELD_NUMBER = 5;
+  public static final int ACTION_FIELD_NUMBER = 6;
   @SuppressWarnings("serial")
   private volatile java.lang.Object action_ = "";
   /**
    * <pre>
-   * FilterAction name (default IGNORE)
+   * FilterAction
    * </pre>
    *
-   * <code>string action = 5;</code>
+   * <code>string action = 6;</code>
    * @return The action.
    */
   @java.lang.Override
@@ -236,10 +302,10 @@ private static final long serialVersionUID = 0L;
   }
   /**
    * <pre>
-   * FilterAction name (default IGNORE)
+   * FilterAction
    * </pre>
    *
-   * <code>string action = 5;</code>
+   * <code>string action = 6;</code>
    * @return The bytes for action.
    */
   @java.lang.Override
@@ -257,11 +323,11 @@ private static final long serialVersionUID = 0L;
     }
   }
 
-  public static final int DESCRIPTION_FIELD_NUMBER = 6;
+  public static final int DESCRIPTION_FIELD_NUMBER = 7;
   @SuppressWarnings("serial")
   private volatile java.lang.Object description_ = "";
   /**
-   * <code>string description = 6;</code>
+   * <code>string description = 7;</code>
    * @return The description.
    */
   @java.lang.Override
@@ -278,7 +344,7 @@ private static final long serialVersionUID = 0L;
     }
   }
   /**
-   * <code>string description = 6;</code>
+   * <code>string description = 7;</code>
    * @return The bytes for description.
    */
   @java.lang.Override
@@ -296,82 +362,109 @@ private static final long serialVersionUID = 0L;
     }
   }
 
-  public static final int CLIENT_ID_FIELD_NUMBER = 7;
+  public static final int CREATED_AT_FIELD_NUMBER = 8;
   @SuppressWarnings("serial")
-  private volatile java.lang.Object clientId_ = "";
+  private volatile java.lang.Object createdAt_ = "";
   /**
-   * <code>string client_id = 7;</code>
-   * @return The clientId.
+   * <pre>
+   * RFC3339
+   * </pre>
+   *
+   * <code>string created_at = 8;</code>
+   * @return The createdAt.
    */
   @java.lang.Override
-  public java.lang.String getClientId() {
-    java.lang.Object ref = clientId_;
+  public java.lang.String getCreatedAt() {
+    java.lang.Object ref = createdAt_;
     if (ref instanceof java.lang.String) {
       return (java.lang.String) ref;
     } else {
       com.google.protobuf.ByteString bs = 
           (com.google.protobuf.ByteString) ref;
       java.lang.String s = bs.toStringUtf8();
-      clientId_ = s;
+      createdAt_ = s;
       return s;
     }
   }
   /**
-   * <code>string client_id = 7;</code>
-   * @return The bytes for clientId.
+   * <pre>
+   * RFC3339
+   * </pre>
+   *
+   * <code>string created_at = 8;</code>
+   * @return The bytes for createdAt.
    */
   @java.lang.Override
   public com.google.protobuf.ByteString
-      getClientIdBytes() {
-    java.lang.Object ref = clientId_;
+      getCreatedAtBytes() {
+    java.lang.Object ref = createdAt_;
     if (ref instanceof java.lang.String) {
       com.google.protobuf.ByteString b = 
           com.google.protobuf.ByteString.copyFromUtf8(
               (java.lang.String) ref);
-      clientId_ = b;
+      createdAt_ = b;
       return b;
     } else {
       return (com.google.protobuf.ByteString) ref;
     }
   }
 
-  public static final int PROJECT_ID_FIELD_NUMBER = 8;
+  public static final int CREATED_BY_FIELD_NUMBER = 9;
   @SuppressWarnings("serial")
-  private volatile java.lang.Object projectId_ = "";
+  private volatile java.lang.Object createdBy_ = "";
   /**
-   * <code>string project_id = 8;</code>
-   * @return The projectId.
+   * <pre>
+   * default "user"
+   * </pre>
+   *
+   * <code>string created_by = 9;</code>
+   * @return The createdBy.
    */
   @java.lang.Override
-  public java.lang.String getProjectId() {
-    java.lang.Object ref = projectId_;
+  public java.lang.String getCreatedBy() {
+    java.lang.Object ref = createdBy_;
     if (ref instanceof java.lang.String) {
       return (java.lang.String) ref;
     } else {
       com.google.protobuf.ByteString bs = 
           (com.google.protobuf.ByteString) ref;
       java.lang.String s = bs.toStringUtf8();
-      projectId_ = s;
+      createdBy_ = s;
       return s;
     }
   }
   /**
-   * <code>string project_id = 8;</code>
-   * @return The bytes for projectId.
+   * <pre>
+   * default "user"
+   * </pre>
+   *
+   * <code>string created_by = 9;</code>
+   * @return The bytes for createdBy.
    */
   @java.lang.Override
   public com.google.protobuf.ByteString
-      getProjectIdBytes() {
-    java.lang.Object ref = projectId_;
+      getCreatedByBytes() {
+    java.lang.Object ref = createdBy_;
     if (ref instanceof java.lang.String) {
       com.google.protobuf.ByteString b = 
           com.google.protobuf.ByteString.copyFromUtf8(
               (java.lang.String) ref);
-      projectId_ = b;
+      createdBy_ = b;
       return b;
     } else {
       return (com.google.protobuf.ByteString) ref;
     }
+  }
+
+  public static final int ENABLED_FIELD_NUMBER = 10;
+  private boolean enabled_ = false;
+  /**
+   * <code>bool enabled = 10;</code>
+   * @return The enabled.
+   */
+  @java.lang.Override
+  public boolean getEnabled() {
+    return enabled_;
   }
 
   private byte memoizedIsInitialized = -1;
@@ -388,29 +481,35 @@ private static final long serialVersionUID = 0L;
   @java.lang.Override
   public void writeTo(com.google.protobuf.CodedOutputStream output)
                       throws java.io.IOException {
-    if (((bitField0_ & 0x00000001) != 0)) {
-      output.writeMessage(1, getCtx());
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(id_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 1, id_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(scope_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 2, scope_);
     }
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(sourceType_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 2, sourceType_);
+      com.google.protobuf.GeneratedMessage.writeString(output, 3, sourceType_);
     }
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(conditionType_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 3, conditionType_);
+      com.google.protobuf.GeneratedMessage.writeString(output, 4, conditionType_);
     }
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(conditionValue_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 4, conditionValue_);
+      com.google.protobuf.GeneratedMessage.writeString(output, 5, conditionValue_);
     }
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(action_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 5, action_);
+      com.google.protobuf.GeneratedMessage.writeString(output, 6, action_);
     }
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(description_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 6, description_);
+      com.google.protobuf.GeneratedMessage.writeString(output, 7, description_);
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(clientId_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 7, clientId_);
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(createdAt_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 8, createdAt_);
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(projectId_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 8, projectId_);
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(createdBy_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 9, createdBy_);
+    }
+    if (enabled_ != false) {
+      output.writeBool(10, enabled_);
     }
     getUnknownFields().writeTo(output);
   }
@@ -421,30 +520,36 @@ private static final long serialVersionUID = 0L;
     if (size != -1) return size;
 
     size = 0;
-    if (((bitField0_ & 0x00000001) != 0)) {
-      size += com.google.protobuf.CodedOutputStream
-        .computeMessageSize(1, getCtx());
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(id_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(1, id_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(scope_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(2, scope_);
     }
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(sourceType_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(2, sourceType_);
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(3, sourceType_);
     }
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(conditionType_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(3, conditionType_);
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(4, conditionType_);
     }
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(conditionValue_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(4, conditionValue_);
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(5, conditionValue_);
     }
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(action_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(5, action_);
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(6, action_);
     }
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(description_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(6, description_);
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(7, description_);
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(clientId_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(7, clientId_);
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(createdAt_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(8, createdAt_);
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(projectId_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(8, projectId_);
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(createdBy_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(9, createdBy_);
+    }
+    if (enabled_ != false) {
+      size += com.google.protobuf.CodedOutputStream
+        .computeBoolSize(10, enabled_);
     }
     size += getUnknownFields().getSerializedSize();
     memoizedSize = size;
@@ -456,16 +561,15 @@ private static final long serialVersionUID = 0L;
     if (obj == this) {
      return true;
     }
-    if (!(obj instanceof com.jervis.contracts.server.CreateFilterRuleRequest)) {
+    if (!(obj instanceof com.jervis.contracts.server.FilterRule)) {
       return super.equals(obj);
     }
-    com.jervis.contracts.server.CreateFilterRuleRequest other = (com.jervis.contracts.server.CreateFilterRuleRequest) obj;
+    com.jervis.contracts.server.FilterRule other = (com.jervis.contracts.server.FilterRule) obj;
 
-    if (hasCtx() != other.hasCtx()) return false;
-    if (hasCtx()) {
-      if (!getCtx()
-          .equals(other.getCtx())) return false;
-    }
+    if (!getId()
+        .equals(other.getId())) return false;
+    if (!getScope()
+        .equals(other.getScope())) return false;
     if (!getSourceType()
         .equals(other.getSourceType())) return false;
     if (!getConditionType()
@@ -476,10 +580,12 @@ private static final long serialVersionUID = 0L;
         .equals(other.getAction())) return false;
     if (!getDescription()
         .equals(other.getDescription())) return false;
-    if (!getClientId()
-        .equals(other.getClientId())) return false;
-    if (!getProjectId()
-        .equals(other.getProjectId())) return false;
+    if (!getCreatedAt()
+        .equals(other.getCreatedAt())) return false;
+    if (!getCreatedBy()
+        .equals(other.getCreatedBy())) return false;
+    if (getEnabled()
+        != other.getEnabled()) return false;
     if (!getUnknownFields().equals(other.getUnknownFields())) return false;
     return true;
   }
@@ -491,10 +597,10 @@ private static final long serialVersionUID = 0L;
     }
     int hash = 41;
     hash = (19 * hash) + getDescriptor().hashCode();
-    if (hasCtx()) {
-      hash = (37 * hash) + CTX_FIELD_NUMBER;
-      hash = (53 * hash) + getCtx().hashCode();
-    }
+    hash = (37 * hash) + ID_FIELD_NUMBER;
+    hash = (53 * hash) + getId().hashCode();
+    hash = (37 * hash) + SCOPE_FIELD_NUMBER;
+    hash = (53 * hash) + getScope().hashCode();
     hash = (37 * hash) + SOURCE_TYPE_FIELD_NUMBER;
     hash = (53 * hash) + getSourceType().hashCode();
     hash = (37 * hash) + CONDITION_TYPE_FIELD_NUMBER;
@@ -505,53 +611,56 @@ private static final long serialVersionUID = 0L;
     hash = (53 * hash) + getAction().hashCode();
     hash = (37 * hash) + DESCRIPTION_FIELD_NUMBER;
     hash = (53 * hash) + getDescription().hashCode();
-    hash = (37 * hash) + CLIENT_ID_FIELD_NUMBER;
-    hash = (53 * hash) + getClientId().hashCode();
-    hash = (37 * hash) + PROJECT_ID_FIELD_NUMBER;
-    hash = (53 * hash) + getProjectId().hashCode();
+    hash = (37 * hash) + CREATED_AT_FIELD_NUMBER;
+    hash = (53 * hash) + getCreatedAt().hashCode();
+    hash = (37 * hash) + CREATED_BY_FIELD_NUMBER;
+    hash = (53 * hash) + getCreatedBy().hashCode();
+    hash = (37 * hash) + ENABLED_FIELD_NUMBER;
+    hash = (53 * hash) + com.google.protobuf.Internal.hashBoolean(
+        getEnabled());
     hash = (29 * hash) + getUnknownFields().hashCode();
     memoizedHashCode = hash;
     return hash;
   }
 
-  public static com.jervis.contracts.server.CreateFilterRuleRequest parseFrom(
+  public static com.jervis.contracts.server.FilterRule parseFrom(
       java.nio.ByteBuffer data)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data);
   }
-  public static com.jervis.contracts.server.CreateFilterRuleRequest parseFrom(
+  public static com.jervis.contracts.server.FilterRule parseFrom(
       java.nio.ByteBuffer data,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data, extensionRegistry);
   }
-  public static com.jervis.contracts.server.CreateFilterRuleRequest parseFrom(
+  public static com.jervis.contracts.server.FilterRule parseFrom(
       com.google.protobuf.ByteString data)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data);
   }
-  public static com.jervis.contracts.server.CreateFilterRuleRequest parseFrom(
+  public static com.jervis.contracts.server.FilterRule parseFrom(
       com.google.protobuf.ByteString data,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data, extensionRegistry);
   }
-  public static com.jervis.contracts.server.CreateFilterRuleRequest parseFrom(byte[] data)
+  public static com.jervis.contracts.server.FilterRule parseFrom(byte[] data)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data);
   }
-  public static com.jervis.contracts.server.CreateFilterRuleRequest parseFrom(
+  public static com.jervis.contracts.server.FilterRule parseFrom(
       byte[] data,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data, extensionRegistry);
   }
-  public static com.jervis.contracts.server.CreateFilterRuleRequest parseFrom(java.io.InputStream input)
+  public static com.jervis.contracts.server.FilterRule parseFrom(java.io.InputStream input)
       throws java.io.IOException {
     return com.google.protobuf.GeneratedMessage
         .parseWithIOException(PARSER, input);
   }
-  public static com.jervis.contracts.server.CreateFilterRuleRequest parseFrom(
+  public static com.jervis.contracts.server.FilterRule parseFrom(
       java.io.InputStream input,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws java.io.IOException {
@@ -559,26 +668,26 @@ private static final long serialVersionUID = 0L;
         .parseWithIOException(PARSER, input, extensionRegistry);
   }
 
-  public static com.jervis.contracts.server.CreateFilterRuleRequest parseDelimitedFrom(java.io.InputStream input)
+  public static com.jervis.contracts.server.FilterRule parseDelimitedFrom(java.io.InputStream input)
       throws java.io.IOException {
     return com.google.protobuf.GeneratedMessage
         .parseDelimitedWithIOException(PARSER, input);
   }
 
-  public static com.jervis.contracts.server.CreateFilterRuleRequest parseDelimitedFrom(
+  public static com.jervis.contracts.server.FilterRule parseDelimitedFrom(
       java.io.InputStream input,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws java.io.IOException {
     return com.google.protobuf.GeneratedMessage
         .parseDelimitedWithIOException(PARSER, input, extensionRegistry);
   }
-  public static com.jervis.contracts.server.CreateFilterRuleRequest parseFrom(
+  public static com.jervis.contracts.server.FilterRule parseFrom(
       com.google.protobuf.CodedInputStream input)
       throws java.io.IOException {
     return com.google.protobuf.GeneratedMessage
         .parseWithIOException(PARSER, input);
   }
-  public static com.jervis.contracts.server.CreateFilterRuleRequest parseFrom(
+  public static com.jervis.contracts.server.FilterRule parseFrom(
       com.google.protobuf.CodedInputStream input,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws java.io.IOException {
@@ -591,7 +700,7 @@ private static final long serialVersionUID = 0L;
   public static Builder newBuilder() {
     return DEFAULT_INSTANCE.toBuilder();
   }
-  public static Builder newBuilder(com.jervis.contracts.server.CreateFilterRuleRequest prototype) {
+  public static Builder newBuilder(com.jervis.contracts.server.FilterRule prototype) {
     return DEFAULT_INSTANCE.toBuilder().mergeFrom(prototype);
   }
   @java.lang.Override
@@ -607,74 +716,71 @@ private static final long serialVersionUID = 0L;
     return builder;
   }
   /**
-   * Protobuf type {@code jervis.server.CreateFilterRuleRequest}
+   * <pre>
+   * FilterRule mirrors com.jervis.dto.filtering.FilteringRule. Enum values
+   * ride as strings to match the kotlinx-serialized enum names.
+   * </pre>
+   *
+   * Protobuf type {@code jervis.server.FilterRule}
    */
   public static final class Builder extends
       com.google.protobuf.GeneratedMessage.Builder<Builder> implements
-      // @@protoc_insertion_point(builder_implements:jervis.server.CreateFilterRuleRequest)
-      com.jervis.contracts.server.CreateFilterRuleRequestOrBuilder {
+      // @@protoc_insertion_point(builder_implements:jervis.server.FilterRule)
+      com.jervis.contracts.server.FilterRuleOrBuilder {
     public static final com.google.protobuf.Descriptors.Descriptor
         getDescriptor() {
-      return com.jervis.contracts.server.ServerFilterRulesProto.internal_static_jervis_server_CreateFilterRuleRequest_descriptor;
+      return com.jervis.contracts.server.ServerFilterRulesProto.internal_static_jervis_server_FilterRule_descriptor;
     }
 
     @java.lang.Override
     protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
         internalGetFieldAccessorTable() {
-      return com.jervis.contracts.server.ServerFilterRulesProto.internal_static_jervis_server_CreateFilterRuleRequest_fieldAccessorTable
+      return com.jervis.contracts.server.ServerFilterRulesProto.internal_static_jervis_server_FilterRule_fieldAccessorTable
           .ensureFieldAccessorsInitialized(
-              com.jervis.contracts.server.CreateFilterRuleRequest.class, com.jervis.contracts.server.CreateFilterRuleRequest.Builder.class);
+              com.jervis.contracts.server.FilterRule.class, com.jervis.contracts.server.FilterRule.Builder.class);
     }
 
-    // Construct using com.jervis.contracts.server.CreateFilterRuleRequest.newBuilder()
+    // Construct using com.jervis.contracts.server.FilterRule.newBuilder()
     private Builder() {
-      maybeForceBuilderInitialization();
+
     }
 
     private Builder(
         com.google.protobuf.GeneratedMessage.BuilderParent parent) {
       super(parent);
-      maybeForceBuilderInitialization();
-    }
-    private void maybeForceBuilderInitialization() {
-      if (com.google.protobuf.GeneratedMessage
-              .alwaysUseFieldBuilders) {
-        internalGetCtxFieldBuilder();
-      }
+
     }
     @java.lang.Override
     public Builder clear() {
       super.clear();
       bitField0_ = 0;
-      ctx_ = null;
-      if (ctxBuilder_ != null) {
-        ctxBuilder_.dispose();
-        ctxBuilder_ = null;
-      }
+      id_ = "";
+      scope_ = "";
       sourceType_ = "";
       conditionType_ = "";
       conditionValue_ = "";
       action_ = "";
       description_ = "";
-      clientId_ = "";
-      projectId_ = "";
+      createdAt_ = "";
+      createdBy_ = "";
+      enabled_ = false;
       return this;
     }
 
     @java.lang.Override
     public com.google.protobuf.Descriptors.Descriptor
         getDescriptorForType() {
-      return com.jervis.contracts.server.ServerFilterRulesProto.internal_static_jervis_server_CreateFilterRuleRequest_descriptor;
+      return com.jervis.contracts.server.ServerFilterRulesProto.internal_static_jervis_server_FilterRule_descriptor;
     }
 
     @java.lang.Override
-    public com.jervis.contracts.server.CreateFilterRuleRequest getDefaultInstanceForType() {
-      return com.jervis.contracts.server.CreateFilterRuleRequest.getDefaultInstance();
+    public com.jervis.contracts.server.FilterRule getDefaultInstanceForType() {
+      return com.jervis.contracts.server.FilterRule.getDefaultInstance();
     }
 
     @java.lang.Override
-    public com.jervis.contracts.server.CreateFilterRuleRequest build() {
-      com.jervis.contracts.server.CreateFilterRuleRequest result = buildPartial();
+    public com.jervis.contracts.server.FilterRule build() {
+      com.jervis.contracts.server.FilterRule result = buildPartial();
       if (!result.isInitialized()) {
         throw newUninitializedMessageException(result);
       }
@@ -682,95 +788,106 @@ private static final long serialVersionUID = 0L;
     }
 
     @java.lang.Override
-    public com.jervis.contracts.server.CreateFilterRuleRequest buildPartial() {
-      com.jervis.contracts.server.CreateFilterRuleRequest result = new com.jervis.contracts.server.CreateFilterRuleRequest(this);
+    public com.jervis.contracts.server.FilterRule buildPartial() {
+      com.jervis.contracts.server.FilterRule result = new com.jervis.contracts.server.FilterRule(this);
       if (bitField0_ != 0) { buildPartial0(result); }
       onBuilt();
       return result;
     }
 
-    private void buildPartial0(com.jervis.contracts.server.CreateFilterRuleRequest result) {
+    private void buildPartial0(com.jervis.contracts.server.FilterRule result) {
       int from_bitField0_ = bitField0_;
-      int to_bitField0_ = 0;
       if (((from_bitField0_ & 0x00000001) != 0)) {
-        result.ctx_ = ctxBuilder_ == null
-            ? ctx_
-            : ctxBuilder_.build();
-        to_bitField0_ |= 0x00000001;
+        result.id_ = id_;
       }
       if (((from_bitField0_ & 0x00000002) != 0)) {
-        result.sourceType_ = sourceType_;
+        result.scope_ = scope_;
       }
       if (((from_bitField0_ & 0x00000004) != 0)) {
-        result.conditionType_ = conditionType_;
+        result.sourceType_ = sourceType_;
       }
       if (((from_bitField0_ & 0x00000008) != 0)) {
-        result.conditionValue_ = conditionValue_;
+        result.conditionType_ = conditionType_;
       }
       if (((from_bitField0_ & 0x00000010) != 0)) {
-        result.action_ = action_;
+        result.conditionValue_ = conditionValue_;
       }
       if (((from_bitField0_ & 0x00000020) != 0)) {
-        result.description_ = description_;
+        result.action_ = action_;
       }
       if (((from_bitField0_ & 0x00000040) != 0)) {
-        result.clientId_ = clientId_;
+        result.description_ = description_;
       }
       if (((from_bitField0_ & 0x00000080) != 0)) {
-        result.projectId_ = projectId_;
+        result.createdAt_ = createdAt_;
       }
-      result.bitField0_ |= to_bitField0_;
+      if (((from_bitField0_ & 0x00000100) != 0)) {
+        result.createdBy_ = createdBy_;
+      }
+      if (((from_bitField0_ & 0x00000200) != 0)) {
+        result.enabled_ = enabled_;
+      }
     }
 
     @java.lang.Override
     public Builder mergeFrom(com.google.protobuf.Message other) {
-      if (other instanceof com.jervis.contracts.server.CreateFilterRuleRequest) {
-        return mergeFrom((com.jervis.contracts.server.CreateFilterRuleRequest)other);
+      if (other instanceof com.jervis.contracts.server.FilterRule) {
+        return mergeFrom((com.jervis.contracts.server.FilterRule)other);
       } else {
         super.mergeFrom(other);
         return this;
       }
     }
 
-    public Builder mergeFrom(com.jervis.contracts.server.CreateFilterRuleRequest other) {
-      if (other == com.jervis.contracts.server.CreateFilterRuleRequest.getDefaultInstance()) return this;
-      if (other.hasCtx()) {
-        mergeCtx(other.getCtx());
+    public Builder mergeFrom(com.jervis.contracts.server.FilterRule other) {
+      if (other == com.jervis.contracts.server.FilterRule.getDefaultInstance()) return this;
+      if (!other.getId().isEmpty()) {
+        id_ = other.id_;
+        bitField0_ |= 0x00000001;
+        onChanged();
+      }
+      if (!other.getScope().isEmpty()) {
+        scope_ = other.scope_;
+        bitField0_ |= 0x00000002;
+        onChanged();
       }
       if (!other.getSourceType().isEmpty()) {
         sourceType_ = other.sourceType_;
-        bitField0_ |= 0x00000002;
+        bitField0_ |= 0x00000004;
         onChanged();
       }
       if (!other.getConditionType().isEmpty()) {
         conditionType_ = other.conditionType_;
-        bitField0_ |= 0x00000004;
+        bitField0_ |= 0x00000008;
         onChanged();
       }
       if (!other.getConditionValue().isEmpty()) {
         conditionValue_ = other.conditionValue_;
-        bitField0_ |= 0x00000008;
+        bitField0_ |= 0x00000010;
         onChanged();
       }
       if (!other.getAction().isEmpty()) {
         action_ = other.action_;
-        bitField0_ |= 0x00000010;
+        bitField0_ |= 0x00000020;
         onChanged();
       }
       if (!other.getDescription().isEmpty()) {
         description_ = other.description_;
-        bitField0_ |= 0x00000020;
-        onChanged();
-      }
-      if (!other.getClientId().isEmpty()) {
-        clientId_ = other.clientId_;
         bitField0_ |= 0x00000040;
         onChanged();
       }
-      if (!other.getProjectId().isEmpty()) {
-        projectId_ = other.projectId_;
+      if (!other.getCreatedAt().isEmpty()) {
+        createdAt_ = other.createdAt_;
         bitField0_ |= 0x00000080;
         onChanged();
+      }
+      if (!other.getCreatedBy().isEmpty()) {
+        createdBy_ = other.createdBy_;
+        bitField0_ |= 0x00000100;
+        onChanged();
+      }
+      if (other.getEnabled() != false) {
+        setEnabled(other.getEnabled());
       }
       this.mergeUnknownFields(other.getUnknownFields());
       onChanged();
@@ -799,47 +916,55 @@ private static final long serialVersionUID = 0L;
               done = true;
               break;
             case 10: {
-              input.readMessage(
-                  internalGetCtxFieldBuilder().getBuilder(),
-                  extensionRegistry);
+              id_ = input.readStringRequireUtf8();
               bitField0_ |= 0x00000001;
               break;
             } // case 10
             case 18: {
-              sourceType_ = input.readStringRequireUtf8();
+              scope_ = input.readStringRequireUtf8();
               bitField0_ |= 0x00000002;
               break;
             } // case 18
             case 26: {
-              conditionType_ = input.readStringRequireUtf8();
+              sourceType_ = input.readStringRequireUtf8();
               bitField0_ |= 0x00000004;
               break;
             } // case 26
             case 34: {
-              conditionValue_ = input.readStringRequireUtf8();
+              conditionType_ = input.readStringRequireUtf8();
               bitField0_ |= 0x00000008;
               break;
             } // case 34
             case 42: {
-              action_ = input.readStringRequireUtf8();
+              conditionValue_ = input.readStringRequireUtf8();
               bitField0_ |= 0x00000010;
               break;
             } // case 42
             case 50: {
-              description_ = input.readStringRequireUtf8();
+              action_ = input.readStringRequireUtf8();
               bitField0_ |= 0x00000020;
               break;
             } // case 50
             case 58: {
-              clientId_ = input.readStringRequireUtf8();
+              description_ = input.readStringRequireUtf8();
               bitField0_ |= 0x00000040;
               break;
             } // case 58
             case 66: {
-              projectId_ = input.readStringRequireUtf8();
+              createdAt_ = input.readStringRequireUtf8();
               bitField0_ |= 0x00000080;
               break;
             } // case 66
+            case 74: {
+              createdBy_ = input.readStringRequireUtf8();
+              bitField0_ |= 0x00000100;
+              break;
+            } // case 74
+            case 80: {
+              enabled_ = input.readBool();
+              bitField0_ |= 0x00000200;
+              break;
+            } // case 80
             default: {
               if (!super.parseUnknownField(input, extensionRegistry, tag)) {
                 done = true; // was an endgroup tag
@@ -857,134 +982,177 @@ private static final long serialVersionUID = 0L;
     }
     private int bitField0_;
 
-    private com.jervis.contracts.common.RequestContext ctx_;
-    private com.google.protobuf.SingleFieldBuilder<
-        com.jervis.contracts.common.RequestContext, com.jervis.contracts.common.RequestContext.Builder, com.jervis.contracts.common.RequestContextOrBuilder> ctxBuilder_;
+    private java.lang.Object id_ = "";
     /**
-     * <code>.jervis.common.RequestContext ctx = 1;</code>
-     * @return Whether the ctx field is set.
+     * <code>string id = 1;</code>
+     * @return The id.
      */
-    public boolean hasCtx() {
-      return ((bitField0_ & 0x00000001) != 0);
-    }
-    /**
-     * <code>.jervis.common.RequestContext ctx = 1;</code>
-     * @return The ctx.
-     */
-    public com.jervis.contracts.common.RequestContext getCtx() {
-      if (ctxBuilder_ == null) {
-        return ctx_ == null ? com.jervis.contracts.common.RequestContext.getDefaultInstance() : ctx_;
+    public java.lang.String getId() {
+      java.lang.Object ref = id_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        id_ = s;
+        return s;
       } else {
-        return ctxBuilder_.getMessage();
+        return (java.lang.String) ref;
       }
     }
     /**
-     * <code>.jervis.common.RequestContext ctx = 1;</code>
+     * <code>string id = 1;</code>
+     * @return The bytes for id.
      */
-    public Builder setCtx(com.jervis.contracts.common.RequestContext value) {
-      if (ctxBuilder_ == null) {
-        if (value == null) {
-          throw new NullPointerException();
-        }
-        ctx_ = value;
+    public com.google.protobuf.ByteString
+        getIdBytes() {
+      java.lang.Object ref = id_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        id_ = b;
+        return b;
       } else {
-        ctxBuilder_.setMessage(value);
+        return (com.google.protobuf.ByteString) ref;
       }
+    }
+    /**
+     * <code>string id = 1;</code>
+     * @param value The id to set.
+     * @return This builder for chaining.
+     */
+    public Builder setId(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      id_ = value;
       bitField0_ |= 0x00000001;
       onChanged();
       return this;
     }
     /**
-     * <code>.jervis.common.RequestContext ctx = 1;</code>
+     * <code>string id = 1;</code>
+     * @return This builder for chaining.
      */
-    public Builder setCtx(
-        com.jervis.contracts.common.RequestContext.Builder builderForValue) {
-      if (ctxBuilder_ == null) {
-        ctx_ = builderForValue.build();
-      } else {
-        ctxBuilder_.setMessage(builderForValue.build());
-      }
-      bitField0_ |= 0x00000001;
-      onChanged();
-      return this;
-    }
-    /**
-     * <code>.jervis.common.RequestContext ctx = 1;</code>
-     */
-    public Builder mergeCtx(com.jervis.contracts.common.RequestContext value) {
-      if (ctxBuilder_ == null) {
-        if (((bitField0_ & 0x00000001) != 0) &&
-          ctx_ != null &&
-          ctx_ != com.jervis.contracts.common.RequestContext.getDefaultInstance()) {
-          getCtxBuilder().mergeFrom(value);
-        } else {
-          ctx_ = value;
-        }
-      } else {
-        ctxBuilder_.mergeFrom(value);
-      }
-      if (ctx_ != null) {
-        bitField0_ |= 0x00000001;
-        onChanged();
-      }
-      return this;
-    }
-    /**
-     * <code>.jervis.common.RequestContext ctx = 1;</code>
-     */
-    public Builder clearCtx() {
+    public Builder clearId() {
+      id_ = getDefaultInstance().getId();
       bitField0_ = (bitField0_ & ~0x00000001);
-      ctx_ = null;
-      if (ctxBuilder_ != null) {
-        ctxBuilder_.dispose();
-        ctxBuilder_ = null;
-      }
       onChanged();
       return this;
     }
     /**
-     * <code>.jervis.common.RequestContext ctx = 1;</code>
+     * <code>string id = 1;</code>
+     * @param value The bytes for id to set.
+     * @return This builder for chaining.
      */
-    public com.jervis.contracts.common.RequestContext.Builder getCtxBuilder() {
+    public Builder setIdBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      id_ = value;
       bitField0_ |= 0x00000001;
       onChanged();
-      return internalGetCtxFieldBuilder().getBuilder();
+      return this;
     }
+
+    private java.lang.Object scope_ = "";
     /**
-     * <code>.jervis.common.RequestContext ctx = 1;</code>
+     * <pre>
+     * FilterScope: GLOBAL | CLIENT | PROJECT
+     * </pre>
+     *
+     * <code>string scope = 2;</code>
+     * @return The scope.
      */
-    public com.jervis.contracts.common.RequestContextOrBuilder getCtxOrBuilder() {
-      if (ctxBuilder_ != null) {
-        return ctxBuilder_.getMessageOrBuilder();
+    public java.lang.String getScope() {
+      java.lang.Object ref = scope_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        scope_ = s;
+        return s;
       } else {
-        return ctx_ == null ?
-            com.jervis.contracts.common.RequestContext.getDefaultInstance() : ctx_;
+        return (java.lang.String) ref;
       }
     }
     /**
-     * <code>.jervis.common.RequestContext ctx = 1;</code>
+     * <pre>
+     * FilterScope: GLOBAL | CLIENT | PROJECT
+     * </pre>
+     *
+     * <code>string scope = 2;</code>
+     * @return The bytes for scope.
      */
-    private com.google.protobuf.SingleFieldBuilder<
-        com.jervis.contracts.common.RequestContext, com.jervis.contracts.common.RequestContext.Builder, com.jervis.contracts.common.RequestContextOrBuilder> 
-        internalGetCtxFieldBuilder() {
-      if (ctxBuilder_ == null) {
-        ctxBuilder_ = new com.google.protobuf.SingleFieldBuilder<
-            com.jervis.contracts.common.RequestContext, com.jervis.contracts.common.RequestContext.Builder, com.jervis.contracts.common.RequestContextOrBuilder>(
-                getCtx(),
-                getParentForChildren(),
-                isClean());
-        ctx_ = null;
+    public com.google.protobuf.ByteString
+        getScopeBytes() {
+      java.lang.Object ref = scope_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        scope_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
       }
-      return ctxBuilder_;
+    }
+    /**
+     * <pre>
+     * FilterScope: GLOBAL | CLIENT | PROJECT
+     * </pre>
+     *
+     * <code>string scope = 2;</code>
+     * @param value The scope to set.
+     * @return This builder for chaining.
+     */
+    public Builder setScope(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      scope_ = value;
+      bitField0_ |= 0x00000002;
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * FilterScope: GLOBAL | CLIENT | PROJECT
+     * </pre>
+     *
+     * <code>string scope = 2;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearScope() {
+      scope_ = getDefaultInstance().getScope();
+      bitField0_ = (bitField0_ & ~0x00000002);
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * FilterScope: GLOBAL | CLIENT | PROJECT
+     * </pre>
+     *
+     * <code>string scope = 2;</code>
+     * @param value The bytes for scope to set.
+     * @return This builder for chaining.
+     */
+    public Builder setScopeBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      scope_ = value;
+      bitField0_ |= 0x00000002;
+      onChanged();
+      return this;
     }
 
     private java.lang.Object sourceType_ = "";
     /**
      * <pre>
-     * FilterSourceType name
+     * FilterSourceType
      * </pre>
      *
-     * <code>string source_type = 2;</code>
+     * <code>string source_type = 3;</code>
      * @return The sourceType.
      */
     public java.lang.String getSourceType() {
@@ -1001,10 +1169,10 @@ private static final long serialVersionUID = 0L;
     }
     /**
      * <pre>
-     * FilterSourceType name
+     * FilterSourceType
      * </pre>
      *
-     * <code>string source_type = 2;</code>
+     * <code>string source_type = 3;</code>
      * @return The bytes for sourceType.
      */
     public com.google.protobuf.ByteString
@@ -1022,10 +1190,10 @@ private static final long serialVersionUID = 0L;
     }
     /**
      * <pre>
-     * FilterSourceType name
+     * FilterSourceType
      * </pre>
      *
-     * <code>string source_type = 2;</code>
+     * <code>string source_type = 3;</code>
      * @param value The sourceType to set.
      * @return This builder for chaining.
      */
@@ -1033,30 +1201,30 @@ private static final long serialVersionUID = 0L;
         java.lang.String value) {
       if (value == null) { throw new NullPointerException(); }
       sourceType_ = value;
-      bitField0_ |= 0x00000002;
+      bitField0_ |= 0x00000004;
       onChanged();
       return this;
     }
     /**
      * <pre>
-     * FilterSourceType name
+     * FilterSourceType
      * </pre>
      *
-     * <code>string source_type = 2;</code>
+     * <code>string source_type = 3;</code>
      * @return This builder for chaining.
      */
     public Builder clearSourceType() {
       sourceType_ = getDefaultInstance().getSourceType();
-      bitField0_ = (bitField0_ & ~0x00000002);
+      bitField0_ = (bitField0_ & ~0x00000004);
       onChanged();
       return this;
     }
     /**
      * <pre>
-     * FilterSourceType name
+     * FilterSourceType
      * </pre>
      *
-     * <code>string source_type = 2;</code>
+     * <code>string source_type = 3;</code>
      * @param value The bytes for sourceType to set.
      * @return This builder for chaining.
      */
@@ -1065,7 +1233,7 @@ private static final long serialVersionUID = 0L;
       if (value == null) { throw new NullPointerException(); }
       checkByteStringIsUtf8(value);
       sourceType_ = value;
-      bitField0_ |= 0x00000002;
+      bitField0_ |= 0x00000004;
       onChanged();
       return this;
     }
@@ -1073,10 +1241,10 @@ private static final long serialVersionUID = 0L;
     private java.lang.Object conditionType_ = "";
     /**
      * <pre>
-     * FilterConditionType name
+     * FilterConditionType
      * </pre>
      *
-     * <code>string condition_type = 3;</code>
+     * <code>string condition_type = 4;</code>
      * @return The conditionType.
      */
     public java.lang.String getConditionType() {
@@ -1093,10 +1261,10 @@ private static final long serialVersionUID = 0L;
     }
     /**
      * <pre>
-     * FilterConditionType name
+     * FilterConditionType
      * </pre>
      *
-     * <code>string condition_type = 3;</code>
+     * <code>string condition_type = 4;</code>
      * @return The bytes for conditionType.
      */
     public com.google.protobuf.ByteString
@@ -1114,10 +1282,10 @@ private static final long serialVersionUID = 0L;
     }
     /**
      * <pre>
-     * FilterConditionType name
+     * FilterConditionType
      * </pre>
      *
-     * <code>string condition_type = 3;</code>
+     * <code>string condition_type = 4;</code>
      * @param value The conditionType to set.
      * @return This builder for chaining.
      */
@@ -1125,30 +1293,30 @@ private static final long serialVersionUID = 0L;
         java.lang.String value) {
       if (value == null) { throw new NullPointerException(); }
       conditionType_ = value;
-      bitField0_ |= 0x00000004;
+      bitField0_ |= 0x00000008;
       onChanged();
       return this;
     }
     /**
      * <pre>
-     * FilterConditionType name
+     * FilterConditionType
      * </pre>
      *
-     * <code>string condition_type = 3;</code>
+     * <code>string condition_type = 4;</code>
      * @return This builder for chaining.
      */
     public Builder clearConditionType() {
       conditionType_ = getDefaultInstance().getConditionType();
-      bitField0_ = (bitField0_ & ~0x00000004);
+      bitField0_ = (bitField0_ & ~0x00000008);
       onChanged();
       return this;
     }
     /**
      * <pre>
-     * FilterConditionType name
+     * FilterConditionType
      * </pre>
      *
-     * <code>string condition_type = 3;</code>
+     * <code>string condition_type = 4;</code>
      * @param value The bytes for conditionType to set.
      * @return This builder for chaining.
      */
@@ -1157,14 +1325,14 @@ private static final long serialVersionUID = 0L;
       if (value == null) { throw new NullPointerException(); }
       checkByteStringIsUtf8(value);
       conditionType_ = value;
-      bitField0_ |= 0x00000004;
+      bitField0_ |= 0x00000008;
       onChanged();
       return this;
     }
 
     private java.lang.Object conditionValue_ = "";
     /**
-     * <code>string condition_value = 4;</code>
+     * <code>string condition_value = 5;</code>
      * @return The conditionValue.
      */
     public java.lang.String getConditionValue() {
@@ -1180,7 +1348,7 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
-     * <code>string condition_value = 4;</code>
+     * <code>string condition_value = 5;</code>
      * @return The bytes for conditionValue.
      */
     public com.google.protobuf.ByteString
@@ -1197,7 +1365,7 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
-     * <code>string condition_value = 4;</code>
+     * <code>string condition_value = 5;</code>
      * @param value The conditionValue to set.
      * @return This builder for chaining.
      */
@@ -1205,22 +1373,22 @@ private static final long serialVersionUID = 0L;
         java.lang.String value) {
       if (value == null) { throw new NullPointerException(); }
       conditionValue_ = value;
-      bitField0_ |= 0x00000008;
+      bitField0_ |= 0x00000010;
       onChanged();
       return this;
     }
     /**
-     * <code>string condition_value = 4;</code>
+     * <code>string condition_value = 5;</code>
      * @return This builder for chaining.
      */
     public Builder clearConditionValue() {
       conditionValue_ = getDefaultInstance().getConditionValue();
-      bitField0_ = (bitField0_ & ~0x00000008);
+      bitField0_ = (bitField0_ & ~0x00000010);
       onChanged();
       return this;
     }
     /**
-     * <code>string condition_value = 4;</code>
+     * <code>string condition_value = 5;</code>
      * @param value The bytes for conditionValue to set.
      * @return This builder for chaining.
      */
@@ -1229,7 +1397,7 @@ private static final long serialVersionUID = 0L;
       if (value == null) { throw new NullPointerException(); }
       checkByteStringIsUtf8(value);
       conditionValue_ = value;
-      bitField0_ |= 0x00000008;
+      bitField0_ |= 0x00000010;
       onChanged();
       return this;
     }
@@ -1237,10 +1405,10 @@ private static final long serialVersionUID = 0L;
     private java.lang.Object action_ = "";
     /**
      * <pre>
-     * FilterAction name (default IGNORE)
+     * FilterAction
      * </pre>
      *
-     * <code>string action = 5;</code>
+     * <code>string action = 6;</code>
      * @return The action.
      */
     public java.lang.String getAction() {
@@ -1257,10 +1425,10 @@ private static final long serialVersionUID = 0L;
     }
     /**
      * <pre>
-     * FilterAction name (default IGNORE)
+     * FilterAction
      * </pre>
      *
-     * <code>string action = 5;</code>
+     * <code>string action = 6;</code>
      * @return The bytes for action.
      */
     public com.google.protobuf.ByteString
@@ -1278,10 +1446,10 @@ private static final long serialVersionUID = 0L;
     }
     /**
      * <pre>
-     * FilterAction name (default IGNORE)
+     * FilterAction
      * </pre>
      *
-     * <code>string action = 5;</code>
+     * <code>string action = 6;</code>
      * @param value The action to set.
      * @return This builder for chaining.
      */
@@ -1289,30 +1457,30 @@ private static final long serialVersionUID = 0L;
         java.lang.String value) {
       if (value == null) { throw new NullPointerException(); }
       action_ = value;
-      bitField0_ |= 0x00000010;
+      bitField0_ |= 0x00000020;
       onChanged();
       return this;
     }
     /**
      * <pre>
-     * FilterAction name (default IGNORE)
+     * FilterAction
      * </pre>
      *
-     * <code>string action = 5;</code>
+     * <code>string action = 6;</code>
      * @return This builder for chaining.
      */
     public Builder clearAction() {
       action_ = getDefaultInstance().getAction();
-      bitField0_ = (bitField0_ & ~0x00000010);
+      bitField0_ = (bitField0_ & ~0x00000020);
       onChanged();
       return this;
     }
     /**
      * <pre>
-     * FilterAction name (default IGNORE)
+     * FilterAction
      * </pre>
      *
-     * <code>string action = 5;</code>
+     * <code>string action = 6;</code>
      * @param value The bytes for action to set.
      * @return This builder for chaining.
      */
@@ -1321,14 +1489,14 @@ private static final long serialVersionUID = 0L;
       if (value == null) { throw new NullPointerException(); }
       checkByteStringIsUtf8(value);
       action_ = value;
-      bitField0_ |= 0x00000010;
+      bitField0_ |= 0x00000020;
       onChanged();
       return this;
     }
 
     private java.lang.Object description_ = "";
     /**
-     * <code>string description = 6;</code>
+     * <code>string description = 7;</code>
      * @return The description.
      */
     public java.lang.String getDescription() {
@@ -1344,7 +1512,7 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
-     * <code>string description = 6;</code>
+     * <code>string description = 7;</code>
      * @return The bytes for description.
      */
     public com.google.protobuf.ByteString
@@ -1361,7 +1529,7 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
-     * <code>string description = 6;</code>
+     * <code>string description = 7;</code>
      * @param value The description to set.
      * @return This builder for chaining.
      */
@@ -1369,22 +1537,22 @@ private static final long serialVersionUID = 0L;
         java.lang.String value) {
       if (value == null) { throw new NullPointerException(); }
       description_ = value;
-      bitField0_ |= 0x00000020;
+      bitField0_ |= 0x00000040;
       onChanged();
       return this;
     }
     /**
-     * <code>string description = 6;</code>
+     * <code>string description = 7;</code>
      * @return This builder for chaining.
      */
     public Builder clearDescription() {
       description_ = getDefaultInstance().getDescription();
-      bitField0_ = (bitField0_ & ~0x00000020);
+      bitField0_ = (bitField0_ & ~0x00000040);
       onChanged();
       return this;
     }
     /**
-     * <code>string description = 6;</code>
+     * <code>string description = 7;</code>
      * @param value The bytes for description to set.
      * @return This builder for chaining.
      */
@@ -1393,172 +1561,244 @@ private static final long serialVersionUID = 0L;
       if (value == null) { throw new NullPointerException(); }
       checkByteStringIsUtf8(value);
       description_ = value;
-      bitField0_ |= 0x00000020;
+      bitField0_ |= 0x00000040;
       onChanged();
       return this;
     }
 
-    private java.lang.Object clientId_ = "";
+    private java.lang.Object createdAt_ = "";
     /**
-     * <code>string client_id = 7;</code>
-     * @return The clientId.
+     * <pre>
+     * RFC3339
+     * </pre>
+     *
+     * <code>string created_at = 8;</code>
+     * @return The createdAt.
      */
-    public java.lang.String getClientId() {
-      java.lang.Object ref = clientId_;
+    public java.lang.String getCreatedAt() {
+      java.lang.Object ref = createdAt_;
       if (!(ref instanceof java.lang.String)) {
         com.google.protobuf.ByteString bs =
             (com.google.protobuf.ByteString) ref;
         java.lang.String s = bs.toStringUtf8();
-        clientId_ = s;
+        createdAt_ = s;
         return s;
       } else {
         return (java.lang.String) ref;
       }
     }
     /**
-     * <code>string client_id = 7;</code>
-     * @return The bytes for clientId.
+     * <pre>
+     * RFC3339
+     * </pre>
+     *
+     * <code>string created_at = 8;</code>
+     * @return The bytes for createdAt.
      */
     public com.google.protobuf.ByteString
-        getClientIdBytes() {
-      java.lang.Object ref = clientId_;
+        getCreatedAtBytes() {
+      java.lang.Object ref = createdAt_;
       if (ref instanceof String) {
         com.google.protobuf.ByteString b = 
             com.google.protobuf.ByteString.copyFromUtf8(
                 (java.lang.String) ref);
-        clientId_ = b;
+        createdAt_ = b;
         return b;
       } else {
         return (com.google.protobuf.ByteString) ref;
       }
     }
     /**
-     * <code>string client_id = 7;</code>
-     * @param value The clientId to set.
+     * <pre>
+     * RFC3339
+     * </pre>
+     *
+     * <code>string created_at = 8;</code>
+     * @param value The createdAt to set.
      * @return This builder for chaining.
      */
-    public Builder setClientId(
+    public Builder setCreatedAt(
         java.lang.String value) {
       if (value == null) { throw new NullPointerException(); }
-      clientId_ = value;
-      bitField0_ |= 0x00000040;
-      onChanged();
-      return this;
-    }
-    /**
-     * <code>string client_id = 7;</code>
-     * @return This builder for chaining.
-     */
-    public Builder clearClientId() {
-      clientId_ = getDefaultInstance().getClientId();
-      bitField0_ = (bitField0_ & ~0x00000040);
-      onChanged();
-      return this;
-    }
-    /**
-     * <code>string client_id = 7;</code>
-     * @param value The bytes for clientId to set.
-     * @return This builder for chaining.
-     */
-    public Builder setClientIdBytes(
-        com.google.protobuf.ByteString value) {
-      if (value == null) { throw new NullPointerException(); }
-      checkByteStringIsUtf8(value);
-      clientId_ = value;
-      bitField0_ |= 0x00000040;
-      onChanged();
-      return this;
-    }
-
-    private java.lang.Object projectId_ = "";
-    /**
-     * <code>string project_id = 8;</code>
-     * @return The projectId.
-     */
-    public java.lang.String getProjectId() {
-      java.lang.Object ref = projectId_;
-      if (!(ref instanceof java.lang.String)) {
-        com.google.protobuf.ByteString bs =
-            (com.google.protobuf.ByteString) ref;
-        java.lang.String s = bs.toStringUtf8();
-        projectId_ = s;
-        return s;
-      } else {
-        return (java.lang.String) ref;
-      }
-    }
-    /**
-     * <code>string project_id = 8;</code>
-     * @return The bytes for projectId.
-     */
-    public com.google.protobuf.ByteString
-        getProjectIdBytes() {
-      java.lang.Object ref = projectId_;
-      if (ref instanceof String) {
-        com.google.protobuf.ByteString b = 
-            com.google.protobuf.ByteString.copyFromUtf8(
-                (java.lang.String) ref);
-        projectId_ = b;
-        return b;
-      } else {
-        return (com.google.protobuf.ByteString) ref;
-      }
-    }
-    /**
-     * <code>string project_id = 8;</code>
-     * @param value The projectId to set.
-     * @return This builder for chaining.
-     */
-    public Builder setProjectId(
-        java.lang.String value) {
-      if (value == null) { throw new NullPointerException(); }
-      projectId_ = value;
+      createdAt_ = value;
       bitField0_ |= 0x00000080;
       onChanged();
       return this;
     }
     /**
-     * <code>string project_id = 8;</code>
+     * <pre>
+     * RFC3339
+     * </pre>
+     *
+     * <code>string created_at = 8;</code>
      * @return This builder for chaining.
      */
-    public Builder clearProjectId() {
-      projectId_ = getDefaultInstance().getProjectId();
+    public Builder clearCreatedAt() {
+      createdAt_ = getDefaultInstance().getCreatedAt();
       bitField0_ = (bitField0_ & ~0x00000080);
       onChanged();
       return this;
     }
     /**
-     * <code>string project_id = 8;</code>
-     * @param value The bytes for projectId to set.
+     * <pre>
+     * RFC3339
+     * </pre>
+     *
+     * <code>string created_at = 8;</code>
+     * @param value The bytes for createdAt to set.
      * @return This builder for chaining.
      */
-    public Builder setProjectIdBytes(
+    public Builder setCreatedAtBytes(
         com.google.protobuf.ByteString value) {
       if (value == null) { throw new NullPointerException(); }
       checkByteStringIsUtf8(value);
-      projectId_ = value;
+      createdAt_ = value;
       bitField0_ |= 0x00000080;
       onChanged();
       return this;
     }
 
-    // @@protoc_insertion_point(builder_scope:jervis.server.CreateFilterRuleRequest)
+    private java.lang.Object createdBy_ = "";
+    /**
+     * <pre>
+     * default "user"
+     * </pre>
+     *
+     * <code>string created_by = 9;</code>
+     * @return The createdBy.
+     */
+    public java.lang.String getCreatedBy() {
+      java.lang.Object ref = createdBy_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        createdBy_ = s;
+        return s;
+      } else {
+        return (java.lang.String) ref;
+      }
+    }
+    /**
+     * <pre>
+     * default "user"
+     * </pre>
+     *
+     * <code>string created_by = 9;</code>
+     * @return The bytes for createdBy.
+     */
+    public com.google.protobuf.ByteString
+        getCreatedByBytes() {
+      java.lang.Object ref = createdBy_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        createdBy_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+    /**
+     * <pre>
+     * default "user"
+     * </pre>
+     *
+     * <code>string created_by = 9;</code>
+     * @param value The createdBy to set.
+     * @return This builder for chaining.
+     */
+    public Builder setCreatedBy(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      createdBy_ = value;
+      bitField0_ |= 0x00000100;
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * default "user"
+     * </pre>
+     *
+     * <code>string created_by = 9;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearCreatedBy() {
+      createdBy_ = getDefaultInstance().getCreatedBy();
+      bitField0_ = (bitField0_ & ~0x00000100);
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * default "user"
+     * </pre>
+     *
+     * <code>string created_by = 9;</code>
+     * @param value The bytes for createdBy to set.
+     * @return This builder for chaining.
+     */
+    public Builder setCreatedByBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      createdBy_ = value;
+      bitField0_ |= 0x00000100;
+      onChanged();
+      return this;
+    }
+
+    private boolean enabled_ ;
+    /**
+     * <code>bool enabled = 10;</code>
+     * @return The enabled.
+     */
+    @java.lang.Override
+    public boolean getEnabled() {
+      return enabled_;
+    }
+    /**
+     * <code>bool enabled = 10;</code>
+     * @param value The enabled to set.
+     * @return This builder for chaining.
+     */
+    public Builder setEnabled(boolean value) {
+
+      enabled_ = value;
+      bitField0_ |= 0x00000200;
+      onChanged();
+      return this;
+    }
+    /**
+     * <code>bool enabled = 10;</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearEnabled() {
+      bitField0_ = (bitField0_ & ~0x00000200);
+      enabled_ = false;
+      onChanged();
+      return this;
+    }
+
+    // @@protoc_insertion_point(builder_scope:jervis.server.FilterRule)
   }
 
-  // @@protoc_insertion_point(class_scope:jervis.server.CreateFilterRuleRequest)
-  private static final com.jervis.contracts.server.CreateFilterRuleRequest DEFAULT_INSTANCE;
+  // @@protoc_insertion_point(class_scope:jervis.server.FilterRule)
+  private static final com.jervis.contracts.server.FilterRule DEFAULT_INSTANCE;
   static {
-    DEFAULT_INSTANCE = new com.jervis.contracts.server.CreateFilterRuleRequest();
+    DEFAULT_INSTANCE = new com.jervis.contracts.server.FilterRule();
   }
 
-  public static com.jervis.contracts.server.CreateFilterRuleRequest getDefaultInstance() {
+  public static com.jervis.contracts.server.FilterRule getDefaultInstance() {
     return DEFAULT_INSTANCE;
   }
 
-  private static final com.google.protobuf.Parser<CreateFilterRuleRequest>
-      PARSER = new com.google.protobuf.AbstractParser<CreateFilterRuleRequest>() {
+  private static final com.google.protobuf.Parser<FilterRule>
+      PARSER = new com.google.protobuf.AbstractParser<FilterRule>() {
     @java.lang.Override
-    public CreateFilterRuleRequest parsePartialFrom(
+    public FilterRule parsePartialFrom(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws com.google.protobuf.InvalidProtocolBufferException {
@@ -1577,17 +1817,17 @@ private static final long serialVersionUID = 0L;
     }
   };
 
-  public static com.google.protobuf.Parser<CreateFilterRuleRequest> parser() {
+  public static com.google.protobuf.Parser<FilterRule> parser() {
     return PARSER;
   }
 
   @java.lang.Override
-  public com.google.protobuf.Parser<CreateFilterRuleRequest> getParserForType() {
+  public com.google.protobuf.Parser<FilterRule> getParserForType() {
     return PARSER;
   }
 
   @java.lang.Override
-  public com.jervis.contracts.server.CreateFilterRuleRequest getDefaultInstanceForType() {
+  public com.jervis.contracts.server.FilterRule getDefaultInstanceForType() {
     return DEFAULT_INSTANCE;
   }
 

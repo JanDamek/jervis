@@ -9,14 +9,11 @@ option java_multiple_files = true;
 option java_outer_classname = "ServerFilterRulesProto";
 
 // ServerFilterRulesService exposes the filtering-rules CRUD surface used
-// by the orchestrator agent's tool set. Rule documents carry the same
-// shape as `shared/common-dto` FilteringRule — we keep the body as JSON
-// for the same reason as ServerGuidelinesService (nested rule tree lives
-// under kotlinx.serialization SSOT; typing it twice adds no value for
-// consumers that pass it through).
+// by the orchestrator agent's tool set. Rule documents mirror the
+// kotlinx-serialized `shared/common-dto` FilteringRule typed 1:1.
 service ServerFilterRulesService {
-  rpc Create(CreateFilterRuleRequest) returns (FilterRulePayload);
-  rpc List(ListFilterRulesRequest) returns (FilterRuleListPayload);
+  rpc Create(CreateFilterRuleRequest) returns (FilterRule);
+  rpc List(ListFilterRulesRequest) returns (FilterRuleList);
   rpc Remove(RemoveFilterRuleRequest) returns (RemoveFilterRuleResponse);
 }
 
@@ -42,12 +39,23 @@ message RemoveFilterRuleRequest {
   string rule_id = 2;
 }
 
-message FilterRulePayload {
-  string body_json = 1;          // kotlinx-serialized FilteringRule
+// FilterRule mirrors com.jervis.dto.filtering.FilteringRule. Enum values
+// ride as strings to match the kotlinx-serialized enum names.
+message FilterRule {
+  string id = 1;
+  string scope = 2;                  // FilterScope: GLOBAL | CLIENT | PROJECT
+  string source_type = 3;            // FilterSourceType
+  string condition_type = 4;         // FilterConditionType
+  string condition_value = 5;
+  string action = 6;                 // FilterAction
+  string description = 7;
+  string created_at = 8;             // RFC3339
+  string created_by = 9;             // default "user"
+  bool enabled = 10;
 }
 
-message FilterRuleListPayload {
-  string body_json = 1;          // kotlinx-serialized List<FilteringRule>
+message FilterRuleList {
+  repeated FilterRule rules = 1;
 }
 
 message RemoveFilterRuleResponse {
