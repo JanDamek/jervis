@@ -152,24 +152,21 @@ async def _search_similar_chunks(
     project_id: str | None,
 ) -> list[dict]:
     """Search KB for semantically similar chunks."""
-    url = f"{settings.knowledgebase_url}/api/v1/retrieve"
+    from jervis_contracts import kb_client
+
     query = f"{subject} {content[:200]}"
-    payload = {
-        "query": query,
-        "clientId": client_id,
-        "projectId": project_id,
-        "maxResults": 5,
-        "minConfidence": 0.6,
-    }
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.post(url, json=payload)
-            if resp.status_code == 200:
-                data = resp.json()
-                return data.get("items", [])
+        return await kb_client.retrieve(
+            caller="orchestrator.guard.contradiction_detector",
+            query=query,
+            client_id=client_id,
+            project_id=project_id or "",
+            max_results=5,
+            min_confidence=0.6,
+            timeout=5.0,
+        )
     except Exception:
-        pass
-    return []
+        return []
 
 
 def _detect_contradiction(new_content: str, existing_content: str) -> str | None:

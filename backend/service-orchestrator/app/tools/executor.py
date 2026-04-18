@@ -1071,27 +1071,22 @@ async def _kb_rag_search(
     project_id: str | None, group_id: str | None, headers: dict,
     kinds: list[str] | None = None,
 ) -> list[dict]:
-    """Flat RAG search via POST /api/v1/retrieve."""
-    url = f"{settings.knowledgebase_url}/api/v1/retrieve"
-    payload = {
-        "query": query,
-        "clientId": client_id,
-        "projectId": project_id,
-        "maxResults": max_results,
-        "minConfidence": 0.3,
-        "expandGraph": True,
-    }
-    if group_id:
-        payload["groupId"] = group_id
-    if kinds:
-        payload["kinds"] = kinds
+    """Flat RAG search via KnowledgeRetrieveService.Retrieve (gRPC)."""
+    from jervis_contracts import kb_client
 
     try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT_KB_SEARCH) as client:
-            resp = await client.post(url, json=payload, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
-        items = data.get("items", [])
+        items = await kb_client.retrieve(
+            caller="orchestrator.tools.kb_search",
+            query=query,
+            client_id=client_id,
+            project_id=project_id or "",
+            group_id=group_id or "",
+            max_results=max_results,
+            min_confidence=0.3,
+            expand_graph=True,
+            kinds=kinds or [],
+            timeout=_TIMEOUT_KB_SEARCH,
+        )
         for item in items:
             item["origin"] = "rag"
         return items
@@ -1984,29 +1979,24 @@ async def _execute_code_search(
     if not query.strip():
         return "Error: Empty code search query."
 
-    url = f"{settings.knowledgebase_url}/api/v1/retrieve"
-    payload = {
-        "query": query,
-        "clientId": client_id,
-        "projectId": project_id,
-        "maxResults": max_results * 2,  # Get more, then filter
-        "minConfidence": 0.5,
-        "expandGraph": False,  # Code search doesn't need graph expansion
-    }
+    from jervis_contracts import kb_client
+    import grpc
 
     try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT_KB_SEARCH) as client:
-            resp = await client.post(url, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-    except httpx.TimeoutException:
-        return f"Error: Code search timed out after {_TIMEOUT_KB_SEARCH}s for query: {query}"
-    except httpx.HTTPStatusError as e:
-        return f"Error: Knowledge Base returned HTTP {e.response.status_code} for query: {query}"
+        items = await kb_client.retrieve(
+            caller="orchestrator.tools.code_search",
+            query=query,
+            client_id=client_id,
+            project_id=project_id or "",
+            max_results=max_results * 2,  # Get more, then filter
+            min_confidence=0.5,
+            expand_graph=False,  # Code search doesn't need graph expansion
+            timeout=_TIMEOUT_KB_SEARCH,
+        )
+    except grpc.aio.AioRpcError as e:
+        return f"Error: Knowledge Base returned {e.code().name} for query: {query}"
     except Exception as e:
         return f"Error: Code search failed: {str(e)[:200]}"
-
-    items = data.get("items", [])
 
     # Filter by language if specified
     if language:
@@ -2750,23 +2740,20 @@ async def _execute_memory_recall(
             else:
                 # KB search fallback
                 try:
-                    async with httpx.AsyncClient(timeout=10.0) as client:
-                        resp = await client.post(
-                            f"{settings.knowledgebase_url}/api/v1/retrieve",
-                            json={
-                                "query": query,
-                                "clientId": client_id,
-                                "maxResults": 3,
-                            },
-                            headers=foreground_headers(processing_mode),
-                        )
-                        if resp.status_code == 200:
-                            kb_items = resp.json().get("items", [])
-                            lqm.cache_search(query, kb_items, client_id=client_id, project_id=pid)
-                            for item in kb_items[:3]:
-                                content = item.get("content", "")
-                                source = item.get("sourceUrn", "?")
-                                results.append(f"[KB] {source}\n{content}")
+                    from jervis_contracts import kb_client
+
+                    kb_items = await kb_client.retrieve(
+                        caller="orchestrator.tools.memory_recall",
+                        query=query,
+                        client_id=client_id,
+                        max_results=3,
+                        timeout=10.0,
+                    )
+                    lqm.cache_search(query, kb_items, client_id=client_id, project_id=pid)
+                    for item in kb_items[:3]:
+                        content = item.get("content", "")
+                        source = item.get("sourceUrn", "?")
+                        results.append(f"[KB] {source}\n{content}")
                 except Exception as kb_err:
                     logger.debug("KB search in memory_recall failed: %s", kb_err)
 

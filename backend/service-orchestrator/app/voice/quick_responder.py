@@ -35,35 +35,29 @@ Question: {query}"""
 
 async def kb_search(query: str, client_id: str | None, project_id: str | None, group_id: str | None) -> str:
     """Search KB for relevant context. Returns concatenated results."""
-    url = f"{settings.knowledgebase_url.rstrip('/')}/api/v1/retrieve"
+    from jervis_contracts import kb_client
+
     try:
-        payload = {
-            "query": query,
-            "top_k": 5,
-        }
-        if client_id:
-            payload["client_id"] = client_id
-        if project_id:
-            payload["project_id"] = project_id
-
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.post(url, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-
-        results = data.get("items", data.get("evidence", []))
+        results = await kb_client.retrieve(
+            caller="orchestrator.voice.quick_responder",
+            query=query,
+            client_id=client_id or "",
+            project_id=project_id or "",
+            group_id=group_id or "",
+            max_results=5,
+            timeout=5.0,
+        )
         if not results:
             return "(no relevant results found)"
 
         context_parts = []
         for r in results[:5]:
-            content = r.get("content", "")[:500]
-            source = r.get("sourceUrn", r.get("source_urn", r.get("source", "")))
+            content = (r.get("content", "") or "")[:500]
+            source = r.get("sourceUrn", "")
             score = r.get("score", 0)
             context_parts.append(f"[{score:.0%}] {source}: {content}")
 
         return "\n---\n".join(context_parts)
-
     except Exception as e:
         logger.warning("KB search failed: %s", e)
         return "(KB search unavailable)"

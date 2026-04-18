@@ -917,18 +917,18 @@ async def search_memory(query: str, client_id: str):
 
     # Tier 3: KB (only if Tier 1+2 insufficient)
     if len(results["tier1_ram"]) + len(results["tier2_archive"]) < 3:
-        kb_url = settings.knowledgebase_url
-        if kb_url:
-            try:
-                async with httpx.AsyncClient(timeout=10) as http:
-                    resp = await http.post(
-                        f"{kb_url}/api/v1/retrieve",
-                        json={"query": query, "clientId": client_id, "maxResults": 5},
-                    )
-                    if resp.status_code == 200:
-                        results["tier3_kb"] = resp.json().get("chunks", [])
-            except Exception:
-                pass
+        try:
+            from jervis_contracts import kb_client
+
+            results["tier3_kb"] = await kb_client.retrieve(
+                caller="orchestrator.main.kb_search",
+                query=query,
+                client_id=client_id,
+                max_results=5,
+                timeout=10.0,
+            )
+        except Exception:
+            pass
 
     return results
 
@@ -1099,20 +1099,16 @@ async def _run_kb_dedup(client_id: str) -> list[str]:
 
     findings: list[str] = []
     try:
+        from jervis_contracts import kb_client
+
         # Search for potential duplicates — look for common topics
-        async with httpx.AsyncClient(timeout=30) as http:
-            resp = await http.post(
-                f"{kb_url}/api/v1/retrieve",
-                json={
-                    "query": "duplicate similar redundant",
-                    "clientId": client_id,
-                    "maxResults": 20,
-                },
-                headers={"X-Ollama-Priority": "1"},
-            )
-            if resp.status_code != 200:
-                return []
-            chunks = resp.json().get("chunks", [])
+        chunks = await kb_client.retrieve(
+            caller="orchestrator.main.dedup_search",
+            query="duplicate similar redundant",
+            client_id=client_id,
+            max_results=20,
+            timeout=30.0,
+        )
 
         if len(chunks) < 2:
             return []
@@ -1120,8 +1116,8 @@ async def _run_kb_dedup(client_id: str) -> list[str]:
         # Group by source URN prefix to find near-duplicates
         seen_content: dict[str, str] = {}  # content_hash → source_urn
         for chunk in chunks:
-            content = chunk.get("content", "")[:200]
-            urn = chunk.get("source_urn", "")
+            content = (chunk.get("content", "") or "")[:200]
+            urn = chunk.get("sourceUrn", "")
             # Simple dedup: if two entries have very similar short content
             for existing_content, existing_urn in seen_content.items():
                 if _similarity(content, existing_content) > 0.85:

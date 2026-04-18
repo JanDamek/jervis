@@ -26,6 +26,7 @@ from jervis.knowledgebase import graph_pb2_grpc
 from jervis.knowledgebase import ingest_pb2_grpc
 from jervis.knowledgebase import maintenance_pb2_grpc
 from jervis.knowledgebase import queue_pb2_grpc
+from jervis.knowledgebase import retrieve_pb2_grpc
 
 logger = logging.getLogger("jervis_contracts.kb_client")
 
@@ -35,6 +36,7 @@ _ingest_stub: Optional[ingest_pb2_grpc.KnowledgeIngestServiceStub] = None
 _maintenance_stub: Optional[maintenance_pb2_grpc.KnowledgeMaintenanceServiceStub] = None
 _queue_stub: Optional[queue_pb2_grpc.KnowledgeQueueServiceStub] = None
 _graph_stub: Optional[graph_pb2_grpc.KnowledgeGraphServiceStub] = None
+_retrieve_stub: Optional[retrieve_pb2_grpc.KnowledgeRetrieveServiceStub] = None
 
 
 def _kb_host() -> str:
@@ -99,6 +101,13 @@ def graph_stub() -> graph_pb2_grpc.KnowledgeGraphServiceStub:
     return _graph_stub
 
 
+def retrieve_stub() -> retrieve_pb2_grpc.KnowledgeRetrieveServiceStub:
+    global _retrieve_stub
+    if _retrieve_stub is None:
+        _retrieve_stub = retrieve_pb2_grpc.KnowledgeRetrieveServiceStub(get_channel())
+    return _retrieve_stub
+
+
 def build_request_context(caller: str, client_id: str = "") -> types_pb2.RequestContext:
     """Minimal RequestContext for pod → KB calls.
 
@@ -115,9 +124,59 @@ def build_request_context(caller: str, client_id: str = "") -> types_pb2.Request
     return ctx
 
 
+async def retrieve(
+    *,
+    caller: str,
+    query: str,
+    client_id: str = "",
+    project_id: str = "",
+    group_id: str = "",
+    max_results: int = 5,
+    min_confidence: float = 0.0,
+    expand_graph: bool = True,
+    kinds: Optional[list[str]] = None,
+    timeout: float = 30.0,
+    simple: bool = False,
+) -> list[dict]:
+    """Dial KnowledgeRetrieveService.{Retrieve,RetrieveSimple} and return
+    items as plain dicts matching the legacy REST JSON shape.
+
+    Every call site used to handcraft a RetrievalRequest + httpx call +
+    project `items` out of the response dict; this helper captures that
+    boilerplate so the migration stays mechanical.
+    """
+    from jervis.knowledgebase import retrieve_pb2
+
+    stub = retrieve_stub()
+    req = retrieve_pb2.RetrievalRequest(
+        ctx=build_request_context(caller=caller, client_id=client_id),
+        query=query,
+        client_id=client_id,
+        project_id=project_id,
+        group_id=group_id,
+        max_results=max_results,
+        min_confidence=min_confidence,
+        expand_graph=expand_graph,
+        kinds=list(kinds or []),
+    )
+    method = stub.RetrieveSimple if simple else stub.Retrieve
+    pack = await method(req, timeout=timeout)
+    return [
+        {
+            "content": it.content,
+            "score": it.score,
+            "sourceUrn": it.source_urn,
+            "credibility": it.credibility,
+            "branchScope": it.branch_scope,
+            "metadata": dict(it.metadata),
+        }
+        for it in pack.items
+    ]
+
+
 async def close() -> None:
     """Shut down the cached channel. Safe to call multiple times."""
-    global _channel, _ingest_stub, _maintenance_stub, _queue_stub, _graph_stub
+    global _channel, _ingest_stub, _maintenance_stub, _queue_stub, _graph_stub, _retrieve_stub
     if _channel is not None:
         try:
             await _channel.close()
@@ -128,3 +187,4 @@ async def close() -> None:
         _maintenance_stub = None
         _queue_stub = None
         _graph_stub = None
+        _retrieve_stub = None

@@ -171,24 +171,21 @@ class ConversationContextAgent:
 
     async def _search_kb(self, query: str) -> None:
         """Search KB for relevant context. ALWAYS runs."""
-        url = f"{settings.knowledgebase_url.rstrip('/')}/api/v1/retrieve"
+        from jervis_contracts import kb_client
+
         try:
-            payload = {"query": query, "top_k": 5}
-            if self.client_id:
-                payload["client_id"] = self.client_id
-            if self.project_id:
-                payload["project_id"] = self.project_id
-
-            async with httpx.AsyncClient(timeout=8.0) as client:
-                resp = await client.post(url, json=payload)
-                resp.raise_for_status()
-                data = resp.json()
-
-            items = data.get("items", [])
+            items = await kb_client.retrieve(
+                caller="orchestrator.voice.conversation_agent",
+                query=query,
+                client_id=self.client_id or "",
+                project_id=self.project_id or "",
+                max_results=5,
+                timeout=8.0,
+            )
             if items:
                 parts = []
                 for item in items[:5]:
-                    content = item.get("content", "")[:500]
+                    content = (item.get("content", "") or "")[:500]
                     source = item.get("sourceUrn", "")
                     score = item.get("score", 0)
                     if score > 0.03:
@@ -198,7 +195,6 @@ class ConversationContextAgent:
             else:
                 self.kb_context = ""
                 logger.info("CONV_AGENT: KB returned 0 items for: %s", query[:60])
-
         except Exception as e:
             logger.warning("CONV_AGENT: KB search failed: %s", e)
             self.kb_context = ""

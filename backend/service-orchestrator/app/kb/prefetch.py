@@ -52,122 +52,115 @@ async def prefetch_kb_context(
     Returns:
         Markdown string with KB context, or empty string if nothing found.
     """
-    kb_url = f"{settings.knowledgebase_url}/api/v1"
+    from jervis_contracts import kb_client
+
     sections: list[str] = []
 
-    # Dynamic priority: FOREGROUND → CRITICAL (0), BACKGROUND → no header (NORMAL)
-    headers = foreground_headers(processing_mode)
-
-    # KB operations can take long due to embeddings and graph traversal
-    async with httpx.AsyncClient(timeout=120.0, headers=headers) as http:
-        # 1. Relevant knowledge for the task
-        # Use search_queries if provided, otherwise fall back to task_description
-        task_results: list[dict] = []
-        queries_to_try = search_queries if search_queries else [task_description]
-        
-        for query in queries_to_try:
-            resp = await http.post(
-                f"{kb_url}/retrieve",
-                json={
-                    "query": query,
-                    "clientId": client_id,
-                    "projectId": project_id,
-                    "maxResults": 5,
-                    "minConfidence": 0.7,
-                    "expandGraph": True,
-                },
+    # 1. Relevant knowledge for the task
+    task_results: list[dict] = []
+    queries_to_try = search_queries if search_queries else [task_description]
+    for query in queries_to_try:
+        try:
+            results = await kb_client.retrieve(
+                caller="orchestrator.kb.prefetch",
+                query=query,
+                client_id=client_id,
+                project_id=project_id or "",
+                max_results=5,
+                min_confidence=0.7,
+                expand_graph=True,
+                timeout=120.0,
             )
-            resp.raise_for_status()
-            results = resp.json().get("items", [])
-            if results:
-                task_results.extend(results)
-                # Log which query succeeded
-                logger.info("KB task query succeeded: '%s' (%d results)", query, len(results))
-                # If we have multiple queries, we could break after first success
-                # but let's continue to gather more context from other queries
-            else:
-                logger.debug("KB task query returned no results: '%s'", query)
-        
-        if task_results:
-            # Deduplicate by sourceUrn
-            seen = set()
-            unique_results = []
-            for item in task_results:
-                urn = item.get("sourceUrn")
-                if urn and urn not in seen:
-                    seen.add(urn)
-                    unique_results.append(item)
-            
-            sections.append("## Relevant Knowledge")
-            for item in unique_results[:5]:  # Limit to top 5 unique
-                source = item.get("sourceUrn", "?")
-                content = item.get("content", "")[:300]
-                sections.append(f"- **{source}**: {content}")
+        except Exception as _e:
+            logger.debug("KB task query error '%s': %s", query, _e)
+            continue
+        if results:
+            task_results.extend(results)
+            logger.info("KB task query succeeded: '%s' (%d results)", query, len(results))
+        else:
+            logger.debug("KB task query returned no results: '%s'", query)
 
-        # 2. Coding conventions for the client
-        # Try multiple queries if search_queries provided, otherwise use default
-        convention_queries = search_queries if search_queries else ["coding conventions style guide rules"]
-        for query in convention_queries:
-            resp = await http.post(
-                f"{kb_url}/retrieve/simple",
-                json={
-                    "query": query,
-                    "clientId": client_id,
-                    "projectId": "",  # Client-level only
-                    "maxResults": 3,
-                },
+    if task_results:
+        seen = set()
+        unique_results = []
+        for item in task_results:
+            urn = item.get("sourceUrn")
+            if urn and urn not in seen:
+                seen.add(urn)
+                unique_results.append(item)
+
+        sections.append("## Relevant Knowledge")
+        for item in unique_results[:5]:
+            source = item.get("sourceUrn", "?")
+            content = (item.get("content", "") or "")[:300]
+            sections.append(f"- **{source}**: {content}")
+
+    # 2. Coding conventions for the client
+    convention_queries = search_queries if search_queries else ["coding conventions style guide rules"]
+    for query in convention_queries:
+        try:
+            conventions = await kb_client.retrieve(
+                caller="orchestrator.kb.prefetch",
+                query=query,
+                client_id=client_id,
+                project_id="",  # Client-level only
+                max_results=3,
+                simple=True,
+                timeout=120.0,
             )
-            resp.raise_for_status()
-            conventions = resp.json().get("items", [])
-            if conventions:
-                if not sections or "Coding Conventions" not in "\n".join(sections):
-                    sections.append("\n## Coding Conventions")
-                for item in conventions:
-                    sections.append(f"- {item.get('content', '')[:200]}")
-                break  # Found some, stop trying other queries
+        except Exception:
+            conventions = []
+        if conventions:
+            if not sections or "Coding Conventions" not in "\n".join(sections):
+                sections.append("\n## Coding Conventions")
+            for item in conventions:
+                sections.append(f"- {(item.get('content', '') or '')[:200]}")
+            break
 
-        # 3. Architecture decisions for the project
-        if project_id:
-            arch_queries = search_queries if search_queries else ["architecture decisions design patterns"]
-            for query in arch_queries:
-                resp = await http.post(
-                    f"{kb_url}/retrieve/simple",
-                    json={
-                        "query": query,
-                        "clientId": client_id,
-                        "projectId": project_id,
-                        "maxResults": 3,
-                    },
+    # 3. Architecture decisions for the project
+    if project_id:
+        arch_queries = search_queries if search_queries else ["architecture decisions design patterns"]
+        for query in arch_queries:
+            try:
+                arch = await kb_client.retrieve(
+                    caller="orchestrator.kb.prefetch",
+                    query=query,
+                    client_id=client_id,
+                    project_id=project_id,
+                    max_results=3,
+                    simple=True,
+                    timeout=120.0,
                 )
-                resp.raise_for_status()
-                arch = resp.json().get("items", [])
-                if arch:
-                    if "\n## Architecture Decisions" not in sections:
-                        sections.append("\n## Architecture Decisions")
-                    for item in arch:
-                        sections.append(f"- {item.get('content', '')[:200]}")
-                    break  # Found some, stop trying other queries
+            except Exception:
+                arch = []
+            if arch:
+                if "\n## Architecture Decisions" not in sections:
+                    sections.append("\n## Architecture Decisions")
+                for item in arch:
+                    sections.append(f"- {(item.get('content', '') or '')[:200]}")
+                break
 
-        # 4. File-specific knowledge
-        if files:
-            for file_path in files[:3]:  # Max 3 files
-                resp = await http.post(
-                    f"{kb_url}/retrieve/simple",
-                    json={
-                        "query": f"file {file_path} implementation notes",
-                        "clientId": client_id,
-                        "projectId": project_id,
-                        "maxResults": 2,
-                    },
+    # 4. File-specific knowledge
+    if files:
+        for file_path in files[:3]:
+            try:
+                file_results = await kb_client.retrieve(
+                    caller="orchestrator.kb.prefetch",
+                    query=f"file {file_path} implementation notes",
+                    client_id=client_id,
+                    project_id=project_id or "",
+                    max_results=2,
+                    simple=True,
+                    timeout=120.0,
                 )
-                resp.raise_for_status()
-                file_results = resp.json().get("items", [])
-                if file_results:
-                    sections.append(f"\n## Notes for `{file_path}`")
-                    for item in file_results:
-                        sections.append(
-                            f"- {item.get('content', '')[:200]}"
-                        )
+            except Exception:
+                file_results = []
+            if file_results:
+                sections.append(f"\n## Notes for `{file_path}`")
+                for item in file_results:
+                    sections.append(
+                        f"- {(item.get('content', '') or '')[:200]}"
+                    )
 
     context = "\n".join(sections) if sections else ""
     if context:
@@ -302,72 +295,75 @@ async def fetch_project_context(
                         line += f" — {desc[:100]}"
                     sections.append(line)
 
+        from jervis_contracts import kb_client
+
         # 3. Architecture & modules (semantic search)
         if project_id:
             arch_queries = search_queries if search_queries else ["project structure modules architecture dependencies technology stack"]
             for query in arch_queries:
-                resp = await http.post(
-                    f"{kb_url}/retrieve",
-                    json={
-                        "query": query,
-                        "clientId": client_id,
-                        "projectId": project_id,
-                        "maxResults": 5,
-                        "expandGraph": True,
-                    },
-                )
-                resp.raise_for_status()
-                results = resp.json().get("items", [])
+                try:
+                    results = await kb_client.retrieve(
+                        caller="orchestrator.kb.prefetch.project",
+                        query=query,
+                        client_id=client_id,
+                        project_id=project_id,
+                        max_results=5,
+                        expand_graph=True,
+                        timeout=120.0,
+                    )
+                except Exception:
+                    results = []
                 if results:
                     if "\n## Architecture & Modules" not in sections:
                         sections.append("\n## Architecture & Modules")
                     for item in results:
                         source = item.get("sourceUrn", "")
-                        content = item.get("content", "")[:300]
+                        content = (item.get("content", "") or "")[:300]
                         sections.append(f"- **{source}**: {content}")
-                    break  # Found some, stop trying other queries
+                    break
 
         # 4. Coding conventions (client-level)
-        resp = await http.post(
-            f"{kb_url}/retrieve/simple",
-            json={
-                "query": "coding conventions technology stack frameworks patterns",
-                "clientId": client_id,
-                "projectId": "",  # Client-level only
-                "maxResults": 3,
-            },
-        )
-        resp.raise_for_status()
-        conventions = resp.json().get("items", [])
+        try:
+            conventions = await kb_client.retrieve(
+                caller="orchestrator.kb.prefetch.project",
+                query="coding conventions technology stack frameworks patterns",
+                client_id=client_id,
+                project_id="",
+                max_results=3,
+                simple=True,
+                timeout=120.0,
+            )
+        except Exception:
+            conventions = []
         if conventions:
             sections.append("\n## Coding Conventions")
             for item in conventions:
-                sections.append(f"- {item.get('content', '')[:200]}")
+                sections.append(f"- {(item.get('content', '') or '')[:200]}")
 
         # 5. Task-relevant context
         task_queries = search_queries if search_queries else [task_description]
         for query in task_queries:
-            resp = await http.post(
-                f"{kb_url}/retrieve",
-                json={
-                    "query": query,
-                    "clientId": client_id,
-                    "projectId": project_id,
-                    "maxResults": 5,
-                    "minConfidence": 0.6,
-                    "expandGraph": True,
-                },
-            )
-            resp.raise_for_status()
-            results = resp.json().get("items", [])
+            try:
+                results = await kb_client.retrieve(
+                    caller="orchestrator.kb.prefetch.project",
+                    query=query,
+                    client_id=client_id,
+                    project_id=project_id or "",
+                    max_results=5,
+                    min_confidence=0.6,
+                    expand_graph=True,
+                    timeout=120.0,
+                )
+            except Exception:
+                results = []
             if results:
                 if "\n## Relevant Context for Task" not in sections:
                     sections.append("\n## Relevant Context for Task")
                 for item in results:
                     source = item.get("sourceUrn", "")
-                    content = item.get("content", "")[:300]
+                    content = (item.get("content", "") or "")[:300]
                     sections.append(f"- **{source}**: {content}")
-                break  # Found some, stop trying other queries
+                break
 
     context = "\n".join(sections) if sections else ""
     if context:

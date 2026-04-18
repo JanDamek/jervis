@@ -179,105 +179,74 @@ async def _prefetch_rag_context(
 
     Runs in parallel with Thought Map prefetch. Results injected into system prompt
     so the model ALWAYS sees relevant KB data without needing to call kb_search tool.
+
+    minConfidence lowered from 0.5 → 0.35: the old threshold silently dropped vague /
+    conversational queries ("co doučování?") where cosine similarity to any single
+    record is below 0.5, leaving the LLM with only Thought Map context →
+    hallucinated answers. 0.35 keeps moderate-confidence RAG hits in the running
+    while still excluding true noise.
     """
-    import httpx
-    from app.config import settings
+    from jervis_contracts import kb_client
 
-    kb_url = settings.knowledgebase_url
-    # Base payload — minConfidence lowered from 0.5 → 0.35. The old threshold
-    # silently dropped vague/conversational queries ("co doučování?") where
-    # cosine similarity to any single record is below 0.5, leaving the LLM
-    # with only Thought Map context → hallucinated answers. 0.35 keeps
-    # moderate-confidence RAG hits in the running while still excluding
-    # true noise.
-    payload = {
-        "query": query,
-        "clientId": client_id,
-        "projectId": project_id or "",
-        "groupId": group_id or "",
-        "maxResults": 8,
-        "minConfidence": 0.35,
-        "expandGraph": False,  # Pure RAG, no graph expansion (faster)
-    }
-
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=3.0)) as client:
-            resp = await client.post(
-                f"{kb_url}/api/v1/retrieve",
-                json=payload,
-                headers={"X-Ollama-Priority": "0"},
+    async def _fetch(cid: str, pid: str, gid: str) -> list[dict]:
+        try:
+            return await kb_client.retrieve(
+                caller="orchestrator.chat.handler_context",
+                query=query,
+                client_id=cid,
+                project_id=pid,
+                group_id=gid,
+                max_results=8,
+                min_confidence=0.35,
+                expand_graph=False,  # Pure RAG
+                timeout=10.0,
             )
-            resp.raise_for_status()
-            data = resp.json()
+        except Exception as _e:
+            logger.debug("RAG_PREFETCH: fetch error (cid=%s pid=%s): %s", cid, pid, _e)
+            return []
 
-            results = data.get("results", [])
+    results: list[dict] = await _fetch(client_id, project_id or "", group_id or "")
 
-            # Fallback 1: if project-scoped search returned 0 or low-confidence results,
-            # retry with client-only scope (same pattern as kb_search tool)
-            top_score = max((r.get("score", 0) for r in results), default=0)
-            if (not results or top_score < 0.5) and project_id and client_id:
-                logger.info("RAG_PREFETCH: project-scoped returned %d results (top=%.2f), trying client-scope fallback...",
-                            len(results), top_score)
-                fallback_payload = {**payload, "projectId": "", "groupId": ""}
-                resp2 = await client.post(
-                    f"{kb_url}/api/v1/retrieve",
-                    json=fallback_payload,
-                    headers={"X-Ollama-Priority": "0"},
-                )
-                resp2.raise_for_status()
-                fallback_results = resp2.json().get("results", [])
-                if fallback_results:
-                    # Merge: keep original results + add unique fallback results
-                    seen = {r.get("sourceUrn", "") for r in results}
-                    for fr in fallback_results:
-                        src = fr.get("sourceUrn", "")
-                        if src and src not in seen:
-                            results.append(fr)
-                            seen.add(src)
-                    results.sort(key=lambda x: x.get("score", 0), reverse=True)
-                    results = results[:8]
-                    logger.info("RAG_PREFETCH: client-scope fallback added %d results, total=%d",
-                                len(fallback_results), len(results))
+    # Fallback 1: project-scoped miss → retry with client-only scope.
+    top_score = max((r.get("score", 0) for r in results), default=0)
+    if (not results or top_score < 0.5) and project_id and client_id:
+        logger.info("RAG_PREFETCH: project-scoped returned %d results (top=%.2f), trying client-scope fallback...",
+                    len(results), top_score)
+        fallback_results = await _fetch(client_id, "", "")
+        if fallback_results:
+            seen = {r.get("sourceUrn", "") for r in results}
+            for fr in fallback_results:
+                src = fr.get("sourceUrn", "")
+                if src and src not in seen:
+                    results.append(fr)
+                    seen.add(src)
+            results.sort(key=lambda x: x.get("score", 0), reverse=True)
+            results = results[:8]
+            logger.info("RAG_PREFETCH: client-scope fallback added %d results, total=%d",
+                        len(fallback_results), len(results))
 
-            # Fallback 2 (NEW): cross-client global scope. Personal data (like
-            # "doučování") may be stored under a different client than the one
-            # the user is currently chatting from. Without this, a single-client
-            # scope miss leaves only Thought Map context — which is where the
-            # hallucinated "thought-anchor:xxx" citations were coming from.
-            # Only triggers if both above attempts returned low scores.
-            top_score = max((r.get("score", 0) for r in results), default=0)
-            if (not results or top_score < 0.45) and client_id:
-                logger.info("RAG_PREFETCH: client-scope returned top=%.2f, trying cross-client fallback...",
-                            top_score)
-                global_payload = {**payload, "clientId": "", "projectId": "", "groupId": ""}
-                try:
-                    resp3 = await client.post(
-                        f"{kb_url}/api/v1/retrieve",
-                        json=global_payload,
-                        headers={"X-Ollama-Priority": "0"},
-                    )
-                    resp3.raise_for_status()
-                    global_results = resp3.json().get("results", [])
-                except Exception as _e:
-                    logger.debug("RAG_PREFETCH: cross-client fallback http error: %s", _e)
-                    global_results = []
-                if global_results:
-                    seen = {r.get("sourceUrn", "") for r in results}
-                    for gr in global_results:
-                        src = gr.get("sourceUrn", "")
-                        if src and src not in seen:
-                            # Slightly down-weight cross-client hits so
-                            # same-client results stay on top when present.
-                            gr["score"] = gr.get("score", 0) * 0.85
-                            results.append(gr)
-                            seen.add(src)
-                    results.sort(key=lambda x: x.get("score", 0), reverse=True)
-                    results = results[:8]
-                    logger.info("RAG_PREFETCH: cross-client fallback added %d results, total=%d",
-                                len(global_results), len(results))
-    except Exception as e:
-        logger.warning("RAG_PREFETCH: failed query=%s error=%s", query[:50], e)
-        return ""
+    # Fallback 2: cross-client global scope. Personal data may live under
+    # a different client than the current chat; without this, single-client
+    # misses left only Thought Map context (source of earlier hallucinated
+    # "thought-anchor:xxx" citations).
+    top_score = max((r.get("score", 0) for r in results), default=0)
+    if (not results or top_score < 0.45) and client_id:
+        logger.info("RAG_PREFETCH: client-scope returned top=%.2f, trying cross-client fallback...",
+                    top_score)
+        global_results = await _fetch("", "", "")
+        if global_results:
+            seen = {r.get("sourceUrn", "") for r in results}
+            for gr in global_results:
+                src = gr.get("sourceUrn", "")
+                if src and src not in seen:
+                    # Down-weight cross-client hits so same-client results stay on top.
+                    gr["score"] = gr.get("score", 0) * 0.85
+                    results.append(gr)
+                    seen.add(src)
+            results.sort(key=lambda x: x.get("score", 0), reverse=True)
+            results = results[:8]
+            logger.info("RAG_PREFETCH: cross-client fallback added %d results, total=%d",
+                        len(global_results), len(results))
 
     if not results:
         return ""

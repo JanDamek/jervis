@@ -262,26 +262,23 @@ async def _load_affair_from_kb(
     processing_mode: str = "FOREGROUND",
 ) -> Affair | None:
     """Load a single affair from KB by its source_urn."""
-    headers = foreground_headers(processing_mode)
-    async with httpx.AsyncClient(timeout=KB_TIMEOUT_STANDARD) as client:
-        resp = await client.post(
-            f"{kb_url}/api/v1/retrieve",
-            json={
-                "query": f"affair:{affair_id}",
-                "clientId": client_id,
-                "kinds": ["affair"],
-                "maxResults": 1,
-            },
-            headers=headers,
+    from jervis_contracts import kb_client
+    import grpc
+
+    try:
+        items = await kb_client.retrieve(
+            caller="orchestrator.affairs",
+            query=f"affair:{affair_id}",
+            client_id=client_id,
+            kinds=["affair"],
+            max_results=1,
+            timeout=KB_TIMEOUT_STANDARD,
         )
-        if resp.status_code != 200:
-            return None
-
-        chunks = resp.json().get("chunks", [])
-        if not chunks:
-            return None
-
-        return _chunk_to_affair(chunks[0], client_id)
+    except grpc.aio.AioRpcError:
+        return None
+    if not items:
+        return None
+    return _chunk_to_affair(items[0], client_id)
 
 
 async def _load_affairs_via_search(
@@ -290,31 +287,29 @@ async def _load_affairs_via_search(
     processing_mode: str = "FOREGROUND",
 ) -> list[Affair]:
     """Load affairs via semantic search with kind=affair."""
-    headers = foreground_headers(processing_mode)
-    async with httpx.AsyncClient(timeout=KB_TIMEOUT_STANDARD) as client:
-        resp = await client.post(
-            f"{kb_url}/api/v1/retrieve",
-            json={
-                "query": "active parked affairs",
-                "clientId": client_id,
-                "kinds": ["affair"],
-                "maxResults": 20,
-            },
-            headers=headers,
+    from jervis_contracts import kb_client
+    import grpc
+
+    try:
+        items = await kb_client.retrieve(
+            caller="orchestrator.affairs",
+            query="active parked affairs",
+            client_id=client_id,
+            kinds=["affair"],
+            max_results=20,
+            timeout=KB_TIMEOUT_STANDARD,
         )
-        if resp.status_code != 200:
-            return []
+    except grpc.aio.AioRpcError:
+        return []
 
-        chunks = resp.json().get("chunks", [])
-        affairs = []
-        seen_ids = set()
-        for chunk in chunks:
-            affair = _chunk_to_affair(chunk, client_id)
-            if affair and affair.id not in seen_ids:
-                seen_ids.add(affair.id)
-                affairs.append(affair)
-
-        return affairs
+    affairs = []
+    seen_ids = set()
+    for chunk in items:
+        affair = _chunk_to_affair(chunk, client_id)
+        if affair and affair.id not in seen_ids:
+            seen_ids.add(affair.id)
+            affairs.append(affair)
+    return affairs
 
 
 def _chunk_to_affair(chunk: dict, client_id: str) -> Affair | None:

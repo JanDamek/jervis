@@ -21,6 +21,7 @@ from jervis.knowledgebase import graph_pb2, graph_pb2_grpc
 from jervis.knowledgebase import ingest_pb2, ingest_pb2_grpc
 from jervis.knowledgebase import maintenance_pb2, maintenance_pb2_grpc
 from jervis.knowledgebase import queue_pb2, queue_pb2_grpc
+from jervis.knowledgebase import retrieve_pb2, retrieve_pb2_grpc
 from jervis_contracts.interceptors import ServerContextInterceptor
 
 logger = logging.getLogger("kb.grpc")
@@ -378,6 +379,77 @@ class IngestServicer(ingest_pb2_grpc.KnowledgeIngestServiceServicer):
         )
 
 
+class RetrieveServicer(retrieve_pb2_grpc.KnowledgeRetrieveServiceServicer):
+    """KnowledgeRetrieveService — read-side RAG + graph retrieval.
+
+    Retrieve (hybrid) and RetrieveSimple (RAG-only) land in this slice.
+    RetrieveHybrid with full knobs, AnalyzeCode, JoernScan, and
+    ListChunksByKind stay on FastAPI until their slices land.
+    """
+
+    def _service(self):
+        from app.api import routes as api_routes
+
+        if api_routes.service is None:
+            raise RuntimeError("KnowledgeService not initialized")
+        return api_routes.service
+
+    def _to_pydantic(self, request: retrieve_pb2.RetrievalRequest):
+        from app.api.models import RetrievalRequest as RReq
+
+        return RReq(
+            query=request.query,
+            clientId=request.client_id or "",
+            projectId=request.project_id or None,
+            groupId=request.group_id or None,
+            maxResults=request.max_results or 5,
+            minConfidence=request.min_confidence or 0.0,
+            expandGraph=request.expand_graph,
+        )
+
+    def _evidence_to_proto(self, pack) -> retrieve_pb2.EvidencePack:
+        items = []
+        for it in getattr(pack, "items", []) or []:
+            meta_str: dict[str, str] = {}
+            for k, v in (getattr(it, "metadata", None) or {}).items():
+                meta_str[str(k)] = "" if v is None else str(v)
+            items.append(
+                retrieve_pb2.EvidenceItem(
+                    content=str(getattr(it, "content", "") or ""),
+                    score=float(getattr(it, "score", 0.0) or 0.0),
+                    source_urn=str(getattr(it, "sourceUrn", "") or ""),
+                    credibility=str(getattr(it, "credibility", "") or ""),
+                    branch_scope=str(getattr(it, "branchScope", "") or ""),
+                    metadata=meta_str,
+                )
+            )
+        return retrieve_pb2.EvidencePack(items=items)
+
+    async def Retrieve(
+        self,
+        request: retrieve_pb2.RetrievalRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> retrieve_pb2.EvidencePack:
+        try:
+            pack = await self._service().retrieve(self._to_pydantic(request))
+        except Exception as e:
+            logger.warning("RETRIEVE_ERROR query=%r error=%s", request.query[:120], e)
+            return retrieve_pb2.EvidencePack(items=[])
+        return self._evidence_to_proto(pack)
+
+    async def RetrieveSimple(
+        self,
+        request: retrieve_pb2.RetrievalRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> retrieve_pb2.EvidencePack:
+        try:
+            pack = await self._service().retrieve_simple(self._to_pydantic(request))
+        except Exception as e:
+            logger.warning("RETRIEVE_SIMPLE_ERROR query=%r error=%s", request.query[:120], e)
+            return retrieve_pb2.EvidencePack(items=[])
+        return self._evidence_to_proto(pack)
+
+
 class GraphServicer(graph_pb2_grpc.KnowledgeGraphServiceServicer):
     """KnowledgeGraphService — alias registry RPCs land first.
 
@@ -502,12 +574,16 @@ async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     graph_pb2_grpc.add_KnowledgeGraphServiceServicer_to_server(
         GraphServicer(), server
     )
+    retrieve_pb2_grpc.add_KnowledgeRetrieveServiceServicer_to_server(
+        RetrieveServicer(), server
+    )
 
     service_names = (
         maintenance_pb2.DESCRIPTOR.services_by_name["KnowledgeMaintenanceService"].full_name,
         queue_pb2.DESCRIPTOR.services_by_name["KnowledgeQueueService"].full_name,
         ingest_pb2.DESCRIPTOR.services_by_name["KnowledgeIngestService"].full_name,
         graph_pb2.DESCRIPTOR.services_by_name["KnowledgeGraphService"].full_name,
+        retrieve_pb2.DESCRIPTOR.services_by_name["KnowledgeRetrieveService"].full_name,
         reflection.SERVICE_NAME,
     )
     reflection.enable_server_reflection(service_names, server)
@@ -516,7 +592,7 @@ async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     await server.start()
     logger.info(
         "gRPC KB services listening on :%d "
-        "(Maintenance + Queue + Ingest[cpg,git-structure,git-commits,purge] + Graph[alias])",
+        "(Maintenance + Queue + Ingest[cpg,git-{structure,commits},purge] + Graph[alias] + Retrieve)",
         port,
     )
     return server

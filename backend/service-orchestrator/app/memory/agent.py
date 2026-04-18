@@ -268,25 +268,21 @@ class MemoryAgent:
         # KB search
         if scope in ("all", "kb_only"):
             try:
-                from app.config import settings
-                async with httpx.AsyncClient(timeout=15.0) as client:
-                    resp = await client.post(
-                        f"{settings.knowledgebase_url}/api/v1/retrieve",
-                        json={
-                            "query": query,
-                            "clientId": self.client_id,
-                            "maxResults": 5,
-                        },
-                        headers=self._kb_headers,
-                    )
-                    if resp.status_code == 200:
-                        kb_results = resp.json().get("chunks", [])
-                        # Cache results
-                        self.lqm.cache_search(
-                            query, kb_results,
-                            client_id=self.client_id, project_id=self.project_id or "",
-                        )
-                        results.extend(kb_results)
+                from jervis_contracts import kb_client
+
+                kb_results = await kb_client.retrieve(
+                    caller="orchestrator.memory.agent",
+                    query=query,
+                    client_id=self.client_id,
+                    max_results=5,
+                    timeout=15.0,
+                )
+                # Cache results
+                self.lqm.cache_search(
+                    query, kb_results,
+                    client_id=self.client_id, project_id=self.project_id or "",
+                )
+                results.extend(kb_results)
             except Exception as e:
                 logger.warning("KB search failed: %s", e)
 

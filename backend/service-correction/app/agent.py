@@ -474,42 +474,40 @@ class CorrectionAgent:
         if not questions or not client_id:
             return questions, []
 
+        from jervis_contracts import kb_client
+
         remaining: list[dict] = []
         auto_resolved: list[dict] = []
 
-        async with httpx.AsyncClient(timeout=_TIMEOUT_KB_READ) as http:
-            for q in questions:
-                original = q.get("original", "")
-                if not original:
-                    remaining.append(q)
-                    continue
-
-                try:
-                    resp = await http.post(
-                        f"{self.kb_url}/retrieve",
-                        json={
-                            "clientId": client_id,
-                            "projectId": project_id,
-                            "query": original,
-                            "maxResults": 3,
-                            "minConfidence": 0.75,
-                            "expandGraph": True,
-                        },
-                    )
-                    if resp.status_code == 200:
-                        items = resp.json().get("items", [])
-                        resolved = self._match_kb_to_options(q, items)
-                        if resolved:
-                            auto_resolved.append(resolved)
-                            logger.info(
-                                "Auto-resolved question '%s' -> '%s' from KB",
-                                original, resolved["corrected"],
-                            )
-                            continue
-                except Exception as e:
-                    logger.debug("KB lookup failed for question '%s': %s", original, e)
-
+        for q in questions:
+            original = q.get("original", "")
+            if not original:
                 remaining.append(q)
+                continue
+
+            try:
+                items = await kb_client.retrieve(
+                    caller="service-correction",
+                    query=original,
+                    client_id=client_id,
+                    project_id=project_id or "",
+                    max_results=3,
+                    min_confidence=0.75,
+                    expand_graph=True,
+                    timeout=_TIMEOUT_KB_READ,
+                )
+                resolved = self._match_kb_to_options(q, items)
+                if resolved:
+                    auto_resolved.append(resolved)
+                    logger.info(
+                        "Auto-resolved question '%s' -> '%s' from KB",
+                        original, resolved["corrected"],
+                    )
+                    continue
+            except Exception as e:
+                logger.debug("KB lookup failed for question '%s': %s", original, e)
+
+            remaining.append(q)
 
         if auto_resolved:
             logger.info(
@@ -623,28 +621,26 @@ class CorrectionAgent:
         if not client_id:
             return ""
         try:
-            async with httpx.AsyncClient(timeout=_TIMEOUT_KB_READ) as http:
-                resp = await http.post(
-                    f"{self.kb_url}/retrieve",
-                    json={
-                        "clientId": client_id,
-                        "projectId": project_id,
-                        "query": "team members people names technologies project terminology",
-                        "maxResults": 10,
-                        "minConfidence": 0.5,
-                        "expandGraph": True,
-                    },
+            from jervis_contracts import kb_client
+
+            items = await kb_client.retrieve(
+                caller="service-correction",
+                query="team members people names technologies project terminology",
+                client_id=client_id,
+                project_id=project_id or "",
+                max_results=10,
+                min_confidence=0.5,
+                expand_graph=True,
+                timeout=_TIMEOUT_KB_READ,
+            )
+            if items:
+                parts = [(it.get("content", "") or "")[:500] for it in items if it.get("content")]
+                context = "\n".join(parts)
+                logger.info(
+                    "Loaded project context from KB: %d results, %d chars",
+                    len(items), len(context),
                 )
-                if resp.status_code == 200:
-                    items = resp.json().get("items", [])
-                    if items:
-                        parts = [it.get("content", "")[:500] for it in items if it.get("content")]
-                        context = "\n".join(parts)
-                        logger.info(
-                            "Loaded project context from KB: %d results, %d chars",
-                            len(items), len(context),
-                        )
-                        return context
+                return context
         except Exception as e:
             logger.warning("Failed to load project context from KB: %s", e)
         return ""
@@ -670,28 +666,26 @@ class CorrectionAgent:
         # Deduplicate, limit to 5 most relevant
         queries = list(dict.fromkeys(queries))[:5]
 
+        from jervis_contracts import kb_client
+
         all_results: list[str] = []
-        async with httpx.AsyncClient(timeout=_TIMEOUT_KB_READ) as http:
-            for query in queries:
-                try:
-                    resp = await http.post(
-                        f"{self.kb_url}/retrieve",
-                        json={
-                            "clientId": client_id,
-                            "projectId": project_id,
-                            "query": query,
-                            "maxResults": 3,
-                            "minConfidence": 0.6,
-                            "expandGraph": True,
-                        },
-                    )
-                    if resp.status_code == 200:
-                        items = resp.json().get("items", [])
-                        for it in items:
-                            content = it.get("content", "")
-                            if content and content not in all_results:
-                                all_results.append(content[:300])
-                except Exception as e:
+        for query in queries:
+            try:
+                items = await kb_client.retrieve(
+                    caller="service-correction",
+                    query=query,
+                    client_id=client_id,
+                    project_id=project_id or "",
+                    max_results=3,
+                    min_confidence=0.6,
+                    expand_graph=True,
+                    timeout=_TIMEOUT_KB_READ,
+                )
+                for it in items:
+                    content = it.get("content", "")
+                    if content and content not in all_results:
+                        all_results.append(content[:300])
+            except Exception as e:
                     logger.debug("Targeted KB search failed for '%s': %s", query, e)
 
         if all_results:

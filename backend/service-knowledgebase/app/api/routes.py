@@ -43,43 +43,11 @@ service: KnowledgeService = None  # type: ignore
 read_router = APIRouter()
 
 
-@read_router.post("/retrieve", response_model=EvidencePack)
-async def retrieve(request: RetrievalRequest, http_request: Request):
-    """
-    Standard hybrid retrieval.
-
-    Combines RAG vector search with graph expansion.
-    Uses default settings for hybrid retrieval.
-    """
-    try:
-        # Read priority from header (orchestrator sends X-Ollama-Priority: 1)
-        priority = http_request.headers.get("X-Ollama-Priority")
-        priority_int = int(priority) if priority and priority.isdigit() else None
-        return await service.retrieve(request, embedding_priority=priority_int)
-    except httpx.HTTPStatusError as e:
-        logger.warning("Retrieve failed (embedding unavailable): %s", e)
-        return EvidencePack(items=[])
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@read_router.post("/retrieve/simple", response_model=EvidencePack)
-async def retrieve_simple(request: RetrievalRequest, http_request: Request):
-    """
-    Simple RAG-only retrieval without graph expansion.
-
-    Faster but less comprehensive. Use for quick lookups.
-    """
-    try:
-        # Read priority from header
-        priority = http_request.headers.get("X-Ollama-Priority")
-        priority_int = int(priority) if priority and priority.isdigit() else None
-        return await service.retrieve_simple(request, embedding_priority=priority_int)
-    except httpx.HTTPStatusError as e:
-        logger.warning("Retrieve simple failed (embedding unavailable): %s", e)
-        return EvidencePack(items=[])
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# /retrieve and /retrieve/simple migrated to gRPC
+# (KnowledgeRetrieveService.Retrieve / RetrieveSimple on :5501).
+# X-Ollama-Priority header hint is dropped — the server-side hybrid
+# retriever already picks an embedding priority based on KB_MODE,
+# and the header was only read on this shim.
 
 
 @read_router.post("/retrieve/hybrid", response_model=EvidencePack)

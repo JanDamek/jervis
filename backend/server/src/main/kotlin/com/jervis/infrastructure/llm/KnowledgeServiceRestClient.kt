@@ -3,6 +3,7 @@ package com.jervis.infrastructure.llm
 import com.jervis.infrastructure.grpc.KbIngestGrpcClient
 import com.jervis.infrastructure.grpc.KbMaintenanceGrpcClient
 import com.jervis.infrastructure.grpc.KbQueueGrpcClient
+import com.jervis.infrastructure.grpc.KbRetrieveGrpcClient
 import com.jervis.infrastructure.llm.KnowledgeServiceRestClient
 import com.jervis.common.types.ClientId
 import com.jervis.knowledgebase.KnowledgeService
@@ -63,6 +64,7 @@ class KnowledgeServiceRestClient(
     private val kbMaintenanceGrpc: KbMaintenanceGrpcClient? = null,
     private val kbQueueGrpc: KbQueueGrpcClient? = null,
     private val kbIngestGrpc: KbIngestGrpcClient? = null,
+    private val kbRetrieveGrpc: KbRetrieveGrpcClient? = null,
 ) : KnowledgeService {
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) {
@@ -299,35 +301,30 @@ class KnowledgeServiceRestClient(
 
     override suspend fun retrieve(request: RetrievalRequest): EvidencePack {
         logger.debug { "Calling knowledgebase retrieve: query=${request.query}" }
-
-        val pythonRequest = PythonRetrievalRequest(
-            query = request.query,
-            clientId = request.clientId.toString(),
-            projectId = request.projectId?.toString(),
-            groupId = request.groupId,
-            asOf = request.asOf?.let { DateTimeFormatter.ISO_INSTANT.format(it) },
-            minConfidence = request.minConfidence,
-            maxResults = request.maxResults,
-        )
-
+        val grpc = kbRetrieveGrpc ?: run {
+            logger.warn { "KB retrieve gRPC client not wired" }
+            return EvidencePack(items = emptyList(), summary = "Retrieval client not wired")
+        }
         return try {
-            val response: PythonEvidencePack = client.post("$apiBaseUrl/retrieve") {
-                contentType(ContentType.Application.Json)
-                setBody(pythonRequest)
-            }.body()
-
+            val pack = grpc.retrieve(
+                query = request.query,
+                clientId = request.clientId.toString(),
+                projectId = request.projectId?.toString() ?: "",
+                groupId = request.groupId ?: "",
+                asOfIso = request.asOf?.let { DateTimeFormatter.ISO_INSTANT.format(it) } ?: "",
+                minConfidence = request.minConfidence,
+                maxResults = request.maxResults,
+            )
             EvidencePack(
-                items = response.items.map { item ->
+                items = pack.itemsList.map { item ->
                     EvidenceItem(
                         source = item.sourceUrn,
                         content = item.content,
                         confidence = item.score,
-                        metadata = item.metadata.mapValues { (_, v) ->
-                            (v as? JsonPrimitive)?.contentOrNull ?: v.toString()
-                        },
+                        metadata = item.metadataMap,
                     )
                 },
-                summary = "Retrieved ${response.items.size} items",
+                summary = "Retrieved ${pack.itemsCount} items",
             )
         } catch (e: Exception) {
             logger.error(e) { "Failed to retrieve from knowledgebase: ${e.message}" }
@@ -836,29 +833,7 @@ private data class PythonIngestResult(
     val edgesCreated: Int,
 )
 
-@Serializable
-private data class PythonRetrievalRequest(
-    val query: String,
-    val clientId: String,
-    val projectId: String? = null,
-    val groupId: String? = null,
-    val asOf: String? = null,
-    val minConfidence: Double = 0.0,
-    val maxResults: Int = 10,
-)
-
-@Serializable
-private data class PythonEvidenceItem(
-    val content: String,
-    val score: Double,
-    val sourceUrn: String,
-    val metadata: Map<String, JsonElement> = emptyMap(),
-)
-
-@Serializable
-private data class PythonEvidencePack(
-    val items: List<PythonEvidenceItem>,
-)
+// Retrieval DTOs moved to gRPC (KbRetrieveGrpcClient).
 
 @Serializable
 private data class PythonTraversalRequest(

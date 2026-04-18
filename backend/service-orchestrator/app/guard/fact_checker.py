@@ -308,24 +308,19 @@ async def _verify_file_path(
 ) -> tuple[VerificationStatus, float]:
     """Verify a file path exists in the project workspace."""
     try:
-        import httpx
-        from app.config import settings
+        from jervis_contracts import kb_client
 
-        url = f"{settings.knowledgebase_url}/api/v1/retrieve"
-        payload = {
-            "query": f"file:{path}",
-            "clientId": client_id,
-            "projectId": project_id,
-            "maxResults": 1,
-            "minConfidence": 0.5,
-        }
-        async with httpx.AsyncClient(timeout=5.0) as http_client:
-            resp = await http_client.post(url, json=payload)
-            if resp.status_code == 200:
-                data = resp.json()
-                items = data.get("items", [])
-                if items:
-                    return VerificationStatus.VERIFIED, 0.9
+        items = await kb_client.retrieve(
+            caller="orchestrator.guard.fact_checker",
+            query=f"file:{path}",
+            client_id=client_id,
+            project_id=project_id or "",
+            max_results=1,
+            min_confidence=0.5,
+            timeout=5.0,
+        )
+        if items:
+            return VerificationStatus.VERIFIED, 0.9
         return VerificationStatus.UNVERIFIED, 0.4
     except Exception:
         return VerificationStatus.UNVERIFIED, 0.3
@@ -338,24 +333,19 @@ async def _verify_code_ref(
 ) -> tuple[VerificationStatus, float]:
     """Verify a code reference (class/function name) exists in KB."""
     try:
-        import httpx
-        from app.config import settings
+        from jervis_contracts import kb_client
 
-        url = f"{settings.knowledgebase_url}/api/v1/retrieve"
-        payload = {
-            "query": ref,
-            "clientId": client_id,
-            "projectId": project_id,
-            "maxResults": 3,
-            "minConfidence": 0.5,
-        }
-        async with httpx.AsyncClient(timeout=5.0) as http_client:
-            resp = await http_client.post(url, json=payload)
-            if resp.status_code == 200:
-                data = resp.json()
-                items = data.get("items", [])
-                if any(ref.lower() in item.get("content", "").lower() for item in items):
-                    return VerificationStatus.VERIFIED, 0.85
+        items = await kb_client.retrieve(
+            caller="orchestrator.guard.fact_checker",
+            query=ref,
+            client_id=client_id,
+            project_id=project_id or "",
+            max_results=3,
+            min_confidence=0.5,
+            timeout=5.0,
+        )
+        if any(ref.lower() in (item.get("content", "") or "").lower() for item in items):
+            return VerificationStatus.VERIFIED, 0.85
         return VerificationStatus.UNVERIFIED, 0.4
     except Exception:
         return VerificationStatus.UNVERIFIED, 0.3

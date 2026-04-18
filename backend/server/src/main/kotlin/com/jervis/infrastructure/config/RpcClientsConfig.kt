@@ -4,6 +4,7 @@ import com.jervis.agent.PythonOrchestratorClient
 import com.jervis.infrastructure.grpc.KbIngestGrpcClient
 import com.jervis.infrastructure.grpc.KbMaintenanceGrpcClient
 import com.jervis.infrastructure.grpc.KbQueueGrpcClient
+import com.jervis.infrastructure.grpc.KbRetrieveGrpcClient
 import com.jervis.infrastructure.llm.CorrectionClient
 import com.jervis.infrastructure.llm.DocumentExtractionClient
 import com.jervis.infrastructure.llm.KnowledgeServiceRestClient
@@ -53,6 +54,7 @@ class RpcClientsConfig(
     private val kbMaintenanceGrpc: KbMaintenanceGrpcClient,
     private val kbQueueGrpc: KbQueueGrpcClient,
     private val kbIngestGrpc: KbIngestGrpcClient,
+    private val kbRetrieveGrpc: KbRetrieveGrpcClient,
 ) {
     @org.springframework.beans.factory.annotation.Value("\${jervis.kb-callback-base-url:}")
     private var kbCallbackBaseUrl: String = ""
@@ -215,14 +217,14 @@ class RpcClientsConfig(
     fun rpcReconnectHandler(): RpcReconnectHandler =
         object : RpcReconnectHandler {
             override suspend fun reconnectKnowledgebase() {
-                _knowledgeService = KnowledgeServiceRestClient(endpoints.knowledgebase.baseUrl, kbCallbackBaseUrl, kbMaintenanceGrpc, kbQueueGrpc, kbIngestGrpc)
+                _knowledgeService = KnowledgeServiceRestClient(endpoints.knowledgebase.baseUrl, kbCallbackBaseUrl, kbMaintenanceGrpc, kbQueueGrpc, kbIngestGrpc, kbRetrieveGrpc)
             }
         }
 
     private fun getKnowledgeService(): KnowledgeServiceRestClient =
         _knowledgeService ?: synchronized(this) {
             _knowledgeService
-                ?: KnowledgeServiceRestClient(kbWriteUrl(), kbCallbackBaseUrl, kbMaintenanceGrpc, kbQueueGrpc, kbIngestGrpc).also { _knowledgeService = it }
+                ?: KnowledgeServiceRestClient(kbWriteUrl(), kbCallbackBaseUrl, kbMaintenanceGrpc, kbQueueGrpc, kbIngestGrpc, kbRetrieveGrpc).also { _knowledgeService = it }
         }
 
     /** KB write URL (falls back to read URL if write endpoint not configured). */

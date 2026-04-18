@@ -130,32 +130,26 @@ async def kb_search(
     elif scope == "client":
         pid = None
 
-    # Priority 1 = ORCHESTRATOR_EMBEDDING (co-located with CRITICAL on GPU)
-    headers = {"X-Ollama-Priority": "0"}
-    payload = {
-        "query": query,
-        "clientId": cid,
-        "projectId": pid,
-        "maxResults": max_results,
-        "minConfidence": min_confidence,
-        "expandGraph": True,
-    }
-    if group_id:
-        payload["groupId"] = group_id
-    async with httpx.AsyncClient(timeout=120, headers=headers) as client:
-        resp = await client.post(
-            f"{settings.knowledgebase_url}/api/v1/retrieve",
-            json=payload,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        results = []
-        for item in data.get("items", []):
-            conf = item.get("score", 0)
-            source = item.get("sourceUrn", "?")
-            content = item.get("content", "")[:500]
-            results.append(f"[{conf:.2f}] {source}: {content}")
-        return "\n---\n".join(results) if results else "No results found."
+    from jervis_contracts import kb_client
+
+    items = await kb_client.retrieve(
+        caller="service-mcp.kb_search",
+        query=query,
+        client_id=cid,
+        project_id=pid or "",
+        group_id=group_id or "",
+        max_results=max_results,
+        min_confidence=min_confidence,
+        expand_graph=True,
+        timeout=120.0,
+    )
+    results = []
+    for item in items:
+        conf = item.get("score", 0)
+        source = item.get("sourceUrn", "?")
+        content = (item.get("content", "") or "")[:500]
+        results.append(f"[{conf:.2f}] {source}: {content}")
+    return "\n---\n".join(results) if results else "No results found."
 
 
 @mcp.tool
@@ -178,28 +172,24 @@ async def kb_search_simple(
     cid = client_id or settings.default_client_id
     pid = project_id or settings.default_project_id or None
 
-    headers = {"X-Ollama-Priority": "0"}
-    payload = {
-        "query": query,
-        "clientId": cid,
-        "projectId": pid,
-        "maxResults": max_results,
-    }
-    if group_id:
-        payload["groupId"] = group_id
-    async with httpx.AsyncClient(timeout=120, headers=headers) as client:
-        resp = await client.post(
-            f"{settings.knowledgebase_url}/api/v1/retrieve/simple",
-            json=payload,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        results = []
-        for item in data.get("items", []):
-            source = item.get("sourceUrn", "?")
-            content = item.get("content", "")[:500]
-            results.append(f"{source}: {content}")
-        return "\n---\n".join(results) if results else "No results found."
+    from jervis_contracts import kb_client
+
+    items = await kb_client.retrieve(
+        caller="service-mcp.kb_search_simple",
+        query=query,
+        client_id=cid,
+        project_id=pid or "",
+        group_id=group_id or "",
+        max_results=max_results,
+        simple=True,
+        timeout=120.0,
+    )
+    results = []
+    for item in items:
+        source = item.get("sourceUrn", "?")
+        content = (item.get("content", "") or "")[:500]
+        results.append(f"{source}: {content}")
+    return "\n---\n".join(results) if results else "No results found."
 
 
 @mcp.tool
@@ -3559,33 +3549,29 @@ async def ask_jervis(
     db = await get_db()
 
     # 1. Search KB for auto-answer
-    kb_url = os.environ.get("KNOWLEDGE_SERVICE_URL", "http://jervis-knowledgebase-read:8080")
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{kb_url}/api/v1/retrieve",
-                json={
-                    "query": question,
-                    "clientId": client_id,
-                    "projectId": project_id,
-                    "maxResults": 3,
-                    "minConfidence": 0.7,
-                    "expandGraph": True,
-                },
-            )
-            if resp.status_code == 200:
-                results = resp.json().get("results", [])
-                if results and len(results) > 0:
-                    # Check if results are relevant (not just generic)
-                    top_score = results[0].get("score", 0)
-                    if top_score > 0.75:
-                        answer_parts = []
-                        for r in results[:3]:
-                            text = r.get("text", r.get("content", ""))[:500]
-                            if text:
-                                answer_parts.append(text)
-                        if answer_parts:
-                            return f"[KB Auto-Answer (confidence: {top_score:.2f})]\n\n" + "\n---\n".join(answer_parts)
+        from jervis_contracts import kb_client
+
+        results = await kb_client.retrieve(
+            caller="service-mcp.ask_jervis",
+            query=question,
+            client_id=client_id or "",
+            project_id=project_id or "",
+            max_results=3,
+            min_confidence=0.7,
+            expand_graph=True,
+            timeout=30.0,
+        )
+        if results:
+            top_score = results[0].get("score", 0)
+            if top_score > 0.75:
+                answer_parts = []
+                for r in results[:3]:
+                    text = (r.get("content", "") or "")[:500]
+                    if text:
+                        answer_parts.append(text)
+                if answer_parts:
+                    return f"[KB Auto-Answer (confidence: {top_score:.2f})]\n\n" + "\n---\n".join(answer_parts)
     except Exception as e:
         logger.warning("ask_jervis KB search failed: %s", e)
 
@@ -3659,24 +3645,21 @@ async def report_done(
     db = await get_db()
 
     # 1. Search KB for post-task conventions
-    kb_url = os.environ.get("KNOWLEDGE_SERVICE_URL", "http://jervis-knowledgebase-read:8080")
     convention_hint = ""
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.post(
-                f"{kb_url}/api/v1/retrieve",
-                json={
-                    "query": f"convention: what to do after completing a task in this project",
-                    "clientId": client_id,
-                    "projectId": project_id,
-                    "maxResults": 2,
-                    "minConfidence": 0.7,
-                },
-            )
-            if resp.status_code == 200:
-                results = resp.json().get("results", [])
-                if results:
-                    convention_hint = results[0].get("text", "")[:300]
+        from jervis_contracts import kb_client
+
+        results = await kb_client.retrieve(
+            caller="service-mcp.report_done",
+            query="convention: what to do after completing a task in this project",
+            client_id=client_id or "",
+            project_id=project_id or "",
+            max_results=2,
+            min_confidence=0.7,
+            timeout=15.0,
+        )
+        if results:
+            convention_hint = (results[0].get("content", "") or "")[:300]
     except Exception as e:
         logger.warning("report_done KB search failed: %s", e)
 

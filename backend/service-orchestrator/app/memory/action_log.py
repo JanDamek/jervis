@@ -122,37 +122,34 @@ async def query_action_log(
     if action_type:
         search_query += f" {action_type}"
 
-    url = f"{settings.knowledgebase_url}/api/v1/retrieve"
-    payload = {
-        "query": search_query,
-        "clientId": client_id,
-        "projectId": project_id,
-        "maxResults": max_results,
-        "minConfidence": 0.3,
-        "kind": "action_log",
-    }
+    from jervis_contracts import kb_client
 
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.post(url, json=payload)
-            if resp.status_code == 200:
-                data = resp.json()
-                items = data.get("items", [])
-                if not items:
-                    return "No matching action log entries found."
-
-                lines = [f"Found {len(items)} action log entries:\n"]
-                for i, item in enumerate(items, 1):
-                    content = item.get("content", "")
-                    metadata = item.get("metadata", {})
-                    lines.append(f"### {i}. {metadata.get('action', 'UNKNOWN')}")
-                    lines.append(f"When: {metadata.get('timestamp', 'unknown')}")
-                    lines.append(f"Description: {metadata.get('description', trim_for_display(content, 100))}")
-                    lines.append(f"Result: {metadata.get('result', 'N/A')}")
-                    if metadata.get("relatedTaskId"):
-                        lines.append(f"Task: {metadata['relatedTaskId']}")
-                    lines.append("")
-                return "\n".join(lines)
-            return f"Error: KB returned HTTP {resp.status_code}"
+        items = await kb_client.retrieve(
+            caller="orchestrator.memory.action_log",
+            query=search_query,
+            client_id=client_id,
+            project_id=project_id or "",
+            max_results=max_results,
+            min_confidence=0.3,
+            kinds=["action_log"],
+            timeout=5.0,
+        )
     except Exception as e:
         return f"Error querying action log: {trim_for_display(str(e), 200)}"
+
+    if not items:
+        return "No matching action log entries found."
+
+    lines = [f"Found {len(items)} action log entries:\n"]
+    for i, item in enumerate(items, 1):
+        content = item.get("content", "")
+        metadata = item.get("metadata", {})
+        lines.append(f"### {i}. {metadata.get('action', 'UNKNOWN')}")
+        lines.append(f"When: {metadata.get('timestamp', 'unknown')}")
+        lines.append(f"Description: {metadata.get('description', trim_for_display(content, 100))}")
+        lines.append(f"Result: {metadata.get('result', 'N/A')}")
+        if metadata.get("relatedTaskId"):
+            lines.append(f"Task: {metadata['relatedTaskId']}")
+        lines.append("")
+    return "\n".join(lines)
