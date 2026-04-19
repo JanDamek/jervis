@@ -19,16 +19,9 @@ import com.jervis.service.task.IUserTaskService
 import com.jervis.agent.AgentOrchestratorService
 import com.jervis.task.TaskService
 import com.jervis.task.UserTaskService
-import io.ktor.client.HttpClient
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.client.statement.bodyAsText
-import io.ktor.http.ContentType
-import io.ktor.http.contentType
 import kotlinx.coroutines.flow.toList
 import mu.KotlinLogging
 import org.bson.types.ObjectId
-import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 import java.time.Instant
 
@@ -42,7 +35,6 @@ class UserTaskRpcImpl(
     private val taskRepository: com.jervis.task.TaskRepository,
     private val chatService: com.jervis.chat.ChatService,
     private val meetingAttendApprovalService: com.jervis.meeting.MeetingAttendApprovalService,
-    private val httpClient: HttpClient,
     private val connectionService: com.jervis.connection.ConnectionService,
     private val o365BrowserPoolGrpc: com.jervis.infrastructure.grpc.O365BrowserPoolGrpcClient,
 ) : IUserTaskService {
