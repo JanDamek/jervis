@@ -53,6 +53,22 @@ public object O365GatewayServiceGrpcKt {
     @JvmStatic
     get() = O365GatewayServiceGrpc.getSendChatMessageMethod()
 
+  public val listTeamsMethod: MethodDescriptor<ListTeamsRequest, ListTeamsResponse>
+    @JvmStatic
+    get() = O365GatewayServiceGrpc.getListTeamsMethod()
+
+  public val listChannelsMethod: MethodDescriptor<ListChannelsRequest, ListChannelsResponse>
+    @JvmStatic
+    get() = O365GatewayServiceGrpc.getListChannelsMethod()
+
+  public val readChannelMethod: MethodDescriptor<ReadChannelRequest, ListChannelMessagesResponse>
+    @JvmStatic
+    get() = O365GatewayServiceGrpc.getReadChannelMethod()
+
+  public val sendChannelMessageMethod: MethodDescriptor<SendChannelMessageRequest, ChatMessage>
+    @JvmStatic
+    get() = O365GatewayServiceGrpc.getSendChannelMessageMethod()
+
   /**
    * A stub for issuing RPCs to a(n) jervis.o365_gateway.O365GatewayService service as suspending
    * coroutines.
@@ -174,6 +190,94 @@ public object O365GatewayServiceGrpcKt {
       callOptions,
       headers
     )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun listTeams(request: ListTeamsRequest, headers: Metadata = Metadata()):
+        ListTeamsResponse = unaryRpc(
+      channel,
+      O365GatewayServiceGrpc.getListTeamsMethod(),
+      request,
+      callOptions,
+      headers
+    )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun listChannels(request: ListChannelsRequest, headers: Metadata = Metadata()):
+        ListChannelsResponse = unaryRpc(
+      channel,
+      O365GatewayServiceGrpc.getListChannelsMethod(),
+      request,
+      callOptions,
+      headers
+    )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun readChannel(request: ReadChannelRequest, headers: Metadata = Metadata()):
+        ListChannelMessagesResponse = unaryRpc(
+      channel,
+      O365GatewayServiceGrpc.getReadChannelMethod(),
+      request,
+      callOptions,
+      headers
+    )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun sendChannelMessage(request: SendChannelMessageRequest, headers: Metadata =
+        Metadata()): ChatMessage = unaryRpc(
+      channel,
+      O365GatewayServiceGrpc.getSendChannelMessageMethod(),
+      request,
+      callOptions,
+      headers
+    )
   }
 
   /**
@@ -253,6 +357,64 @@ public object O365GatewayServiceGrpcKt {
     public open suspend fun sendChatMessage(request: SendChatMessageRequest): ChatMessage = throw
         StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.SendChatMessage is unimplemented"))
 
+    /**
+     * Returns the response to an RPC for jervis.o365_gateway.O365GatewayService.ListTeams.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun listTeams(request: ListTeamsRequest): ListTeamsResponse = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.ListTeams is unimplemented"))
+
+    /**
+     * Returns the response to an RPC for jervis.o365_gateway.O365GatewayService.ListChannels.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun listChannels(request: ListChannelsRequest): ListChannelsResponse = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.ListChannels is unimplemented"))
+
+    /**
+     * Returns the response to an RPC for jervis.o365_gateway.O365GatewayService.ReadChannel.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun readChannel(request: ReadChannelRequest): ListChannelMessagesResponse =
+        throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.ReadChannel is unimplemented"))
+
+    /**
+     * Returns the response to an RPC for jervis.o365_gateway.O365GatewayService.SendChannelMessage.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun sendChannelMessage(request: SendChannelMessageRequest): ChatMessage =
+        throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.SendChannelMessage is unimplemented"))
+
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(
       context = this.context,
@@ -278,6 +440,26 @@ public object O365GatewayServiceGrpcKt {
       context = this.context,
       descriptor = O365GatewayServiceGrpc.getSendChatMessageMethod(),
       implementation = ::sendChatMessage
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = O365GatewayServiceGrpc.getListTeamsMethod(),
+      implementation = ::listTeams
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = O365GatewayServiceGrpc.getListChannelsMethod(),
+      implementation = ::listChannels
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = O365GatewayServiceGrpc.getReadChannelMethod(),
+      implementation = ::readChannel
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = O365GatewayServiceGrpc.getSendChannelMessageMethod(),
+      implementation = ::sendChannelMessage
     )).build()
   }
 }

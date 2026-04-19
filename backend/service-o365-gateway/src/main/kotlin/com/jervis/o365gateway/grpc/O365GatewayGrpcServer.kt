@@ -2,13 +2,19 @@ package com.jervis.o365gateway.grpc
 
 import com.google.protobuf.ByteString
 import com.jervis.contracts.interceptors.ServerContextInterceptor
+import com.jervis.contracts.o365_gateway.Channel as ProtoChannel
 import com.jervis.contracts.o365_gateway.ChatMessage as ProtoChatMessage
 import com.jervis.contracts.o365_gateway.ChatSummary as ProtoChatSummary
 import com.jervis.contracts.o365_gateway.GraphApplication as ProtoGraphApplication
 import com.jervis.contracts.o365_gateway.GraphUser as ProtoGraphUser
+import com.jervis.contracts.o365_gateway.ListChannelMessagesResponse
+import com.jervis.contracts.o365_gateway.ListChannelsRequest
+import com.jervis.contracts.o365_gateway.ListChannelsResponse
 import com.jervis.contracts.o365_gateway.ListChatMessagesResponse
 import com.jervis.contracts.o365_gateway.ListChatsRequest
 import com.jervis.contracts.o365_gateway.ListChatsResponse
+import com.jervis.contracts.o365_gateway.ListTeamsRequest
+import com.jervis.contracts.o365_gateway.ListTeamsResponse
 import com.jervis.contracts.o365_gateway.MessageBody as ProtoMessageBody
 import com.jervis.contracts.o365_gateway.MessageFrom as ProtoMessageFrom
 import com.jervis.contracts.o365_gateway.MessagePreview as ProtoMessagePreview
@@ -16,15 +22,20 @@ import com.jervis.contracts.o365_gateway.O365BytesResponse
 import com.jervis.contracts.o365_gateway.O365GatewayServiceGrpcKt
 import com.jervis.contracts.o365_gateway.O365Request
 import com.jervis.contracts.o365_gateway.O365Response
+import com.jervis.contracts.o365_gateway.ReadChannelRequest
 import com.jervis.contracts.o365_gateway.ReadChatRequest
+import com.jervis.contracts.o365_gateway.SendChannelMessageRequest
 import com.jervis.contracts.o365_gateway.SendChatMessageRequest
+import com.jervis.contracts.o365_gateway.Team as ProtoTeam
 import com.jervis.o365gateway.model.CreateEventRequest
 import com.jervis.o365gateway.model.GraphApplication
+import com.jervis.o365gateway.model.GraphChannel
 import com.jervis.o365gateway.model.GraphChat
 import com.jervis.o365gateway.model.GraphMessage
 import com.jervis.o365gateway.model.GraphMessageBody
 import com.jervis.o365gateway.model.GraphMessageFrom
 import com.jervis.o365gateway.model.GraphMessagePreview
+import com.jervis.o365gateway.model.GraphTeam
 import com.jervis.o365gateway.model.GraphUser
 import com.jervis.o365gateway.model.SendMailRequest
 import com.jervis.o365gateway.service.BrowserPoolClient
@@ -131,6 +142,37 @@ private class GatewayServicer(
     override suspend fun sendChatMessage(request: SendChatMessageRequest): ProtoChatMessage {
         val ct = request.contentType.ifBlank { "text" }
         val result = graphApi.sendChatMessage(request.clientId, request.chatId, request.content, ct)
+        return result.toProto()
+    }
+
+    // === V5b - Teams teams/channels typed ====================================
+
+    override suspend fun listTeams(request: ListTeamsRequest): ListTeamsResponse {
+        val teams = graphApi.listTeams(request.clientId)
+        return ListTeamsResponse.newBuilder()
+            .apply { teams.forEach { addTeams(it.toProto()) } }
+            .build()
+    }
+
+    override suspend fun listChannels(request: ListChannelsRequest): ListChannelsResponse {
+        val channels = graphApi.listChannels(request.clientId, request.teamId)
+        return ListChannelsResponse.newBuilder()
+            .apply { channels.forEach { addChannels(it.toProto()) } }
+            .build()
+    }
+
+    override suspend fun readChannel(request: ReadChannelRequest): ListChannelMessagesResponse {
+        val top = if (request.top == 0) 20 else request.top
+        val messages = graphApi.readChannel(request.clientId, request.teamId, request.channelId, top)
+        return ListChannelMessagesResponse.newBuilder()
+            .apply { messages.forEach { addMessages(it.toProto()) } }
+            .build()
+    }
+
+    override suspend fun sendChannelMessage(request: SendChannelMessageRequest): ProtoChatMessage {
+        val result = graphApi.sendChannelMessage(
+            request.clientId, request.teamId, request.channelId, request.content,
+        )
         return result.toProto()
     }
 
@@ -327,4 +369,21 @@ private fun GraphMessage.toProto(): ProtoChatMessage =
             body?.let { setBody(it.toProto()) }
             from?.let { setSender(it.toProto()) }
         }
+        .build()
+
+// === V5b - Teams teams/channels: Graph DTO -> proto mappers ==================
+
+private fun GraphTeam.toProto(): ProtoTeam =
+    ProtoTeam.newBuilder()
+        .setId(id)
+        .setDisplayName(displayName.orEmpty())
+        .setDescription(description.orEmpty())
+        .build()
+
+private fun GraphChannel.toProto(): ProtoChannel =
+    ProtoChannel.newBuilder()
+        .setId(id)
+        .setDisplayName(displayName.orEmpty())
+        .setDescription(description.orEmpty())
+        .setMembershipType(membershipType.orEmpty())
         .build()

@@ -2760,17 +2760,17 @@ async def o365_teams_list_teams(
     client_id: str,
 ) -> str:
     """List teams the user is a member of."""
-    from app.o365_gateway_client import O365GatewayError, o365_request
+    from app.o365_gateway_client import O365GatewayError, list_teams
 
     try:
-        teams = await o365_request("GET", f"teams/{client_id}")
+        teams = await list_teams(client_id)
     except O365GatewayError as e:
         return f"Error ({e.status_code}): {e.body[:300]}"
 
     if not teams:
         return "No teams found."
     return "\n".join(
-        f"{t.get('displayName', '?')} (id={t.get('id', '?')})" for t in teams
+        f"{t.display_name or '?'} (id={t.id or '?'})" for t in teams
     )
 
 
@@ -2780,17 +2780,17 @@ async def o365_teams_list_channels(
     team_id: str,
 ) -> str:
     """List channels in a team."""
-    from app.o365_gateway_client import O365GatewayError, o365_request
+    from app.o365_gateway_client import O365GatewayError, list_channels
 
     try:
-        channels = await o365_request("GET", f"teams/{client_id}/{team_id}/channels")
+        channels = await list_channels(client_id, team_id)
     except O365GatewayError as e:
         return f"Error ({e.status_code}): {e.body[:300]}"
 
     if not channels:
         return "No channels found."
     return "\n".join(
-        f"{ch.get('displayName', '?')} (id={ch.get('id', '?')}, type={ch.get('membershipType', '?')})"
+        f"{ch.display_name or '?'} (id={ch.id or '?'}, type={ch.membership_type or '?'})"
         for ch in channels
     )
 
@@ -2803,14 +2803,10 @@ async def o365_teams_read_channel(
     top: int = 20,
 ) -> str:
     """Read messages from a Teams channel."""
-    from app.o365_gateway_client import O365GatewayError, o365_request
+    from app.o365_gateway_client import O365GatewayError, read_channel
 
     try:
-        messages = await o365_request(
-            "GET",
-            f"teams/{client_id}/{team_id}/channels/{channel_id}/messages",
-            query={"top": top},
-        )
+        messages = await read_channel(client_id, team_id, channel_id, top)
     except O365GatewayError as e:
         return f"Error ({e.status_code}): {e.body[:300]}"
 
@@ -2819,15 +2815,13 @@ async def o365_teams_read_channel(
     lines = []
     for m in messages:
         sender = "?"
-        if m.get("from"):
-            if m["from"].get("user"):
-                sender = m["from"]["user"].get("displayName", "?")
-            elif m["from"].get("application"):
-                sender = m["from"]["application"].get("displayName", "bot")
-        body = ""
-        if m.get("body"):
-            body = m["body"].get("content", "")[:500]
-        ts = m.get("createdDateTime", "")
+        if m.HasField("sender"):
+            if m.sender.HasField("user"):
+                sender = m.sender.user.display_name or "?"
+            elif m.sender.HasField("application"):
+                sender = m.sender.application.display_name or "bot"
+        body = m.body.content[:500] if m.HasField("body") else ""
+        ts = m.created_date_time or ""
         lines.append(f"[{ts}] {sender}: {body}")
     return "\n---\n".join(lines)
 
@@ -2840,17 +2834,13 @@ async def o365_teams_send_channel_message(
     content: str,
 ) -> str:
     """Send a message to a Teams channel."""
-    from app.o365_gateway_client import O365GatewayError, o365_request
+    from app.o365_gateway_client import O365GatewayError, send_channel_message
 
     try:
-        data = await o365_request(
-            "POST",
-            f"teams/{client_id}/{team_id}/channels/{channel_id}/messages",
-            body={"contentType": "text", "content": content},
-        )
+        msg = await send_channel_message(client_id, team_id, channel_id, content)
     except O365GatewayError as e:
         return f"Error ({e.status_code}): {e.body[:300]}"
-    return f"Channel message sent (id={data.get('id', '?')})"
+    return f"Channel message sent (id={msg.id or '?'})"
 
 
 @mcp.tool

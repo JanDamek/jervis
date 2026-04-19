@@ -116,6 +116,51 @@ public final class O365GatewayProto extends com.google.protobuf.GeneratedFile {
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_jervis_o365_gateway_SendChatMessageRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_o365_gateway_Team_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_o365_gateway_Team_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_o365_gateway_Channel_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_o365_gateway_Channel_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_o365_gateway_ListTeamsRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_o365_gateway_ListTeamsRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_o365_gateway_ListTeamsResponse_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_o365_gateway_ListTeamsResponse_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_o365_gateway_ListChannelsRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_o365_gateway_ListChannelsRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_o365_gateway_ListChannelsResponse_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_o365_gateway_ListChannelsResponse_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_o365_gateway_ReadChannelRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_o365_gateway_ReadChannelRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_o365_gateway_ListChannelMessagesResponse_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_o365_gateway_ListChannelMessagesResponse_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_o365_gateway_SendChannelMessageRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_o365_gateway_SendChannelMessageRequest_fieldAccessorTable;
 
   public static com.google.protobuf.Descriptors.FileDescriptor
       getDescriptor() {
@@ -175,21 +220,53 @@ public final class O365GatewayProto extends com.google.protobuf.GeneratedFile {
       "ChatMessage\"\217\001\n\026SendChatMessageRequest\022*" +
       "\n\003ctx\030\001 \001(\0132\035.jervis.common.RequestConte" +
       "xt\022\021\n\tclient_id\030\002 \001(\t\022\017\n\007chat_id\030\003 \001(\t\022\017" +
-      "\n\007content\030\004 \001(\t\022\024\n\014content_type\030\005 \001(\t2\335\003" +
-      "\n\022O365GatewayService\022N\n\007Request\022 .jervis" +
-      ".o365_gateway.O365Request\032!.jervis.o365_" +
-      "gateway.O365Response\022X\n\014RequestBytes\022 .j" +
-      "ervis.o365_gateway.O365Request\032&.jervis." +
-      "o365_gateway.O365BytesResponse\022Z\n\tListCh" +
-      "ats\022%.jervis.o365_gateway.ListChatsReque" +
-      "st\032&.jervis.o365_gateway.ListChatsRespon" +
-      "se\022_\n\010ReadChat\022$.jervis.o365_gateway.Rea" +
-      "dChatRequest\032-.jervis.o365_gateway.ListC" +
-      "hatMessagesResponse\022`\n\017SendChatMessage\022+" +
-      ".jervis.o365_gateway.SendChatMessageRequ" +
-      "est\032 .jervis.o365_gateway.ChatMessageB7\n" +
-      "!com.jervis.contracts.o365_gatewayB\020O365" +
-      "GatewayProtoP\001b\006proto3"
+      "\n\007content\030\004 \001(\t\022\024\n\014content_type\030\005 \001(\t\"=\n" +
+      "\004Team\022\n\n\002id\030\001 \001(\t\022\024\n\014display_name\030\002 \001(\t\022" +
+      "\023\n\013description\030\003 \001(\t\"Y\n\007Channel\022\n\n\002id\030\001 " +
+      "\001(\t\022\024\n\014display_name\030\002 \001(\t\022\023\n\013description" +
+      "\030\003 \001(\t\022\027\n\017membership_type\030\004 \001(\t\"Q\n\020ListT" +
+      "eamsRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis.common" +
+      ".RequestContext\022\021\n\tclient_id\030\002 \001(\t\"=\n\021Li" +
+      "stTeamsResponse\022(\n\005teams\030\001 \003(\0132\031.jervis." +
+      "o365_gateway.Team\"e\n\023ListChannelsRequest" +
+      "\022*\n\003ctx\030\001 \001(\0132\035.jervis.common.RequestCon" +
+      "text\022\021\n\tclient_id\030\002 \001(\t\022\017\n\007team_id\030\003 \001(\t" +
+      "\"F\n\024ListChannelsResponse\022.\n\010channels\030\001 \003" +
+      "(\0132\034.jervis.o365_gateway.Channel\"\205\001\n\022Rea" +
+      "dChannelRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis.co" +
+      "mmon.RequestContext\022\021\n\tclient_id\030\002 \001(\t\022\017" +
+      "\n\007team_id\030\003 \001(\t\022\022\n\nchannel_id\030\004 \001(\t\022\013\n\003t" +
+      "op\030\005 \001(\005\"Q\n\033ListChannelMessagesResponse\022" +
+      "2\n\010messages\030\001 \003(\0132 .jervis.o365_gateway." +
+      "ChatMessage\"\246\001\n\031SendChannelMessageReques" +
+      "t\022*\n\003ctx\030\001 \001(\0132\035.jervis.common.RequestCo" +
+      "ntext\022\021\n\tclient_id\030\002 \001(\t\022\017\n\007team_id\030\003 \001(" +
+      "\t\022\022\n\nchannel_id\030\004 \001(\t\022\017\n\007content\030\005 \001(\t\022\024" +
+      "\n\014content_type\030\006 \001(\t2\360\006\n\022O365GatewayServ" +
+      "ice\022N\n\007Request\022 .jervis.o365_gateway.O36" +
+      "5Request\032!.jervis.o365_gateway.O365Respo" +
+      "nse\022X\n\014RequestBytes\022 .jervis.o365_gatewa" +
+      "y.O365Request\032&.jervis.o365_gateway.O365" +
+      "BytesResponse\022Z\n\tListChats\022%.jervis.o365" +
+      "_gateway.ListChatsRequest\032&.jervis.o365_" +
+      "gateway.ListChatsResponse\022_\n\010ReadChat\022$." +
+      "jervis.o365_gateway.ReadChatRequest\032-.je" +
+      "rvis.o365_gateway.ListChatMessagesRespon" +
+      "se\022`\n\017SendChatMessage\022+.jervis.o365_gate" +
+      "way.SendChatMessageRequest\032 .jervis.o365" +
+      "_gateway.ChatMessage\022Z\n\tListTeams\022%.jerv" +
+      "is.o365_gateway.ListTeamsRequest\032&.jervi" +
+      "s.o365_gateway.ListTeamsResponse\022c\n\014List" +
+      "Channels\022(.jervis.o365_gateway.ListChann" +
+      "elsRequest\032).jervis.o365_gateway.ListCha" +
+      "nnelsResponse\022h\n\013ReadChannel\022\'.jervis.o3" +
+      "65_gateway.ReadChannelRequest\0320.jervis.o" +
+      "365_gateway.ListChannelMessagesResponse\022" +
+      "f\n\022SendChannelMessage\022..jervis.o365_gate" +
+      "way.SendChannelMessageRequest\032 .jervis.o" +
+      "365_gateway.ChatMessageB7\n!com.jervis.co" +
+      "ntracts.o365_gatewayB\020O365GatewayProtoP\001" +
+      "b\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
@@ -304,6 +381,60 @@ public final class O365GatewayProto extends com.google.protobuf.GeneratedFile {
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_SendChatMessageRequest_descriptor,
         new java.lang.String[] { "Ctx", "ClientId", "ChatId", "Content", "ContentType", });
+    internal_static_jervis_o365_gateway_Team_descriptor =
+      getDescriptor().getMessageTypes().get(15);
+    internal_static_jervis_o365_gateway_Team_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_o365_gateway_Team_descriptor,
+        new java.lang.String[] { "Id", "DisplayName", "Description", });
+    internal_static_jervis_o365_gateway_Channel_descriptor =
+      getDescriptor().getMessageTypes().get(16);
+    internal_static_jervis_o365_gateway_Channel_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_o365_gateway_Channel_descriptor,
+        new java.lang.String[] { "Id", "DisplayName", "Description", "MembershipType", });
+    internal_static_jervis_o365_gateway_ListTeamsRequest_descriptor =
+      getDescriptor().getMessageTypes().get(17);
+    internal_static_jervis_o365_gateway_ListTeamsRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_o365_gateway_ListTeamsRequest_descriptor,
+        new java.lang.String[] { "Ctx", "ClientId", });
+    internal_static_jervis_o365_gateway_ListTeamsResponse_descriptor =
+      getDescriptor().getMessageTypes().get(18);
+    internal_static_jervis_o365_gateway_ListTeamsResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_o365_gateway_ListTeamsResponse_descriptor,
+        new java.lang.String[] { "Teams", });
+    internal_static_jervis_o365_gateway_ListChannelsRequest_descriptor =
+      getDescriptor().getMessageTypes().get(19);
+    internal_static_jervis_o365_gateway_ListChannelsRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_o365_gateway_ListChannelsRequest_descriptor,
+        new java.lang.String[] { "Ctx", "ClientId", "TeamId", });
+    internal_static_jervis_o365_gateway_ListChannelsResponse_descriptor =
+      getDescriptor().getMessageTypes().get(20);
+    internal_static_jervis_o365_gateway_ListChannelsResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_o365_gateway_ListChannelsResponse_descriptor,
+        new java.lang.String[] { "Channels", });
+    internal_static_jervis_o365_gateway_ReadChannelRequest_descriptor =
+      getDescriptor().getMessageTypes().get(21);
+    internal_static_jervis_o365_gateway_ReadChannelRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_o365_gateway_ReadChannelRequest_descriptor,
+        new java.lang.String[] { "Ctx", "ClientId", "TeamId", "ChannelId", "Top", });
+    internal_static_jervis_o365_gateway_ListChannelMessagesResponse_descriptor =
+      getDescriptor().getMessageTypes().get(22);
+    internal_static_jervis_o365_gateway_ListChannelMessagesResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_o365_gateway_ListChannelMessagesResponse_descriptor,
+        new java.lang.String[] { "Messages", });
+    internal_static_jervis_o365_gateway_SendChannelMessageRequest_descriptor =
+      getDescriptor().getMessageTypes().get(23);
+    internal_static_jervis_o365_gateway_SendChannelMessageRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_o365_gateway_SendChannelMessageRequest_descriptor,
+        new java.lang.String[] { "Ctx", "ClientId", "TeamId", "ChannelId", "Content", "ContentType", });
     descriptor.resolveAllFeaturesImmutable();
     com.jervis.contracts.common.TypesProto.getDescriptor();
   }

@@ -3837,14 +3837,14 @@ async def _execute_o365_teams_send_message(
 
 
 async def _execute_o365_teams_list_teams(client_id: str) -> str:
-    from app.o365_gateway_client import O365GatewayError, o365_request
+    from app.o365_gateway_client import O365GatewayError, list_teams
 
     try:
-        teams = await o365_request("GET", f"teams/{client_id}")
+        teams = await list_teams(client_id)
         if not teams:
             return "No teams found."
         return "\n".join(
-            f"{t.get('displayName', '?')} (id={t.get('id', '?')})" for t in teams
+            f"{t.display_name or '?'} (id={t.id or '?'})" for t in teams
         )
     except O365GatewayError as e:
         return f"Error ({e.status_code}): {e.body[:300]}"
@@ -3855,14 +3855,14 @@ async def _execute_o365_teams_list_teams(client_id: str) -> str:
 async def _execute_o365_teams_list_channels(client_id: str, team_id: str) -> str:
     if not team_id:
         return "Error: team_id is required."
-    from app.o365_gateway_client import O365GatewayError, o365_request
+    from app.o365_gateway_client import O365GatewayError, list_channels
 
     try:
-        channels = await o365_request("GET", f"teams/{client_id}/{team_id}/channels")
+        channels = await list_channels(client_id, team_id)
         if not channels:
             return "No channels found."
         return "\n".join(
-            f"{ch.get('displayName', '?')} (id={ch.get('id', '?')}, type={ch.get('membershipType', '?')})"
+            f"{ch.display_name or '?'} (id={ch.id or '?'}, type={ch.membership_type or '?'})"
             for ch in channels
         )
     except O365GatewayError as e:
@@ -3876,21 +3876,17 @@ async def _execute_o365_teams_read_channel(
 ) -> str:
     if not team_id or not channel_id:
         return "Error: team_id and channel_id are required."
-    from app.o365_gateway_client import O365GatewayError, o365_request
+    from app.o365_gateway_client import O365GatewayError, read_channel
 
     try:
-        messages = await o365_request(
-            "GET",
-            f"teams/{client_id}/{team_id}/channels/{channel_id}/messages",
-            query={"top": top},
-        )
+        messages = await read_channel(client_id, team_id, channel_id, top)
         if not messages:
             return "No messages found."
         lines = []
         for m in messages:
-            sender = _extract_sender(m)
-            body = (m.get("body") or {}).get("content", "")[:500]
-            ts = m.get("createdDateTime", "")
+            sender = _extract_sender_proto(m)
+            body = m.body.content[:500] if m.HasField("body") else ""
+            ts = m.created_date_time or ""
             lines.append(f"[{ts}] {sender}: {body}")
         return "\n---\n".join(lines)
     except O365GatewayError as e:
@@ -3904,15 +3900,11 @@ async def _execute_o365_teams_send_channel_message(
 ) -> str:
     if not team_id or not channel_id or not content:
         return "Error: team_id, channel_id, and content are required."
-    from app.o365_gateway_client import O365GatewayError, o365_request
+    from app.o365_gateway_client import O365GatewayError, send_channel_message
 
     try:
-        data = await o365_request(
-            "POST",
-            f"teams/{client_id}/{team_id}/channels/{channel_id}/messages",
-            body={"contentType": "text", "content": content},
-        )
-        return f"Channel message sent (id={data.get('id', '?')})"
+        msg = await send_channel_message(client_id, team_id, channel_id, content)
+        return f"Channel message sent (id={msg.id or '?'})"
     except O365GatewayError as e:
         return f"Error ({e.status_code}): {e.body[:300]}"
     except Exception as e:

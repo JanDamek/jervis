@@ -180,6 +180,130 @@ public final class O365GatewayServiceGrpc {
     return getSendChatMessageMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.ListTeamsRequest,
+      com.jervis.contracts.o365_gateway.ListTeamsResponse> getListTeamsMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "ListTeams",
+      requestType = com.jervis.contracts.o365_gateway.ListTeamsRequest.class,
+      responseType = com.jervis.contracts.o365_gateway.ListTeamsResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.ListTeamsRequest,
+      com.jervis.contracts.o365_gateway.ListTeamsResponse> getListTeamsMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.ListTeamsRequest, com.jervis.contracts.o365_gateway.ListTeamsResponse> getListTeamsMethod;
+    if ((getListTeamsMethod = O365GatewayServiceGrpc.getListTeamsMethod) == null) {
+      synchronized (O365GatewayServiceGrpc.class) {
+        if ((getListTeamsMethod = O365GatewayServiceGrpc.getListTeamsMethod) == null) {
+          O365GatewayServiceGrpc.getListTeamsMethod = getListTeamsMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_gateway.ListTeamsRequest, com.jervis.contracts.o365_gateway.ListTeamsResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "ListTeams"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.ListTeamsRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.ListTeamsResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new O365GatewayServiceMethodDescriptorSupplier("ListTeams"))
+              .build();
+        }
+      }
+    }
+    return getListTeamsMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.ListChannelsRequest,
+      com.jervis.contracts.o365_gateway.ListChannelsResponse> getListChannelsMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "ListChannels",
+      requestType = com.jervis.contracts.o365_gateway.ListChannelsRequest.class,
+      responseType = com.jervis.contracts.o365_gateway.ListChannelsResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.ListChannelsRequest,
+      com.jervis.contracts.o365_gateway.ListChannelsResponse> getListChannelsMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.ListChannelsRequest, com.jervis.contracts.o365_gateway.ListChannelsResponse> getListChannelsMethod;
+    if ((getListChannelsMethod = O365GatewayServiceGrpc.getListChannelsMethod) == null) {
+      synchronized (O365GatewayServiceGrpc.class) {
+        if ((getListChannelsMethod = O365GatewayServiceGrpc.getListChannelsMethod) == null) {
+          O365GatewayServiceGrpc.getListChannelsMethod = getListChannelsMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_gateway.ListChannelsRequest, com.jervis.contracts.o365_gateway.ListChannelsResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "ListChannels"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.ListChannelsRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.ListChannelsResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new O365GatewayServiceMethodDescriptorSupplier("ListChannels"))
+              .build();
+        }
+      }
+    }
+    return getListChannelsMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.ReadChannelRequest,
+      com.jervis.contracts.o365_gateway.ListChannelMessagesResponse> getReadChannelMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "ReadChannel",
+      requestType = com.jervis.contracts.o365_gateway.ReadChannelRequest.class,
+      responseType = com.jervis.contracts.o365_gateway.ListChannelMessagesResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.ReadChannelRequest,
+      com.jervis.contracts.o365_gateway.ListChannelMessagesResponse> getReadChannelMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.ReadChannelRequest, com.jervis.contracts.o365_gateway.ListChannelMessagesResponse> getReadChannelMethod;
+    if ((getReadChannelMethod = O365GatewayServiceGrpc.getReadChannelMethod) == null) {
+      synchronized (O365GatewayServiceGrpc.class) {
+        if ((getReadChannelMethod = O365GatewayServiceGrpc.getReadChannelMethod) == null) {
+          O365GatewayServiceGrpc.getReadChannelMethod = getReadChannelMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_gateway.ReadChannelRequest, com.jervis.contracts.o365_gateway.ListChannelMessagesResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "ReadChannel"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.ReadChannelRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.ListChannelMessagesResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new O365GatewayServiceMethodDescriptorSupplier("ReadChannel"))
+              .build();
+        }
+      }
+    }
+    return getReadChannelMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.SendChannelMessageRequest,
+      com.jervis.contracts.o365_gateway.ChatMessage> getSendChannelMessageMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "SendChannelMessage",
+      requestType = com.jervis.contracts.o365_gateway.SendChannelMessageRequest.class,
+      responseType = com.jervis.contracts.o365_gateway.ChatMessage.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.SendChannelMessageRequest,
+      com.jervis.contracts.o365_gateway.ChatMessage> getSendChannelMessageMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.SendChannelMessageRequest, com.jervis.contracts.o365_gateway.ChatMessage> getSendChannelMessageMethod;
+    if ((getSendChannelMessageMethod = O365GatewayServiceGrpc.getSendChannelMessageMethod) == null) {
+      synchronized (O365GatewayServiceGrpc.class) {
+        if ((getSendChannelMessageMethod = O365GatewayServiceGrpc.getSendChannelMessageMethod) == null) {
+          O365GatewayServiceGrpc.getSendChannelMessageMethod = getSendChannelMessageMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_gateway.SendChannelMessageRequest, com.jervis.contracts.o365_gateway.ChatMessage>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "SendChannelMessage"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.SendChannelMessageRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.ChatMessage.getDefaultInstance()))
+              .setSchemaDescriptor(new O365GatewayServiceMethodDescriptorSupplier("SendChannelMessage"))
+              .build();
+        }
+      }
+    }
+    return getSendChannelMessageMethod;
+  }
+
   /**
    * Creates a new async stub that supports all call types for the service
    */
@@ -278,6 +402,37 @@ public final class O365GatewayServiceGrpc {
         io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ChatMessage> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getSendChatMessageMethod(), responseObserver);
     }
+
+    /**
+     * <pre>
+     * === V5b - Teams teams / channels =========================================
+     * </pre>
+     */
+    default void listTeams(com.jervis.contracts.o365_gateway.ListTeamsRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ListTeamsResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getListTeamsMethod(), responseObserver);
+    }
+
+    /**
+     */
+    default void listChannels(com.jervis.contracts.o365_gateway.ListChannelsRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ListChannelsResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getListChannelsMethod(), responseObserver);
+    }
+
+    /**
+     */
+    default void readChannel(com.jervis.contracts.o365_gateway.ReadChannelRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ListChannelMessagesResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getReadChannelMethod(), responseObserver);
+    }
+
+    /**
+     */
+    default void sendChannelMessage(com.jervis.contracts.o365_gateway.SendChannelMessageRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ChatMessage> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getSendChannelMessageMethod(), responseObserver);
+    }
   }
 
   /**
@@ -372,6 +527,41 @@ public final class O365GatewayServiceGrpc {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getSendChatMessageMethod(), getCallOptions()), request, responseObserver);
     }
+
+    /**
+     * <pre>
+     * === V5b - Teams teams / channels =========================================
+     * </pre>
+     */
+    public void listTeams(com.jervis.contracts.o365_gateway.ListTeamsRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ListTeamsResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getListTeamsMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void listChannels(com.jervis.contracts.o365_gateway.ListChannelsRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ListChannelsResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getListChannelsMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void readChannel(com.jervis.contracts.o365_gateway.ReadChannelRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ListChannelMessagesResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getReadChannelMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void sendChannelMessage(com.jervis.contracts.o365_gateway.SendChannelMessageRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ChatMessage> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getSendChannelMessageMethod(), getCallOptions()), request, responseObserver);
+    }
   }
 
   /**
@@ -439,6 +629,37 @@ public final class O365GatewayServiceGrpc {
     public com.jervis.contracts.o365_gateway.ChatMessage sendChatMessage(com.jervis.contracts.o365_gateway.SendChatMessageRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getSendChatMessageMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * === V5b - Teams teams / channels =========================================
+     * </pre>
+     */
+    public com.jervis.contracts.o365_gateway.ListTeamsResponse listTeams(com.jervis.contracts.o365_gateway.ListTeamsRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getListTeamsMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_gateway.ListChannelsResponse listChannels(com.jervis.contracts.o365_gateway.ListChannelsRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getListChannelsMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_gateway.ListChannelMessagesResponse readChannel(com.jervis.contracts.o365_gateway.ReadChannelRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getReadChannelMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_gateway.ChatMessage sendChannelMessage(com.jervis.contracts.o365_gateway.SendChannelMessageRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getSendChannelMessageMethod(), getCallOptions(), request);
     }
   }
 
@@ -513,6 +734,41 @@ public final class O365GatewayServiceGrpc {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getSendChatMessageMethod(), getCallOptions()), request);
     }
+
+    /**
+     * <pre>
+     * === V5b - Teams teams / channels =========================================
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_gateway.ListTeamsResponse> listTeams(
+        com.jervis.contracts.o365_gateway.ListTeamsRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getListTeamsMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_gateway.ListChannelsResponse> listChannels(
+        com.jervis.contracts.o365_gateway.ListChannelsRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getListChannelsMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_gateway.ListChannelMessagesResponse> readChannel(
+        com.jervis.contracts.o365_gateway.ReadChannelRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getReadChannelMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_gateway.ChatMessage> sendChannelMessage(
+        com.jervis.contracts.o365_gateway.SendChannelMessageRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getSendChannelMessageMethod(), getCallOptions()), request);
+    }
   }
 
   private static final int METHODID_REQUEST = 0;
@@ -520,6 +776,10 @@ public final class O365GatewayServiceGrpc {
   private static final int METHODID_LIST_CHATS = 2;
   private static final int METHODID_READ_CHAT = 3;
   private static final int METHODID_SEND_CHAT_MESSAGE = 4;
+  private static final int METHODID_LIST_TEAMS = 5;
+  private static final int METHODID_LIST_CHANNELS = 6;
+  private static final int METHODID_READ_CHANNEL = 7;
+  private static final int METHODID_SEND_CHANNEL_MESSAGE = 8;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -556,6 +816,22 @@ public final class O365GatewayServiceGrpc {
           break;
         case METHODID_SEND_CHAT_MESSAGE:
           serviceImpl.sendChatMessage((com.jervis.contracts.o365_gateway.SendChatMessageRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ChatMessage>) responseObserver);
+          break;
+        case METHODID_LIST_TEAMS:
+          serviceImpl.listTeams((com.jervis.contracts.o365_gateway.ListTeamsRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ListTeamsResponse>) responseObserver);
+          break;
+        case METHODID_LIST_CHANNELS:
+          serviceImpl.listChannels((com.jervis.contracts.o365_gateway.ListChannelsRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ListChannelsResponse>) responseObserver);
+          break;
+        case METHODID_READ_CHANNEL:
+          serviceImpl.readChannel((com.jervis.contracts.o365_gateway.ReadChannelRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ListChannelMessagesResponse>) responseObserver);
+          break;
+        case METHODID_SEND_CHANNEL_MESSAGE:
+          serviceImpl.sendChannelMessage((com.jervis.contracts.o365_gateway.SendChannelMessageRequest) request,
               (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ChatMessage>) responseObserver);
           break;
         default:
@@ -611,6 +887,34 @@ public final class O365GatewayServiceGrpc {
               com.jervis.contracts.o365_gateway.SendChatMessageRequest,
               com.jervis.contracts.o365_gateway.ChatMessage>(
                 service, METHODID_SEND_CHAT_MESSAGE)))
+        .addMethod(
+          getListTeamsMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.o365_gateway.ListTeamsRequest,
+              com.jervis.contracts.o365_gateway.ListTeamsResponse>(
+                service, METHODID_LIST_TEAMS)))
+        .addMethod(
+          getListChannelsMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.o365_gateway.ListChannelsRequest,
+              com.jervis.contracts.o365_gateway.ListChannelsResponse>(
+                service, METHODID_LIST_CHANNELS)))
+        .addMethod(
+          getReadChannelMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.o365_gateway.ReadChannelRequest,
+              com.jervis.contracts.o365_gateway.ListChannelMessagesResponse>(
+                service, METHODID_READ_CHANNEL)))
+        .addMethod(
+          getSendChannelMessageMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.o365_gateway.SendChannelMessageRequest,
+              com.jervis.contracts.o365_gateway.ChatMessage>(
+                service, METHODID_SEND_CHANNEL_MESSAGE)))
         .build();
   }
 
@@ -664,6 +968,10 @@ public final class O365GatewayServiceGrpc {
               .addMethod(getListChatsMethod())
               .addMethod(getReadChatMethod())
               .addMethod(getSendChatMessageMethod())
+              .addMethod(getListTeamsMethod())
+              .addMethod(getListChannelsMethod())
+              .addMethod(getReadChannelMethod())
+              .addMethod(getSendChannelMessageMethod())
               .build();
         }
       }

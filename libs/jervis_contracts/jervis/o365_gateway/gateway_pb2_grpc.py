@@ -68,6 +68,26 @@ class O365GatewayServiceStub(object):
                 request_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.SendChatMessageRequest.SerializeToString,
                 response_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.ChatMessage.FromString,
                 _registered_method=True)
+        self.ListTeams = channel.unary_unary(
+                '/jervis.o365_gateway.O365GatewayService/ListTeams',
+                request_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListTeamsRequest.SerializeToString,
+                response_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListTeamsResponse.FromString,
+                _registered_method=True)
+        self.ListChannels = channel.unary_unary(
+                '/jervis.o365_gateway.O365GatewayService/ListChannels',
+                request_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListChannelsRequest.SerializeToString,
+                response_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListChannelsResponse.FromString,
+                _registered_method=True)
+        self.ReadChannel = channel.unary_unary(
+                '/jervis.o365_gateway.O365GatewayService/ReadChannel',
+                request_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.ReadChannelRequest.SerializeToString,
+                response_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListChannelMessagesResponse.FromString,
+                _registered_method=True)
+        self.SendChannelMessage = channel.unary_unary(
+                '/jervis.o365_gateway.O365GatewayService/SendChannelMessage',
+                request_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.SendChannelMessageRequest.SerializeToString,
+                response_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.ChatMessage.FromString,
+                _registered_method=True)
 
 
 class O365GatewayServiceServicer(object):
@@ -114,6 +134,31 @@ class O365GatewayServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ListTeams(self, request, context):
+        """=== V5b - Teams teams / channels =========================================
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListChannels(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ReadChannel(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def SendChannelMessage(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_O365GatewayServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -140,6 +185,26 @@ def add_O365GatewayServiceServicer_to_server(servicer, server):
             'SendChatMessage': grpc.unary_unary_rpc_method_handler(
                     servicer.SendChatMessage,
                     request_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.SendChatMessageRequest.FromString,
+                    response_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.ChatMessage.SerializeToString,
+            ),
+            'ListTeams': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListTeams,
+                    request_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListTeamsRequest.FromString,
+                    response_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListTeamsResponse.SerializeToString,
+            ),
+            'ListChannels': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListChannels,
+                    request_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListChannelsRequest.FromString,
+                    response_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListChannelsResponse.SerializeToString,
+            ),
+            'ReadChannel': grpc.unary_unary_rpc_method_handler(
+                    servicer.ReadChannel,
+                    request_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.ReadChannelRequest.FromString,
+                    response_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListChannelMessagesResponse.SerializeToString,
+            ),
+            'SendChannelMessage': grpc.unary_unary_rpc_method_handler(
+                    servicer.SendChannelMessage,
+                    request_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.SendChannelMessageRequest.FromString,
                     response_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.ChatMessage.SerializeToString,
             ),
     }
@@ -286,6 +351,114 @@ class O365GatewayService(object):
             target,
             '/jervis.o365_gateway.O365GatewayService/SendChatMessage',
             jervis_dot_o365__gateway_dot_gateway__pb2.SendChatMessageRequest.SerializeToString,
+            jervis_dot_o365__gateway_dot_gateway__pb2.ChatMessage.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListTeams(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.o365_gateway.O365GatewayService/ListTeams',
+            jervis_dot_o365__gateway_dot_gateway__pb2.ListTeamsRequest.SerializeToString,
+            jervis_dot_o365__gateway_dot_gateway__pb2.ListTeamsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListChannels(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.o365_gateway.O365GatewayService/ListChannels',
+            jervis_dot_o365__gateway_dot_gateway__pb2.ListChannelsRequest.SerializeToString,
+            jervis_dot_o365__gateway_dot_gateway__pb2.ListChannelsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ReadChannel(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.o365_gateway.O365GatewayService/ReadChannel',
+            jervis_dot_o365__gateway_dot_gateway__pb2.ReadChannelRequest.SerializeToString,
+            jervis_dot_o365__gateway_dot_gateway__pb2.ListChannelMessagesResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SendChannelMessage(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.o365_gateway.O365GatewayService/SendChannelMessage',
+            jervis_dot_o365__gateway_dot_gateway__pb2.SendChannelMessageRequest.SerializeToString,
             jervis_dot_o365__gateway_dot_gateway__pb2.ChatMessage.FromString,
             options,
             channel_credentials,

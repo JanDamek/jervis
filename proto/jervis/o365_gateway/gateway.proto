@@ -26,6 +26,12 @@ service O365GatewayService {
   rpc ListChats(ListChatsRequest) returns (ListChatsResponse);
   rpc ReadChat(ReadChatRequest) returns (ListChatMessagesResponse);
   rpc SendChatMessage(SendChatMessageRequest) returns (ChatMessage);
+
+  // === V5b - Teams teams / channels =========================================
+  rpc ListTeams(ListTeamsRequest) returns (ListTeamsResponse);
+  rpc ListChannels(ListChannelsRequest) returns (ListChannelsResponse);
+  rpc ReadChannel(ReadChannelRequest) returns (ListChannelMessagesResponse);
+  rpc SendChannelMessage(SendChannelMessageRequest) returns (ChatMessage);
 }
 
 // ============================================================================
@@ -137,4 +143,61 @@ message SendChatMessageRequest {
   string chat_id = 3;
   string content = 4;
   string content_type = 5;           // "text" | "html", defaults to "text"
+}
+
+// ============================================================================
+// Teams teams / channels (V5b)
+// ============================================================================
+
+message Team {
+  string id = 1;
+  string display_name = 2;
+  string description = 3;
+}
+
+message Channel {
+  string id = 1;
+  string display_name = 2;
+  string description = 3;
+  string membership_type = 4;        // "standard" | "private" | "shared"
+}
+
+message ListTeamsRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+}
+
+message ListTeamsResponse {
+  repeated Team teams = 1;
+}
+
+message ListChannelsRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string team_id = 3;
+}
+
+message ListChannelsResponse {
+  repeated Channel channels = 1;
+}
+
+message ReadChannelRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string team_id = 3;
+  string channel_id = 4;
+  int32 top = 5;                     // default 20
+}
+
+message ListChannelMessagesResponse {
+  repeated ChatMessage messages = 1;
+}
+
+message SendChannelMessageRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string team_id = 3;
+  string channel_id = 4;
+  string content = 5;
+  string content_type = 6;           // "text" | "html", defaults to "text"
 }

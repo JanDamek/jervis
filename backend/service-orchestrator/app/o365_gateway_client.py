@@ -155,3 +155,72 @@ async def send_chat_message(
         return await stub.SendChatMessage(req, timeout=timeout)
     except grpc.aio.AioRpcError as e:
         raise O365GatewayError(e.code().value[0] if e.code() else 502, e.details() or "")
+
+
+# === V5b — Teams teams/channels typed =======================================
+
+async def list_teams(client_id: str, timeout: float = 30.0) -> list[gateway_pb2.Team]:
+    stub = _get_stub()
+    req = gateway_pb2.ListTeamsRequest(ctx=_ctx(), client_id=client_id)
+    try:
+        resp = await stub.ListTeams(req, timeout=timeout)
+    except grpc.aio.AioRpcError as e:
+        raise O365GatewayError(e.code().value[0] if e.code() else 502, e.details() or "")
+    return list(resp.teams)
+
+
+async def list_channels(
+    client_id: str, team_id: str, timeout: float = 30.0,
+) -> list[gateway_pb2.Channel]:
+    stub = _get_stub()
+    req = gateway_pb2.ListChannelsRequest(ctx=_ctx(), client_id=client_id, team_id=team_id)
+    try:
+        resp = await stub.ListChannels(req, timeout=timeout)
+    except grpc.aio.AioRpcError as e:
+        raise O365GatewayError(e.code().value[0] if e.code() else 502, e.details() or "")
+    return list(resp.channels)
+
+
+async def read_channel(
+    client_id: str,
+    team_id: str,
+    channel_id: str,
+    top: int = 20,
+    timeout: float = 30.0,
+) -> list[gateway_pb2.ChatMessage]:
+    stub = _get_stub()
+    req = gateway_pb2.ReadChannelRequest(
+        ctx=_ctx(),
+        client_id=client_id,
+        team_id=team_id,
+        channel_id=channel_id,
+        top=top,
+    )
+    try:
+        resp = await stub.ReadChannel(req, timeout=timeout)
+    except grpc.aio.AioRpcError as e:
+        raise O365GatewayError(e.code().value[0] if e.code() else 502, e.details() or "")
+    return list(resp.messages)
+
+
+async def send_channel_message(
+    client_id: str,
+    team_id: str,
+    channel_id: str,
+    content: str,
+    content_type: str = "text",
+    timeout: float = 30.0,
+) -> gateway_pb2.ChatMessage:
+    stub = _get_stub()
+    req = gateway_pb2.SendChannelMessageRequest(
+        ctx=_ctx(),
+        client_id=client_id,
+        team_id=team_id,
+        channel_id=channel_id,
+        content=content,
+        content_type=content_type,
+    )
+    try:
+        return await stub.SendChannelMessage(req, timeout=timeout)
+    except grpc.aio.AioRpcError as e:
+        raise O365GatewayError(e.code().value[0] if e.code() else 502, e.details() or "")

@@ -191,3 +191,91 @@ class SendChatMessageRequest(_message.Message):
     content: str
     content_type: str
     def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., client_id: _Optional[str] = ..., chat_id: _Optional[str] = ..., content: _Optional[str] = ..., content_type: _Optional[str] = ...) -> None: ...
+
+class Team(_message.Message):
+    __slots__ = ("id", "display_name", "description")
+    ID_FIELD_NUMBER: _ClassVar[int]
+    DISPLAY_NAME_FIELD_NUMBER: _ClassVar[int]
+    DESCRIPTION_FIELD_NUMBER: _ClassVar[int]
+    id: str
+    display_name: str
+    description: str
+    def __init__(self, id: _Optional[str] = ..., display_name: _Optional[str] = ..., description: _Optional[str] = ...) -> None: ...
+
+class Channel(_message.Message):
+    __slots__ = ("id", "display_name", "description", "membership_type")
+    ID_FIELD_NUMBER: _ClassVar[int]
+    DISPLAY_NAME_FIELD_NUMBER: _ClassVar[int]
+    DESCRIPTION_FIELD_NUMBER: _ClassVar[int]
+    MEMBERSHIP_TYPE_FIELD_NUMBER: _ClassVar[int]
+    id: str
+    display_name: str
+    description: str
+    membership_type: str
+    def __init__(self, id: _Optional[str] = ..., display_name: _Optional[str] = ..., description: _Optional[str] = ..., membership_type: _Optional[str] = ...) -> None: ...
+
+class ListTeamsRequest(_message.Message):
+    __slots__ = ("ctx", "client_id")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    CLIENT_ID_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    client_id: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., client_id: _Optional[str] = ...) -> None: ...
+
+class ListTeamsResponse(_message.Message):
+    __slots__ = ("teams",)
+    TEAMS_FIELD_NUMBER: _ClassVar[int]
+    teams: _containers.RepeatedCompositeFieldContainer[Team]
+    def __init__(self, teams: _Optional[_Iterable[_Union[Team, _Mapping]]] = ...) -> None: ...
+
+class ListChannelsRequest(_message.Message):
+    __slots__ = ("ctx", "client_id", "team_id")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    CLIENT_ID_FIELD_NUMBER: _ClassVar[int]
+    TEAM_ID_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    client_id: str
+    team_id: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., client_id: _Optional[str] = ..., team_id: _Optional[str] = ...) -> None: ...
+
+class ListChannelsResponse(_message.Message):
+    __slots__ = ("channels",)
+    CHANNELS_FIELD_NUMBER: _ClassVar[int]
+    channels: _containers.RepeatedCompositeFieldContainer[Channel]
+    def __init__(self, channels: _Optional[_Iterable[_Union[Channel, _Mapping]]] = ...) -> None: ...
+
+class ReadChannelRequest(_message.Message):
+    __slots__ = ("ctx", "client_id", "team_id", "channel_id", "top")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    CLIENT_ID_FIELD_NUMBER: _ClassVar[int]
+    TEAM_ID_FIELD_NUMBER: _ClassVar[int]
+    CHANNEL_ID_FIELD_NUMBER: _ClassVar[int]
+    TOP_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    client_id: str
+    team_id: str
+    channel_id: str
+    top: int
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., client_id: _Optional[str] = ..., team_id: _Optional[str] = ..., channel_id: _Optional[str] = ..., top: _Optional[int] = ...) -> None: ...
+
+class ListChannelMessagesResponse(_message.Message):
+    __slots__ = ("messages",)
+    MESSAGES_FIELD_NUMBER: _ClassVar[int]
+    messages: _containers.RepeatedCompositeFieldContainer[ChatMessage]
+    def __init__(self, messages: _Optional[_Iterable[_Union[ChatMessage, _Mapping]]] = ...) -> None: ...
+
+class SendChannelMessageRequest(_message.Message):
+    __slots__ = ("ctx", "client_id", "team_id", "channel_id", "content", "content_type")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    CLIENT_ID_FIELD_NUMBER: _ClassVar[int]
+    TEAM_ID_FIELD_NUMBER: _ClassVar[int]
+    CHANNEL_ID_FIELD_NUMBER: _ClassVar[int]
+    CONTENT_FIELD_NUMBER: _ClassVar[int]
+    CONTENT_TYPE_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    client_id: str
+    team_id: str
+    channel_id: str
+    content: str
+    content_type: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., client_id: _Optional[str] = ..., team_id: _Optional[str] = ..., channel_id: _Optional[str] = ..., content: _Optional[str] = ..., content_type: _Optional[str] = ...) -> None: ...
