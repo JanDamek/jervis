@@ -62,8 +62,7 @@ ssh_cmd "$INSTALL_DIR/venv/bin/pip install --no-cache-dir -q \
 echo "  torch installed"
 
 ssh_cmd "$INSTALL_DIR/venv/bin/pip install --no-cache-dir -q \
-    coqui-tts \
-    fastapi uvicorn pydantic numpy \
+    coqui-tts numpy \
     'grpcio>=1.66.0,<1.80' 'grpcio-reflection>=1.66.0,<1.80' 'protobuf>=5.28.0,<7' 2>&1 | tail -5"
 echo "  coqui-tts + gRPC deps installed"
 
@@ -121,17 +120,16 @@ fi
 echo "Step 7/7: Setting up systemd service..."
 ssh_cmd "cat << 'SVCEOF' | sudo tee /etc/systemd/system/$SERVICE_NAME.service > /dev/null
 [Unit]
-Description=Jervis XTTS v2 TTS Service (FastAPI :8787 + gRPC :5501, GPU)
+Description=Jervis XTTS v2 gRPC Service (:5501, GPU)
 After=network.target
 
 [Service]
 Type=simple
 User=$GPU_USER
 WorkingDirectory=$INSTALL_DIR
-ExecStart=$INSTALL_DIR/venv/bin/python -m uvicorn app.xtts_server:app --host 0.0.0.0 --port 8787
+ExecStart=$INSTALL_DIR/venv/bin/python -m app.xtts_server
 Restart=on-failure
 RestartSec=10
-Environment=TTS_PORT=8787
 Environment=TTS_GRPC_PORT=5501
 Environment=CUDA_VISIBLE_DEVICES=0
 Environment=PYTHONPATH=$INSTALL_DIR
@@ -144,29 +142,24 @@ sudo systemctl enable $SERVICE_NAME
 sudo systemctl restart $SERVICE_NAME"
 
 echo "Waiting for model to load (~30-120s)..."
-sleep 5
+sleep 15
 
-# Health check (retry a few times as model loads lazily)
-for i in 1 2 3 4 5 6; do
-    HEALTH=$(curl -s --max-time 10 "http://$GPU_HOST:8787/health" 2>/dev/null || echo '{"status":"starting"}')
-    STATUS=$(echo "$HEALTH" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','unknown'))" 2>/dev/null || echo "unknown")
-    if [ "$STATUS" = "ok" ]; then
+# Health check — gRPC-only; poll the :5501 port until it's listening.
+for i in 1 2 3 4 5 6 7 8 9 10; do
+    GRPC_LISTENING=$(ssh_cmd "ss -tln 2>/dev/null | grep -c ':5501 ' || echo 0")
+    if [ "$GRPC_LISTENING" -ge 1 ]; then
         break
     fi
-    echo "  waiting... ($i/6)"
+    echo "  waiting for gRPC :5501... ($i/10)"
     sleep 5
 done
 
 echo ""
-echo "Health: $HEALTH"
-
-# Additional check: gRPC port listening
-GRPC_LISTENING=$(ssh_cmd "ss -tln 2>/dev/null | grep -c ':5501 ' || echo 0")
 echo "gRPC :5501 listening: $GRPC_LISTENING (should be >=1)"
 
-if [ "$STATUS" = "ok" ] && [ "$GRPC_LISTENING" -ge 1 ]; then
+if [ "$GRPC_LISTENING" -ge 1 ]; then
     echo ""
-    echo "=== $SERVICE_NAME deployed + healthy on $GPU_HOST (FastAPI :8787 + gRPC :5501) ==="
+    echo "=== $SERVICE_NAME deployed + healthy on $GPU_HOST (gRPC :5501) ==="
 else
     echo ""
     echo "Service is starting up (model loading takes ~30-60s on first request)."
@@ -177,4 +170,5 @@ fi
 echo ""
 echo "To add your own voice:"
 echo "  scp -i $SSH_KEY your_voice.wav $GPU_USER@$GPU_HOST:/opt/jervis/data/tts/speakers/speaker.wav"
-echo "  curl -X POST http://$GPU_HOST:8787/set_speaker?wav_path=/opt/jervis/data/tts/speakers/speaker.wav"
+echo "  ssh -i $SSH_KEY $GPU_USER@$GPU_HOST 'sudo systemctl restart $SERVICE_NAME'"
+echo "  # (no hot-swap endpoint — speaker embeddings reload at service start)"

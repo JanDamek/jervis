@@ -1,42 +1,35 @@
 """
 Jervis TTS Service — XTTS v2 (Coqui) multilingual voice cloning TTS.
 
-Replaces Piper TTS with much higher quality neural TTS.
-Supports Czech + English (and 15 other languages) from a single cloned voice.
-Requires GPU (CUDA) for acceptable latency.
-
-API:
-  POST /tts         {"text": "...", "speed": 1.0}  → audio/wav (batch)
-  POST /tts/stream  {"text": "...", "speed": 1.0}  → SSE with raw PCM int16 chunks (true streaming via inference_stream)
+gRPC-only: consumers dial `jervis.tts.TtsService` on :5501. Runs on the VD
+GPU VM as a systemd unit (see k8s/deploy_xtts_gpu.sh). No HTTP surface.
+Speaker WAVs live under $TTS_DATA_DIR/speakers/ and are picked up at boot
+(env override via TTS_SPEAKER_WAV).
 """
 import asyncio
-import base64
 import io
-import json
+import logging
 import os
 import queue
 import re
+import signal
 import threading
 import time
 import wave
-from contextlib import asynccontextmanager
 from pathlib import Path
 
 import numpy as np
 import torch
-import uvicorn
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import Response, StreamingResponse
-from pydantic import BaseModel
 
 # ── Configuration ────────────────────────────────────────────────────────
-TTS_PORT = int(os.getenv("TTS_PORT", "8787"))
-TTS_WORKERS = int(os.getenv("TTS_WORKERS", "1"))
 TTS_DATA_DIR = Path(os.getenv("TTS_DATA_DIR", "/opt/jervis/data/tts"))
 TTS_SPEAKER_WAV = os.getenv("TTS_SPEAKER_WAV", "")  # path to reference voice WAV
 TTS_LANGUAGE = os.getenv("TTS_LANGUAGE", "cs")  # default language
 TTS_MAX_TEXT_LENGTH = int(os.getenv("TTS_MAX_TEXT_LENGTH", "10000"))
 TTS_DEVICE = os.getenv("TTS_DEVICE", "cuda")  # cuda or cpu
+TTS_GRPC_PORT = int(os.getenv("TTS_GRPC_PORT", "5501"))
+
+logger = logging.getLogger("tts.xtts")
 
 # XTTS v2 model name (from coqui-tts)
 XTTS_MODEL = "tts_models/multilingual/multi-dataset/xtts_v2"
@@ -367,89 +360,6 @@ def _synthesize_text(text: str, speed: float = 1.0, language: str = "", speaker:
     return audio_buffer.getvalue()
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Startup/shutdown lifecycle — pre-load model + spawn pod-to-pod gRPC server."""
-    print(f"[TTS] Starting XTTS v2 service — FastAPI :{TTS_PORT} + gRPC :5501")
-    # Pre-load model + speaker embedding at startup (not lazy on first request)
-    loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, _load_tts)
-    print("[TTS] Model ready, accepting requests")
-
-    # Start the pod-to-pod gRPC server alongside FastAPI. Kotlin server + other
-    # pods dial jervis.tts.TtsService over gRPC; FastAPI stays for dev debug.
-    from app.grpc_server import start_grpc_server
-
-    grpc_port = int(os.getenv("TTS_GRPC_PORT", "5501"))
-    grpc_server = await start_grpc_server(port=grpc_port)
-    app.state.grpc_server = grpc_server
-    try:
-        yield
-    finally:
-        await grpc_server.stop(grace=5.0)
-        print("[TTS] Shutting down")
-
-
-app = FastAPI(title="Jervis TTS Service (XTTS v2)", lifespan=lifespan)
-
-
-class TtsRequest(BaseModel):
-    text: str
-    voice: str | None = None  # speaker name: "default" | "jan-damek" | any speaker in speakers dir
-    speed: float = 1.0  # speaking rate multiplier
-    language: str = ""  # auto-detect if empty
-
-
-class TtsHealthResponse(BaseModel):
-    status: str = "ok"
-    model: str = "xtts_v2"
-    model_loaded: bool = False
-    speaker_loaded: bool = False
-    device: str = TTS_DEVICE
-
-
-@app.get("/health")
-async def health() -> TtsHealthResponse:
-    return TtsHealthResponse(
-        model_loaded=_tts is not None,
-        speaker_loaded=_gpt_cond_latent is not None,
-    )
-
-
-@app.post("/tts")
-async def synthesize(request: TtsRequest) -> Response:
-    """Synthesize speech from text, return WAV audio."""
-    if not request.text.strip():
-        raise HTTPException(status_code=400, detail="Empty text")
-
-    if len(request.text) > TTS_MAX_TEXT_LENGTH:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Text too long: {len(request.text)} chars (max {TTS_MAX_TEXT_LENGTH})",
-        )
-
-    start = time.monotonic()
-
-    async with _lock:
-        await asyncio.get_running_loop().run_in_executor(None, _load_tts)
-
-    wav_data = await asyncio.get_running_loop().run_in_executor(
-        None, _synthesize_text, request.text, request.speed, request.language, request.voice
-    )
-    elapsed = time.monotonic() - start
-    speaker_label = request.voice or "default"
-    print(f"[TTS] Synthesized {len(request.text)} chars → {len(wav_data)} bytes in {elapsed:.2f}s (lang={_detect_language(request.text)}, speaker={speaker_label})")
-
-    return Response(
-        content=wav_data,
-        media_type="audio/wav",
-        headers={
-            "X-TTS-Duration-Ms": str(int(elapsed * 1000)),
-            "X-TTS-Text-Length": str(len(request.text)),
-        },
-    )
-
-
 def _stream_inference(text: str, speed: float, language: str, chunk_queue: queue.Queue, speaker: str | None = None):
     """True streaming TTS using inference_stream() — yields PCM chunks as they're generated.
 
@@ -518,111 +428,29 @@ def _stream_inference(text: str, speed: float, language: str, chunk_queue: queue
         chunk_queue.put(("error", str(e)))
 
 
-@app.post("/tts/stream")
-async def synthesize_stream(request: TtsRequest):
-    """True streaming TTS via SSE using inference_stream().
+async def _main() -> None:
+    """gRPC-only entrypoint. Pre-loads XTTS + speaker embedding, then spins up
+    the TtsService gRPC server and blocks until a termination signal arrives."""
+    logger.info("[TTS] Starting XTTS v2 gRPC service on :%d", TTS_GRPC_PORT)
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, _load_tts)
+    logger.info("[TTS] Model + speaker loaded, accepting gRPC requests")
 
-    Protocol:
-      event: tts_header  data: {"sample_rate":24000}     — open audio line
-      event: tts_pcm     data: {"data":"<base64 int16>"}  — raw PCM chunk, write to audio line
-      event: done        data: {"chunks":N}               — all chunks sent
-      event: error       data: {"text":"..."}             — error
-    """
-    if not request.text.strip():
-        raise HTTPException(status_code=400, detail="Empty text")
+    from app.grpc_server import start_grpc_server
 
-    if len(request.text) > TTS_MAX_TEXT_LENGTH:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Text too long: {len(request.text)} chars (max {TTS_MAX_TEXT_LENGTH})",
-        )
+    grpc_server = await start_grpc_server(port=TTS_GRPC_PORT)
 
-    async with _lock:
-        await asyncio.get_running_loop().run_in_executor(None, _load_tts)
+    stop_event = asyncio.Event()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, stop_event.set)
 
-    start = time.monotonic()
-    chunk_q: queue.Queue = queue.Queue()
-
-    # Run true streaming inference in background thread
-    thread = threading.Thread(
-        target=_stream_inference,
-        args=(request.text, request.speed, request.language, chunk_q, request.voice),
-        daemon=True,
-    )
-    thread.start()
-
-    async def _sse_stream():
-        chunk_idx = 0
-        loop = asyncio.get_running_loop()
-        first_chunk_time = None
-
-        while True:
-            try:
-                msg_type, data = await loop.run_in_executor(None, chunk_q.get, True, 60.0)
-            except Exception:
-                yield f"event: error\ndata: {{\"text\":\"Timeout waiting for audio chunk\"}}\n\n"
-                break
-
-            if msg_type == "header":
-                yield f"event: tts_header\ndata: {json.dumps(data)}\n\n"
-
-            elif msg_type == "pcm":
-                if first_chunk_time is None:
-                    first_chunk_time = time.monotonic() - start
-                audio_b64 = base64.b64encode(data).decode("ascii")
-                yield f"event: tts_pcm\ndata: {{\"data\":\"{audio_b64}\"}}\n\n"
-                chunk_idx += 1
-
-            elif msg_type == "done":
-                elapsed = time.monotonic() - start
-                lang = request.language or _detect_language(request.text)
-                fc = f"{first_chunk_time:.2f}" if first_chunk_time else "N/A"
-                print(f"[TTS] Streamed {chunk_idx} PCM chunks for {len(request.text)} chars in {elapsed:.2f}s "
-                      f"(first_chunk={fc}s, lang={lang})", flush=True)
-                yield f"event: done\ndata: {{\"chunks\":{chunk_idx}}}\n\n"
-                break
-
-            elif msg_type == "error":
-                yield f"event: error\ndata: {{\"text\":\"{data}\"}}\n\n"
-                break
-
-    return StreamingResponse(
-        _sse_stream(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache, no-store",
-            "X-Accel-Buffering": "no",
-            "Connection": "keep-alive",
-        },
-    )
-
-
-@app.post("/set_speaker")
-async def set_speaker(wav_path: str):
-    """Hot-swap speaker reference voice."""
-    global _speaker_wav
-    if not Path(wav_path).exists():
-        raise HTTPException(status_code=404, detail=f"Speaker WAV not found: {wav_path}")
-
-    _speaker_wav = wav_path
-    await asyncio.get_running_loop().run_in_executor(None, _precompute_speaker_embedding)
-    return {"status": "ok", "speaker": wav_path}
-
-
-@app.get("/speakers")
-async def list_speakers():
-    """List available speakers (from WAV files and cached embeddings)."""
-    speaker_dir = TTS_DATA_DIR / "speakers"
-    wav_files = []
-    if speaker_dir.exists():
-        wav_files = [f.name for f in speaker_dir.glob("*.wav")]
-
-    return {
-        "speakers": sorted(_speaker_cache.keys()),
-        "wav_files": wav_files,
-        "active": Path(_speaker_wav).name if _speaker_wav else None,
-    }
+    try:
+        await stop_event.wait()
+    finally:
+        logger.info("[TTS] Shutting down gRPC server")
+        await grpc_server.stop(grace=5.0)
 
 
 if __name__ == "__main__":
-    uvicorn.run("app.xtts_server:app", host="0.0.0.0", port=TTS_PORT, workers=TTS_WORKERS)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s %(message)s")
+    asyncio.run(_main())

@@ -1,12 +1,9 @@
 [project]
 name = "jervis-tts"
 version = "0.1.0"
-description = "Jervis TTS service — XTTS v2 (Coqui) neural synthesis on VD GPU. (Stays Python — ML framework binding)"
+description = "Jervis TTS service — XTTS v2 (Coqui) neural synthesis, gRPC-only on VD GPU. (Stays Python — ML framework binding)"
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi>=0.115.6",
-    "uvicorn[standard]>=0.34.0",
-    "pydantic>=2.0",
     "grpcio>=1.66.0,<1.80",
     "grpcio-reflection>=1.66.0,<1.80",
     # coqui-tts + torch have Linux-only GPU wheels we rely on (CUDA 12.4).
