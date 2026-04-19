@@ -82,7 +82,6 @@ class RpcClientsConfig(
     fun pythonOrchestratorClient(): PythonOrchestratorClient =
         _pythonOrchestratorClient
             ?: PythonOrchestratorClient(
-                endpoints.orchestrator.baseUrl,
                 controlGrpc = orchestratorControlGrpc,
                 graphGrpc = orchestratorGraphGrpc,
                 dispatchGrpc = orchestratorDispatchGrpc,

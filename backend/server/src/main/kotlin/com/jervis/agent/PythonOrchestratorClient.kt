@@ -1,18 +1,5 @@
 package com.jervis.agent
 
-import com.jervis.agent.PythonOrchestratorClient
-import io.ktor.client.HttpClient
-import io.ktor.client.call.body
-import io.ktor.client.statement.bodyAsText
-import io.ktor.client.engine.cio.CIO
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.client.request.get
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.http.ContentType
-import io.ktor.http.contentType
-import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
@@ -79,26 +66,18 @@ class CircuitBreaker(
 }
 
 /**
- * REST client for the Python Orchestrator service.
+ * Python Orchestrator client — pure gRPC (Ktor REST removed in V6d).
  *
- * The Python orchestrator (LangGraph) handles:
- * - Task decomposition into goals
- * - Coding step planning
- * - K8s Job execution (coding agents)
- * - Evaluation and git operations
- * - Approval flow (commit/push)
- *
- * This client is used by AgentOrchestratorService to delegate complex
- * coding workflows to the Python service.
+ * Delegates control / graph / dispatch RPCs to the matching
+ * Orchestrator*GrpcClient. Circuit breaker stays here so health probes
+ * fast-fail without touching gRPC during transient outages.
  */
 class PythonOrchestratorClient(
-    baseUrl: String,
     private val controlGrpc: com.jervis.infrastructure.grpc.OrchestratorControlGrpcClient? = null,
     private val graphGrpc: com.jervis.infrastructure.grpc.OrchestratorGraphGrpcClient? = null,
     private val dispatchGrpc: com.jervis.infrastructure.grpc.OrchestratorDispatchGrpcClient? = null,
 ) {
 
-    private val apiBaseUrl = baseUrl.trimEnd('/')
     val circuitBreaker = CircuitBreaker()
 
     private fun controlGrpcOrThrow(): com.jervis.infrastructure.grpc.OrchestratorControlGrpcClient =
@@ -109,23 +88,6 @@ class PythonOrchestratorClient(
 
     private fun dispatchGrpcOrThrow(): com.jervis.infrastructure.grpc.OrchestratorDispatchGrpcClient =
         dispatchGrpc ?: error("OrchestratorDispatchGrpcClient not wired — see RpcClientsConfig")
-
-    private val client = HttpClient(CIO) {
-        install(ContentNegotiation) {
-            json(
-                Json {
-                    ignoreUnknownKeys = true
-                    isLenient = true
-                    encodeDefaults = true
-                },
-            )
-        }
-        install(HttpTimeout) {
-            requestTimeoutMillis = Long.MAX_VALUE
-            connectTimeoutMillis = 30_000   // 30s connect timeout only
-            socketTimeoutMillis = Long.MAX_VALUE
-        }
-    }
 
     /**
      * Send approval response and resume graph (fire-and-forget).
