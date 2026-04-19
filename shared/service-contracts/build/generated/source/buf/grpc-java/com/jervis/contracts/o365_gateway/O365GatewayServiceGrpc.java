@@ -304,6 +304,99 @@ public final class O365GatewayServiceGrpc {
     return getSendChannelMessageMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.ListMailRequest,
+      com.jervis.contracts.o365_gateway.ListMailResponse> getListMailMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "ListMail",
+      requestType = com.jervis.contracts.o365_gateway.ListMailRequest.class,
+      responseType = com.jervis.contracts.o365_gateway.ListMailResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.ListMailRequest,
+      com.jervis.contracts.o365_gateway.ListMailResponse> getListMailMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.ListMailRequest, com.jervis.contracts.o365_gateway.ListMailResponse> getListMailMethod;
+    if ((getListMailMethod = O365GatewayServiceGrpc.getListMailMethod) == null) {
+      synchronized (O365GatewayServiceGrpc.class) {
+        if ((getListMailMethod = O365GatewayServiceGrpc.getListMailMethod) == null) {
+          O365GatewayServiceGrpc.getListMailMethod = getListMailMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_gateway.ListMailRequest, com.jervis.contracts.o365_gateway.ListMailResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "ListMail"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.ListMailRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.ListMailResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new O365GatewayServiceMethodDescriptorSupplier("ListMail"))
+              .build();
+        }
+      }
+    }
+    return getListMailMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.ReadMailRequest,
+      com.jervis.contracts.o365_gateway.MailMessage> getReadMailMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "ReadMail",
+      requestType = com.jervis.contracts.o365_gateway.ReadMailRequest.class,
+      responseType = com.jervis.contracts.o365_gateway.MailMessage.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.ReadMailRequest,
+      com.jervis.contracts.o365_gateway.MailMessage> getReadMailMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.ReadMailRequest, com.jervis.contracts.o365_gateway.MailMessage> getReadMailMethod;
+    if ((getReadMailMethod = O365GatewayServiceGrpc.getReadMailMethod) == null) {
+      synchronized (O365GatewayServiceGrpc.class) {
+        if ((getReadMailMethod = O365GatewayServiceGrpc.getReadMailMethod) == null) {
+          O365GatewayServiceGrpc.getReadMailMethod = getReadMailMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_gateway.ReadMailRequest, com.jervis.contracts.o365_gateway.MailMessage>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "ReadMail"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.ReadMailRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.MailMessage.getDefaultInstance()))
+              .setSchemaDescriptor(new O365GatewayServiceMethodDescriptorSupplier("ReadMail"))
+              .build();
+        }
+      }
+    }
+    return getReadMailMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.SendMailRpcRequest,
+      com.jervis.contracts.o365_gateway.SendMailAck> getSendMailMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "SendMail",
+      requestType = com.jervis.contracts.o365_gateway.SendMailRpcRequest.class,
+      responseType = com.jervis.contracts.o365_gateway.SendMailAck.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.SendMailRpcRequest,
+      com.jervis.contracts.o365_gateway.SendMailAck> getSendMailMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.SendMailRpcRequest, com.jervis.contracts.o365_gateway.SendMailAck> getSendMailMethod;
+    if ((getSendMailMethod = O365GatewayServiceGrpc.getSendMailMethod) == null) {
+      synchronized (O365GatewayServiceGrpc.class) {
+        if ((getSendMailMethod = O365GatewayServiceGrpc.getSendMailMethod) == null) {
+          O365GatewayServiceGrpc.getSendMailMethod = getSendMailMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_gateway.SendMailRpcRequest, com.jervis.contracts.o365_gateway.SendMailAck>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "SendMail"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.SendMailRpcRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.SendMailAck.getDefaultInstance()))
+              .setSchemaDescriptor(new O365GatewayServiceMethodDescriptorSupplier("SendMail"))
+              .build();
+        }
+      }
+    }
+    return getSendMailMethod;
+  }
+
   /**
    * Creates a new async stub that supports all call types for the service
    */
@@ -432,6 +525,30 @@ public final class O365GatewayServiceGrpc {
     default void sendChannelMessage(com.jervis.contracts.o365_gateway.SendChannelMessageRequest request,
         io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ChatMessage> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getSendChannelMessageMethod(), responseObserver);
+    }
+
+    /**
+     * <pre>
+     * === V5c - Mail (Outlook) =================================================
+     * </pre>
+     */
+    default void listMail(com.jervis.contracts.o365_gateway.ListMailRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ListMailResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getListMailMethod(), responseObserver);
+    }
+
+    /**
+     */
+    default void readMail(com.jervis.contracts.o365_gateway.ReadMailRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.MailMessage> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getReadMailMethod(), responseObserver);
+    }
+
+    /**
+     */
+    default void sendMail(com.jervis.contracts.o365_gateway.SendMailRpcRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.SendMailAck> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getSendMailMethod(), responseObserver);
     }
   }
 
@@ -562,6 +679,33 @@ public final class O365GatewayServiceGrpc {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getSendChannelMessageMethod(), getCallOptions()), request, responseObserver);
     }
+
+    /**
+     * <pre>
+     * === V5c - Mail (Outlook) =================================================
+     * </pre>
+     */
+    public void listMail(com.jervis.contracts.o365_gateway.ListMailRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ListMailResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getListMailMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void readMail(com.jervis.contracts.o365_gateway.ReadMailRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.MailMessage> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getReadMailMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void sendMail(com.jervis.contracts.o365_gateway.SendMailRpcRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.SendMailAck> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getSendMailMethod(), getCallOptions()), request, responseObserver);
+    }
   }
 
   /**
@@ -660,6 +804,30 @@ public final class O365GatewayServiceGrpc {
     public com.jervis.contracts.o365_gateway.ChatMessage sendChannelMessage(com.jervis.contracts.o365_gateway.SendChannelMessageRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getSendChannelMessageMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * === V5c - Mail (Outlook) =================================================
+     * </pre>
+     */
+    public com.jervis.contracts.o365_gateway.ListMailResponse listMail(com.jervis.contracts.o365_gateway.ListMailRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getListMailMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_gateway.MailMessage readMail(com.jervis.contracts.o365_gateway.ReadMailRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getReadMailMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_gateway.SendMailAck sendMail(com.jervis.contracts.o365_gateway.SendMailRpcRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getSendMailMethod(), getCallOptions(), request);
     }
   }
 
@@ -769,6 +937,33 @@ public final class O365GatewayServiceGrpc {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getSendChannelMessageMethod(), getCallOptions()), request);
     }
+
+    /**
+     * <pre>
+     * === V5c - Mail (Outlook) =================================================
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_gateway.ListMailResponse> listMail(
+        com.jervis.contracts.o365_gateway.ListMailRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getListMailMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_gateway.MailMessage> readMail(
+        com.jervis.contracts.o365_gateway.ReadMailRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getReadMailMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_gateway.SendMailAck> sendMail(
+        com.jervis.contracts.o365_gateway.SendMailRpcRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getSendMailMethod(), getCallOptions()), request);
+    }
   }
 
   private static final int METHODID_REQUEST = 0;
@@ -780,6 +975,9 @@ public final class O365GatewayServiceGrpc {
   private static final int METHODID_LIST_CHANNELS = 6;
   private static final int METHODID_READ_CHANNEL = 7;
   private static final int METHODID_SEND_CHANNEL_MESSAGE = 8;
+  private static final int METHODID_LIST_MAIL = 9;
+  private static final int METHODID_READ_MAIL = 10;
+  private static final int METHODID_SEND_MAIL = 11;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -833,6 +1031,18 @@ public final class O365GatewayServiceGrpc {
         case METHODID_SEND_CHANNEL_MESSAGE:
           serviceImpl.sendChannelMessage((com.jervis.contracts.o365_gateway.SendChannelMessageRequest) request,
               (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ChatMessage>) responseObserver);
+          break;
+        case METHODID_LIST_MAIL:
+          serviceImpl.listMail((com.jervis.contracts.o365_gateway.ListMailRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ListMailResponse>) responseObserver);
+          break;
+        case METHODID_READ_MAIL:
+          serviceImpl.readMail((com.jervis.contracts.o365_gateway.ReadMailRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.MailMessage>) responseObserver);
+          break;
+        case METHODID_SEND_MAIL:
+          serviceImpl.sendMail((com.jervis.contracts.o365_gateway.SendMailRpcRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.SendMailAck>) responseObserver);
           break;
         default:
           throw new AssertionError();
@@ -915,6 +1125,27 @@ public final class O365GatewayServiceGrpc {
               com.jervis.contracts.o365_gateway.SendChannelMessageRequest,
               com.jervis.contracts.o365_gateway.ChatMessage>(
                 service, METHODID_SEND_CHANNEL_MESSAGE)))
+        .addMethod(
+          getListMailMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.o365_gateway.ListMailRequest,
+              com.jervis.contracts.o365_gateway.ListMailResponse>(
+                service, METHODID_LIST_MAIL)))
+        .addMethod(
+          getReadMailMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.o365_gateway.ReadMailRequest,
+              com.jervis.contracts.o365_gateway.MailMessage>(
+                service, METHODID_READ_MAIL)))
+        .addMethod(
+          getSendMailMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.o365_gateway.SendMailRpcRequest,
+              com.jervis.contracts.o365_gateway.SendMailAck>(
+                service, METHODID_SEND_MAIL)))
         .build();
   }
 
@@ -972,6 +1203,9 @@ public final class O365GatewayServiceGrpc {
               .addMethod(getListChannelsMethod())
               .addMethod(getReadChannelMethod())
               .addMethod(getSendChannelMessageMethod())
+              .addMethod(getListMailMethod())
+              .addMethod(getReadMailMethod())
+              .addMethod(getSendMailMethod())
               .build();
         }
       }

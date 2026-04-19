@@ -32,6 +32,11 @@ service O365GatewayService {
   rpc ListChannels(ListChannelsRequest) returns (ListChannelsResponse);
   rpc ReadChannel(ReadChannelRequest) returns (ListChannelMessagesResponse);
   rpc SendChannelMessage(SendChannelMessageRequest) returns (ChatMessage);
+
+  // === V5c - Mail (Outlook) =================================================
+  rpc ListMail(ListMailRequest) returns (ListMailResponse);
+  rpc ReadMail(ReadMailRequest) returns (MailMessage);
+  rpc SendMail(SendMailRpcRequest) returns (SendMailAck);
 }
 
 // ============================================================================
@@ -200,4 +205,78 @@ message SendChannelMessageRequest {
   string channel_id = 4;
   string content = 5;
   string content_type = 6;           // "text" | "html", defaults to "text"
+}
+
+// ============================================================================
+// Mail / Outlook (V5c)
+// ============================================================================
+
+message EmailAddress {
+  string name = 1;
+  string address = 2;
+}
+
+// Recipient wraps EmailAddress to mirror Microsoft Graph's nested shape
+// (`{ emailAddress: { name, address } }`) so SendMail can serialise it
+// back onto Graph without extra translation.
+message Recipient {
+  EmailAddress email_address = 1;
+}
+
+message MailBody {
+  string content_type = 1;           // "text" | "html"
+  string content = 2;
+}
+
+message MailSender {
+  EmailAddress email_address = 1;
+}
+
+message MailMessage {
+  string id = 1;
+  string subject = 2;
+  string body_preview = 3;
+  MailBody body = 4;
+  MailSender sender = 5;             // Graph returns this under `from`
+  repeated Recipient to_recipients = 6;
+  repeated Recipient cc_recipients = 7;
+  string received_date_time = 8;
+  string sent_date_time = 9;
+  bool is_read = 10;
+  bool is_draft = 11;
+  bool has_attachments = 12;
+  string importance = 13;
+  string conversation_id = 14;
+}
+
+message ListMailRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  int32 top = 3;                     // default 20
+  string folder = 4;                 // default "inbox"
+  string filter = 5;                 // optional OData $filter
+}
+
+message ListMailResponse {
+  repeated MailMessage messages = 1;
+}
+
+message ReadMailRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string message_id = 3;
+}
+
+message SendMailRpcRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string subject = 3;
+  MailBody body = 4;
+  repeated Recipient to_recipients = 5;
+  repeated Recipient cc_recipients = 6;
+  bool save_to_sent_items = 7;
+}
+
+message SendMailAck {
+  string result = 1;                 // "Mail sent successfully"
 }

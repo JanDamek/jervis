@@ -5,6 +5,7 @@ import com.jervis.contracts.interceptors.ServerContextInterceptor
 import com.jervis.contracts.o365_gateway.Channel as ProtoChannel
 import com.jervis.contracts.o365_gateway.ChatMessage as ProtoChatMessage
 import com.jervis.contracts.o365_gateway.ChatSummary as ProtoChatSummary
+import com.jervis.contracts.o365_gateway.EmailAddress as ProtoEmailAddress
 import com.jervis.contracts.o365_gateway.GraphApplication as ProtoGraphApplication
 import com.jervis.contracts.o365_gateway.GraphUser as ProtoGraphUser
 import com.jervis.contracts.o365_gateway.ListChannelMessagesResponse
@@ -13,8 +14,13 @@ import com.jervis.contracts.o365_gateway.ListChannelsResponse
 import com.jervis.contracts.o365_gateway.ListChatMessagesResponse
 import com.jervis.contracts.o365_gateway.ListChatsRequest
 import com.jervis.contracts.o365_gateway.ListChatsResponse
+import com.jervis.contracts.o365_gateway.ListMailRequest
+import com.jervis.contracts.o365_gateway.ListMailResponse
 import com.jervis.contracts.o365_gateway.ListTeamsRequest
 import com.jervis.contracts.o365_gateway.ListTeamsResponse
+import com.jervis.contracts.o365_gateway.MailBody as ProtoMailBody
+import com.jervis.contracts.o365_gateway.MailMessage as ProtoMailMessage
+import com.jervis.contracts.o365_gateway.MailSender as ProtoMailSender
 import com.jervis.contracts.o365_gateway.MessageBody as ProtoMessageBody
 import com.jervis.contracts.o365_gateway.MessageFrom as ProtoMessageFrom
 import com.jervis.contracts.o365_gateway.MessagePreview as ProtoMessagePreview
@@ -24,19 +30,29 @@ import com.jervis.contracts.o365_gateway.O365Request
 import com.jervis.contracts.o365_gateway.O365Response
 import com.jervis.contracts.o365_gateway.ReadChannelRequest
 import com.jervis.contracts.o365_gateway.ReadChatRequest
+import com.jervis.contracts.o365_gateway.ReadMailRequest
+import com.jervis.contracts.o365_gateway.Recipient as ProtoRecipient
 import com.jervis.contracts.o365_gateway.SendChannelMessageRequest
 import com.jervis.contracts.o365_gateway.SendChatMessageRequest
+import com.jervis.contracts.o365_gateway.SendMailAck
+import com.jervis.contracts.o365_gateway.SendMailRpcRequest
 import com.jervis.contracts.o365_gateway.Team as ProtoTeam
 import com.jervis.o365gateway.model.CreateEventRequest
 import com.jervis.o365gateway.model.GraphApplication
 import com.jervis.o365gateway.model.GraphChannel
 import com.jervis.o365gateway.model.GraphChat
+import com.jervis.o365gateway.model.GraphEmailAddress
+import com.jervis.o365gateway.model.GraphEmailAddressDetail
+import com.jervis.o365gateway.model.GraphMailBody
+import com.jervis.o365gateway.model.GraphMailMessage
 import com.jervis.o365gateway.model.GraphMessage
 import com.jervis.o365gateway.model.GraphMessageBody
 import com.jervis.o365gateway.model.GraphMessageFrom
 import com.jervis.o365gateway.model.GraphMessagePreview
+import com.jervis.o365gateway.model.GraphRecipient
 import com.jervis.o365gateway.model.GraphTeam
 import com.jervis.o365gateway.model.GraphUser
+import com.jervis.o365gateway.model.SendMailMessage
 import com.jervis.o365gateway.model.SendMailRequest
 import com.jervis.o365gateway.service.BrowserPoolClient
 import com.jervis.o365gateway.service.GraphApiService
@@ -174,6 +190,40 @@ private class GatewayServicer(
             request.clientId, request.teamId, request.channelId, request.content,
         )
         return result.toProto()
+    }
+
+    // === V5c - Mail (Outlook) typed ==========================================
+
+    override suspend fun listMail(request: ListMailRequest): ListMailResponse {
+        val top = if (request.top == 0) 20 else request.top
+        val folder = request.folder.ifBlank { "inbox" }
+        val filter = request.filter.takeIf { it.isNotBlank() }
+        val messages = graphApi.listMail(request.clientId, top, folder, filter)
+        return ListMailResponse.newBuilder()
+            .apply { messages.forEach { addMessages(it.toProto()) } }
+            .build()
+    }
+
+    override suspend fun readMail(request: ReadMailRequest): ProtoMailMessage {
+        val m = graphApi.readMail(request.clientId, request.messageId)
+        return m.toProto()
+    }
+
+    override suspend fun sendMail(request: SendMailRpcRequest): SendMailAck {
+        val mail = SendMailRequest(
+            message = SendMailMessage(
+                subject = request.subject,
+                body = GraphMailBody(
+                    contentType = request.body.contentType.ifBlank { "text" },
+                    content = request.body.content,
+                ),
+                toRecipients = request.toRecipientsList.map { it.toGraph() },
+                ccRecipients = request.ccRecipientsList.map { it.toGraph() },
+            ),
+            saveToSentItems = request.saveToSentItems,
+        )
+        graphApi.sendMail(request.clientId, mail)
+        return SendMailAck.newBuilder().setResult("Mail sent successfully").build()
     }
 
     override suspend fun requestBytes(request: O365Request): O365BytesResponse {
@@ -387,3 +437,57 @@ private fun GraphChannel.toProto(): ProtoChannel =
         .setDescription(description.orEmpty())
         .setMembershipType(membershipType.orEmpty())
         .build()
+
+// === V5c - Mail: Graph DTO <-> proto mappers =================================
+
+private fun GraphEmailAddressDetail.toProto(): ProtoEmailAddress =
+    ProtoEmailAddress.newBuilder()
+        .setName(name.orEmpty())
+        .setAddress(address.orEmpty())
+        .build()
+
+private fun GraphMailBody.toProto(): ProtoMailBody =
+    ProtoMailBody.newBuilder()
+        .setContentType(contentType.orEmpty())
+        .setContent(content.orEmpty())
+        .build()
+
+private fun GraphEmailAddress.toSenderProto(): ProtoMailSender =
+    ProtoMailSender.newBuilder()
+        .apply { emailAddress?.let { setEmailAddress(it.toProto()) } }
+        .build()
+
+private fun GraphRecipient.toProto(): ProtoRecipient =
+    ProtoRecipient.newBuilder()
+        .apply { emailAddress?.let { setEmailAddress(it.toProto()) } }
+        .build()
+
+private fun GraphMailMessage.toProto(): ProtoMailMessage =
+    ProtoMailMessage.newBuilder()
+        .setId(id)
+        .setSubject(subject.orEmpty())
+        .setBodyPreview(bodyPreview.orEmpty())
+        .setReceivedDateTime(receivedDateTime.orEmpty())
+        .setSentDateTime(sentDateTime.orEmpty())
+        .setIsRead(isRead ?: false)
+        .setIsDraft(isDraft ?: false)
+        .setHasAttachments(hasAttachments ?: false)
+        .setImportance(importance.orEmpty())
+        .setConversationId(conversationId.orEmpty())
+        .apply {
+            body?.let { setBody(it.toProto()) }
+            from?.let { setSender(it.toSenderProto()) }
+            toRecipients?.forEach { addToRecipients(it.toProto()) }
+            ccRecipients?.forEach { addCcRecipients(it.toProto()) }
+        }
+        .build()
+
+private fun ProtoRecipient.toGraph(): GraphRecipient =
+    GraphRecipient(
+        emailAddress = if (hasEmailAddress()) {
+            GraphEmailAddressDetail(
+                name = emailAddress.name.takeIf { it.isNotBlank() },
+                address = emailAddress.address.takeIf { it.isNotBlank() },
+            )
+        } else null,
+    )

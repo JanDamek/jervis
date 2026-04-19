@@ -3938,26 +3938,24 @@ async def _execute_o365_session_status(client_id: str) -> str:
 async def _execute_o365_mail_list(
     client_id: str, top: int = 20, folder: str = "inbox",
 ) -> str:
-    from app.o365_gateway_client import O365GatewayError, o365_request
+    from app.o365_gateway_client import O365GatewayError, list_mail
 
     try:
-        messages = await o365_request(
-            "GET", f"mail/{client_id}", query={"top": top, "folder": folder},
-        )
+        messages = await list_mail(client_id, top=top, folder=folder)
         if not messages:
             return f"No emails found in '{folder}'."
         lines = []
         for m in messages:
-            subj = m.get("subject", "(no subject)")
+            subj = m.subject or "(no subject)"
             sender = ""
-            if m.get("from") and m["from"].get("emailAddress"):
-                ea = m["from"]["emailAddress"]
-                sender = ea.get("name") or ea.get("address", "?")
-            ts = m.get("receivedDateTime", "")
-            read = "" if m.get("isRead") else " [UNREAD]"
-            attach = " [ATTACH]" if m.get("hasAttachments") else ""
-            msg_id = m.get("id", "?")
-            preview = (m.get("bodyPreview") or "")[:120]
+            if m.HasField("sender") and m.sender.HasField("email_address"):
+                ea = m.sender.email_address
+                sender = ea.name or ea.address or "?"
+            ts = m.received_date_time or ""
+            read = "" if m.is_read else " [UNREAD]"
+            attach = " [ATTACH]" if m.has_attachments else ""
+            msg_id = m.id or "?"
+            preview = (m.body_preview or "")[:120]
             lines.append(
                 f"[{ts}] {sender}: {subj}{read}{attach}\n  id={msg_id}\n  {preview}"
             )
@@ -3971,39 +3969,35 @@ async def _execute_o365_mail_list(
 async def _execute_o365_mail_read(client_id: str, message_id: str) -> str:
     if not message_id:
         return "Error: message_id is required."
-    from app.o365_gateway_client import O365GatewayError, o365_request
+    from app.o365_gateway_client import O365GatewayError, read_mail
 
     try:
-        m = await o365_request("GET", f"mail/{client_id}/{message_id}")
+        m = await read_mail(client_id, message_id)
     except O365GatewayError as e:
         return f"Error ({e.status_code}): {e.body[:300]}"
     except Exception as e:
         return f"Error reading mail: {str(e)[:300]}"
 
     sender = ""
-    if m.get("from") and m["from"].get("emailAddress"):
-        ea = m["from"]["emailAddress"]
-        sender = f"{ea.get('name', '')} <{ea.get('address', '')}>"
+    if m.HasField("sender") and m.sender.HasField("email_address"):
+        ea = m.sender.email_address
+        sender = f"{ea.name} <{ea.address}>"
     to_list = [
-        r["emailAddress"].get("address", "")
-        for r in (m.get("toRecipients") or [])
-        if r.get("emailAddress")
+        r.email_address.address for r in m.to_recipients if r.HasField("email_address")
     ]
     cc_list = [
-        r["emailAddress"].get("address", "")
-        for r in (m.get("ccRecipients") or [])
-        if r.get("emailAddress")
+        r.email_address.address for r in m.cc_recipients if r.HasField("email_address")
     ]
-    body_content = (m.get("body") or {}).get("content", "")
+    body_content = m.body.content if m.HasField("body") else ""
     parts = [
-        f"Subject: {m.get('subject', '(none)')}",
+        f"Subject: {m.subject or '(none)'}",
         f"From: {sender}",
         f"To: {', '.join(to_list)}",
     ]
     if cc_list:
         parts.append(f"CC: {', '.join(cc_list)}")
-    parts.append(f"Date: {m.get('receivedDateTime', '?')}")
-    if m.get("hasAttachments"):
+    parts.append(f"Date: {m.received_date_time or '?'}")
+    if m.has_attachments:
         parts.append("Has attachments: yes")
     parts.append(f"\n{body_content}")
     return "\n".join(parts)
@@ -4015,27 +4009,19 @@ async def _execute_o365_mail_send(
 ) -> str:
     if not to or not subject:
         return "Error: to and subject are required."
-    to_recipients = [
-        {"emailAddress": {"address": addr.strip()}}
-        for addr in to.split(",") if addr.strip()
-    ]
-    cc_recipients = [
-        {"emailAddress": {"address": addr.strip()}}
-        for addr in cc.split(",") if addr.strip()
-    ] if cc else []
-    payload = {
-        "message": {
-            "subject": subject,
-            "body": {"contentType": content_type, "content": body},
-            "toRecipients": to_recipients,
-            "ccRecipients": cc_recipients,
-        },
-        "saveToSentItems": True,
-    }
-    from app.o365_gateway_client import O365GatewayError, o365_request
+    to_addresses = [a.strip() for a in to.split(",") if a.strip()]
+    cc_addresses = [a.strip() for a in cc.split(",") if a.strip()] if cc else []
+    from app.o365_gateway_client import O365GatewayError, send_mail
 
     try:
-        await o365_request("POST", f"mail/{client_id}/send", body=payload)
+        await send_mail(
+            client_id,
+            subject=subject,
+            body_content=body,
+            to_addresses=to_addresses,
+            cc_addresses=cc_addresses,
+            content_type=content_type,
+        )
         return "Email sent successfully."
     except O365GatewayError as e:
         return f"Error ({e.status_code}): {e.body[:300]}"

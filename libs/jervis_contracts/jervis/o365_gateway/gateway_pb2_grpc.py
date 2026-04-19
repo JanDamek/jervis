@@ -88,6 +88,21 @@ class O365GatewayServiceStub(object):
                 request_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.SendChannelMessageRequest.SerializeToString,
                 response_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.ChatMessage.FromString,
                 _registered_method=True)
+        self.ListMail = channel.unary_unary(
+                '/jervis.o365_gateway.O365GatewayService/ListMail',
+                request_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListMailRequest.SerializeToString,
+                response_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListMailResponse.FromString,
+                _registered_method=True)
+        self.ReadMail = channel.unary_unary(
+                '/jervis.o365_gateway.O365GatewayService/ReadMail',
+                request_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.ReadMailRequest.SerializeToString,
+                response_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.MailMessage.FromString,
+                _registered_method=True)
+        self.SendMail = channel.unary_unary(
+                '/jervis.o365_gateway.O365GatewayService/SendMail',
+                request_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.SendMailRpcRequest.SerializeToString,
+                response_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.SendMailAck.FromString,
+                _registered_method=True)
 
 
 class O365GatewayServiceServicer(object):
@@ -159,6 +174,25 @@ class O365GatewayServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ListMail(self, request, context):
+        """=== V5c - Mail (Outlook) =================================================
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ReadMail(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def SendMail(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_O365GatewayServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -206,6 +240,21 @@ def add_O365GatewayServiceServicer_to_server(servicer, server):
                     servicer.SendChannelMessage,
                     request_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.SendChannelMessageRequest.FromString,
                     response_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.ChatMessage.SerializeToString,
+            ),
+            'ListMail': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListMail,
+                    request_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListMailRequest.FromString,
+                    response_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListMailResponse.SerializeToString,
+            ),
+            'ReadMail': grpc.unary_unary_rpc_method_handler(
+                    servicer.ReadMail,
+                    request_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.ReadMailRequest.FromString,
+                    response_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.MailMessage.SerializeToString,
+            ),
+            'SendMail': grpc.unary_unary_rpc_method_handler(
+                    servicer.SendMail,
+                    request_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.SendMailRpcRequest.FromString,
+                    response_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.SendMailAck.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -460,6 +509,87 @@ class O365GatewayService(object):
             '/jervis.o365_gateway.O365GatewayService/SendChannelMessage',
             jervis_dot_o365__gateway_dot_gateway__pb2.SendChannelMessageRequest.SerializeToString,
             jervis_dot_o365__gateway_dot_gateway__pb2.ChatMessage.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListMail(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.o365_gateway.O365GatewayService/ListMail',
+            jervis_dot_o365__gateway_dot_gateway__pb2.ListMailRequest.SerializeToString,
+            jervis_dot_o365__gateway_dot_gateway__pb2.ListMailResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ReadMail(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.o365_gateway.O365GatewayService/ReadMail',
+            jervis_dot_o365__gateway_dot_gateway__pb2.ReadMailRequest.SerializeToString,
+            jervis_dot_o365__gateway_dot_gateway__pb2.MailMessage.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SendMail(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.o365_gateway.O365GatewayService/SendMail',
+            jervis_dot_o365__gateway_dot_gateway__pb2.SendMailRpcRequest.SerializeToString,
+            jervis_dot_o365__gateway_dot_gateway__pb2.SendMailAck.FromString,
             options,
             channel_credentials,
             insecure,

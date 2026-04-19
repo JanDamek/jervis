@@ -197,3 +197,71 @@ async def send_channel_message(
         return await stub.SendChannelMessage(req, timeout=timeout)
     except grpc.aio.AioRpcError as e:
         raise O365GatewayError(e.code().value[0] if e.code() else 502, e.details() or "")
+
+
+# === V5c — Mail (Outlook) typed =============================================
+
+async def list_mail(
+    client_id: str,
+    top: int = 20,
+    folder: str = "inbox",
+    filter: str = "",
+    timeout: float = 30.0,
+) -> list[gateway_pb2.MailMessage]:
+    stub = _get_stub()
+    req = gateway_pb2.ListMailRequest(
+        ctx=_ctx(), client_id=client_id, top=top, folder=folder, filter=filter,
+    )
+    try:
+        resp = await stub.ListMail(req, timeout=timeout)
+    except grpc.aio.AioRpcError as e:
+        raise O365GatewayError(e.code().value[0] if e.code() else 502, e.details() or "")
+    return list(resp.messages)
+
+
+async def read_mail(
+    client_id: str, message_id: str, timeout: float = 30.0,
+) -> gateway_pb2.MailMessage:
+    stub = _get_stub()
+    req = gateway_pb2.ReadMailRequest(
+        ctx=_ctx(), client_id=client_id, message_id=message_id,
+    )
+    try:
+        return await stub.ReadMail(req, timeout=timeout)
+    except grpc.aio.AioRpcError as e:
+        raise O365GatewayError(e.code().value[0] if e.code() else 502, e.details() or "")
+
+
+async def send_mail(
+    client_id: str,
+    subject: str,
+    body_content: str,
+    to_addresses: list[str],
+    cc_addresses: list[str] | None = None,
+    content_type: str = "text",
+    save_to_sent_items: bool = True,
+    timeout: float = 30.0,
+) -> gateway_pb2.SendMailAck:
+    stub = _get_stub()
+    body = gateway_pb2.MailBody(content_type=content_type, content=body_content)
+    to_recipients = [
+        gateway_pb2.Recipient(email_address=gateway_pb2.EmailAddress(address=addr))
+        for addr in to_addresses
+    ]
+    cc_recipients = [
+        gateway_pb2.Recipient(email_address=gateway_pb2.EmailAddress(address=addr))
+        for addr in (cc_addresses or [])
+    ]
+    req = gateway_pb2.SendMailRpcRequest(
+        ctx=_ctx(),
+        client_id=client_id,
+        subject=subject,
+        body=body,
+        to_recipients=to_recipients,
+        cc_recipients=cc_recipients,
+        save_to_sent_items=save_to_sent_items,
+    )
+    try:
+        return await stub.SendMail(req, timeout=timeout)
+    except grpc.aio.AioRpcError as e:
+        raise O365GatewayError(e.code().value[0] if e.code() else 502, e.details() or "")
