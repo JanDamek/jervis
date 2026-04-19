@@ -44,11 +44,8 @@ class KnowledgeService:
         self.extraction_queue = extraction_queue  # Async LLM extraction queue
         self._arango_db = get_arango_db()
         self._ensure_crawl_schema()
-        # LLM for ingest tasks (simple relevance check, complex summary)
-        # Persistent HTTP client for progress callbacks to Kotlin server
-        import httpx
-        self._callback_http = httpx.AsyncClient(timeout=5.0) if settings.KOTLIN_SERVER_URL else None
         # Direct httpx for LLM calls with priority headers — žádný read timeout (LLM trvá jak trvá)
+        import httpx
         self._llm_http = httpx.AsyncClient(timeout=httpx.Timeout(connect=10.0, read=None, write=10.0, pool=30.0))
         # LLM for ingest tasks — explicit num_ctx prevents Ollama using small
         # default (often 2048), and timeout prevents indefinite hangs that block
