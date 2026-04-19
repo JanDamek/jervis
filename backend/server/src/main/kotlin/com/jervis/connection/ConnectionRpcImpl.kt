@@ -57,8 +57,7 @@ class ConnectionRpcImpl(
     private val browserPodManager: BrowserPodManager,
     private val o365BrowserPoolGrpc: com.jervis.infrastructure.grpc.O365BrowserPoolGrpcClient,
     private val whatsAppBrowserGrpc: com.jervis.infrastructure.grpc.WhatsAppBrowserGrpcClient,
-    @org.springframework.beans.factory.annotation.Value("\${jervis.o365-gateway.url:http://jervis-o365-gateway:8080}")
-    private val o365GatewayUrl: String = "http://jervis-o365-gateway:8080",
+    private val o365GatewayGrpc: com.jervis.infrastructure.grpc.O365GatewayGrpcClient,
 ) : IConnectionService {
     private val logger = KotlinLogging.logger {}
 
@@ -1015,44 +1014,33 @@ class ConnectionRpcImpl(
     private suspend fun listO365ChatsViaGateway(
         clientId: String,
         capability: ConnectionCapability,
-    ): List<ConnectionResourceDto> {
-        return try {
-            val teams = httpClient.get("$o365GatewayUrl/api/o365/teams/$clientId")
-            if (!teams.status.isSuccess()) {
-                logger.warn { "Failed to fetch teams from O365 Gateway: ${teams.status}" }
-                return emptyList()
+    ): List<ConnectionResourceDto> = try {
+        val teams = o365GatewayGrpc.listTeams(clientId)
+        val resources = mutableListOf<ConnectionResourceDto>()
+
+        for (team in teams) {
+            val teamId = team.id.takeIf { it.isNotBlank() } ?: continue
+            val teamName = team.displayName.ifBlank { "Team" }
+
+            val channels = runCatching { o365GatewayGrpc.listChannels(clientId, teamId) }.getOrNull()
+                ?: continue
+            for (channel in channels) {
+                val channelId = channel.id.takeIf { it.isNotBlank() } ?: continue
+                val channelName = channel.displayName.ifBlank { "Channel" }
+                resources.add(
+                    ConnectionResourceDto(
+                        id = "$teamId/$channelId",
+                        name = "$teamName / $channelName",
+                        description = channel.description.takeIf { it.isNotBlank() },
+                        capability = capability,
+                    ),
+                )
             }
-
-            val teamList = teams.body<List<O365TeamDto>>()
-            val resources = mutableListOf<ConnectionResourceDto>()
-
-            for (team in teamList) {
-                val teamId = team.id ?: continue
-                val teamName = team.displayName ?: "Team"
-
-                val channels = httpClient.get("$o365GatewayUrl/api/o365/teams/$clientId/$teamId/channels")
-                if (!channels.status.isSuccess()) continue
-                val channelList = channels.body<List<O365ChannelDto>>()
-
-                for (channel in channelList) {
-                    val channelId = channel.id ?: continue
-                    val channelName = channel.displayName ?: "Channel"
-                    resources.add(
-                        ConnectionResourceDto(
-                            id = "$teamId/$channelId",
-                            name = "$teamName / $channelName",
-                            description = channel.description,
-                            capability = capability,
-                        ),
-                    )
-                }
-            }
-
-            resources
-        } catch (e: Exception) {
-            logger.error(e) { "Failed to list O365 resources via Gateway" }
-            emptyList()
         }
+        resources
+    } catch (e: Exception) {
+        logger.error(e) { "Failed to list O365 resources via Gateway" }
+        emptyList()
     }
 
     /**

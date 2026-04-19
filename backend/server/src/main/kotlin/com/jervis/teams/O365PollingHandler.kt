@@ -59,10 +59,9 @@ class O365PollingHandler(
     private val connectionService: ConnectionService,
     private val mongoTemplate: ReactiveMongoTemplate,
     private val o365CalendarPoller: O365CalendarPoller,
-    @Value("\${jervis.o365-gateway.url:http://jervis-o365-gateway:8080}")
-    private val gatewayUrl: String,
     private val browserPodManager: com.jervis.connection.BrowserPodManager,
     private val o365BrowserPoolGrpc: com.jervis.infrastructure.grpc.O365BrowserPoolGrpcClient,
+    private val o365GatewayGrpc: com.jervis.infrastructure.grpc.O365GatewayGrpcClient,
 ) : PollingHandler {
     override val provider: ProviderEnum = ProviderEnum.MICROSOFT_TEAMS
 
@@ -616,71 +615,66 @@ class O365PollingHandler(
         }
     }
 
-    // -- Gateway REST API calls (for Browser Session connections) ---------------
+    // -- O365 Gateway gRPC calls (for Browser Session connections) --------------
 
-    private suspend fun fetchChats(clientId: String): List<GatewayChat>? {
-        return try {
-            val response = httpClient.get("$gatewayUrl/api/o365/chats/$clientId?top=20")
-            if (!response.status.isSuccess()) {
-                logger.warn { "Failed to fetch chats: ${response.status}" }
-                return null
-            }
-            response.body<List<GatewayChat>>()
-        } catch (e: Exception) {
-            logger.error(e) { "Error fetching Teams chats from gateway" }
-            null
-        }
-    }
+    private suspend fun fetchChats(clientId: String): List<GatewayChat>? =
+        runCatching { o365GatewayGrpc.listChats(clientId, top = 20) }
+            .onFailure { logger.error(it) { "Error fetching Teams chats from gateway" } }
+            .getOrNull()
+            ?.map { GatewayChat(id = it.id, topic = it.topic, chatType = it.chatType) }
 
-    private suspend fun fetchChatMessages(clientId: String, chatId: String): List<GatewayMessage>? {
-        return try {
-            val response = httpClient.get("$gatewayUrl/api/o365/chats/$clientId/$chatId/messages?top=20")
-            if (!response.status.isSuccess()) return null
-            response.body<List<GatewayMessage>>()
-        } catch (e: Exception) {
-            logger.error(e) { "Error fetching chat messages" }
-            null
-        }
-    }
+    private suspend fun fetchChatMessages(clientId: String, chatId: String): List<GatewayMessage>? =
+        runCatching { o365GatewayGrpc.readChat(clientId, chatId, top = 20) }
+            .onFailure { logger.error(it) { "Error fetching chat messages" } }
+            .getOrNull()
+            ?.map { it.toGateway() }
 
-    private suspend fun fetchTeams(clientId: String): List<GatewayTeam>? {
-        return try {
-            val response = httpClient.get("$gatewayUrl/api/o365/teams/$clientId")
-            if (!response.status.isSuccess()) return null
-            response.body<List<GatewayTeam>>()
-        } catch (e: Exception) {
-            logger.error(e) { "Error fetching Teams list" }
-            null
-        }
-    }
+    private suspend fun fetchTeams(clientId: String): List<GatewayTeam>? =
+        runCatching { o365GatewayGrpc.listTeams(clientId) }
+            .onFailure { logger.error(it) { "Error fetching Teams list" } }
+            .getOrNull()
+            ?.map { GatewayTeam(id = it.id, displayName = it.displayName) }
 
-    private suspend fun fetchChannels(clientId: String, teamId: String): List<GatewayChannel>? {
-        return try {
-            val response = httpClient.get("$gatewayUrl/api/o365/teams/$clientId/$teamId/channels")
-            if (!response.status.isSuccess()) return null
-            response.body<List<GatewayChannel>>()
-        } catch (e: Exception) {
-            logger.error(e) { "Error fetching channels for team $teamId" }
-            null
-        }
-    }
+    private suspend fun fetchChannels(clientId: String, teamId: String): List<GatewayChannel>? =
+        runCatching { o365GatewayGrpc.listChannels(clientId, teamId) }
+            .onFailure { logger.error(it) { "Error fetching channels for team $teamId" } }
+            .getOrNull()
+            ?.map { GatewayChannel(id = it.id, displayName = it.displayName) }
 
     private suspend fun fetchChannelMessages(
         clientId: String,
         teamId: String,
         channelId: String,
-    ): List<GatewayMessage>? {
-        return try {
-            val response = httpClient.get(
-                "$gatewayUrl/api/o365/teams/$clientId/$teamId/channels/$channelId/messages?top=20",
-            )
-            if (!response.status.isSuccess()) return null
-            response.body<List<GatewayMessage>>()
-        } catch (e: Exception) {
-            logger.error(e) { "Error fetching channel messages" }
-            null
-        }
-    }
+    ): List<GatewayMessage>? =
+        runCatching { o365GatewayGrpc.readChannel(clientId, teamId, channelId, top = 20) }
+            .onFailure { logger.error(it) { "Error fetching channel messages" } }
+            .getOrNull()
+            ?.map { it.toGateway() }
+
+    // Proto ChatMessage -> internal GatewayMessage (extracted so both chat + channel
+    // paths share the mapping and the compiler enforces field coverage).
+    private fun com.jervis.contracts.o365_gateway.ChatMessage.toGateway(): GatewayMessage =
+        GatewayMessage(
+            id = id.takeIf { it.isNotBlank() },
+            createdDateTime = createdDateTime.takeIf { it.isNotBlank() },
+            subject = null,
+            from = if (hasSender()) {
+                GatewayMessageFrom(
+                    user = if (sender.hasUser()) GatewayUser(
+                        displayName = sender.user.displayName.takeIf { it.isNotBlank() },
+                        id = sender.user.id.takeIf { it.isNotBlank() },
+                    ) else null,
+                    application = if (sender.hasApplication()) GatewayUser(
+                        displayName = sender.application.displayName.takeIf { it.isNotBlank() },
+                        id = sender.application.id.takeIf { it.isNotBlank() },
+                    ) else null,
+                )
+            } else null,
+            body = if (hasBody()) GatewayMessageBody(
+                contentType = body.contentType.takeIf { it.isNotBlank() },
+                content = body.content.takeIf { it.isNotBlank() },
+            ) else null,
+        )
 
     private fun parseInstant(dateTime: String?): Instant? {
         if (dateTime == null) return null

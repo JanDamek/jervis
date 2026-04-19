@@ -63,8 +63,7 @@ class O365CalendarPoller(
     private val calendarRepository: CalendarEventIndexRepository,
     private val pollingStateService: PollingStateService,
     private val httpClient: HttpClient,
-    @Value("\${jervis.o365-gateway.url:http://jervis-o365-gateway:8080}")
-    private val gatewayUrl: String,
+    private val o365GatewayGrpc: com.jervis.infrastructure.grpc.O365GatewayGrpcClient,
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true; explicitNulls = false }
 
@@ -286,23 +285,59 @@ class O365CalendarPoller(
         o365ClientId: String,
         timeMin: Instant,
         timeMax: Instant,
-    ): List<O365GraphEvent>? {
-        return try {
-            val url = "$gatewayUrl/calendar/$o365ClientId" +
-                "?startDateTime=$timeMin" +
-                "&endDateTime=$timeMax" +
-                "&top=100"
-            val response = httpClient.get(url)
-            if (!response.status.isSuccess()) {
-                logger.warn { "O365_CALENDAR: Gateway /calendar/$o365ClientId returned ${response.status}" }
-                return null
-            }
-            response.body<List<O365GraphEvent>>()
-        } catch (e: Exception) {
-            logger.error(e) { "O365_CALENDAR: Error fetching events from gateway" }
-            null
-        }
+    ): List<O365GraphEvent>? = try {
+        o365GatewayGrpc.listCalendarEvents(
+            o365ClientId,
+            top = 100,
+            startDateTime = timeMin.toString(),
+            endDateTime = timeMax.toString(),
+        ).map { it.toGraphEvent() }
+    } catch (e: Exception) {
+        logger.error(e) { "O365_CALENDAR: Error fetching events from gateway" }
+        null
     }
+
+    private fun com.jervis.contracts.o365_gateway.CalendarEvent.toGraphEvent(): O365GraphEvent =
+        O365GraphEvent(
+            id = id.takeIf { it.isNotBlank() },
+            subject = subject.takeIf { it.isNotBlank() },
+            body = if (hasBody()) O365GraphBody(
+                contentType = body.contentType.takeIf { it.isNotBlank() },
+                content = body.content.takeIf { it.isNotBlank() },
+            ) else null,
+            start = if (hasStart()) O365GraphDateTime(
+                dateTime = start.dateTime.takeIf { it.isNotBlank() },
+                timeZone = start.timeZone.takeIf { it.isNotBlank() },
+            ) else null,
+            end = if (hasEnd()) O365GraphDateTime(
+                dateTime = end.dateTime.takeIf { it.isNotBlank() },
+                timeZone = end.timeZone.takeIf { it.isNotBlank() },
+            ) else null,
+            location = if (hasLocation()) O365GraphLocation(
+                displayName = location.displayName.takeIf { it.isNotBlank() },
+            ) else null,
+            organizer = if (hasOrganizer()) O365GraphEmailAddressWrapper(
+                emailAddress = O365GraphEmailAddress(
+                    name = organizer.name.takeIf { it.isNotBlank() },
+                    address = organizer.address.takeIf { it.isNotBlank() },
+                ),
+            ) else null,
+            attendees = attendeesList.takeIf { it.isNotEmpty() }?.map { a ->
+                O365GraphAttendee(
+                    emailAddress = if (a.hasEmailAddress()) O365GraphEmailAddress(
+                        name = a.emailAddress.name.takeIf { it.isNotBlank() },
+                        address = a.emailAddress.address.takeIf { it.isNotBlank() },
+                    ) else null,
+                    type = a.type.takeIf { it.isNotBlank() },
+                )
+            },
+            isAllDay = isAllDay,
+            isCancelled = isCancelled,
+            isOnlineMeeting = isOnlineMeeting,
+            onlineMeetingUrl = onlineMeetingUrl.takeIf { it.isNotBlank() },
+            recurrence = null,
+            odataEtag = odataEtag.takeIf { it.isNotBlank() },
+        )
 
     private fun parseGraphDateTime(dt: O365GraphDateTime?): Instant? {
         val raw = dt?.dateTime ?: return null
