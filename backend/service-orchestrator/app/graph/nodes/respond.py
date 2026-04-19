@@ -422,61 +422,23 @@ _STREAM_CHUNK_SIZE = settings.stream_chunk_size
 
 
 async def _stream_answer_to_ui(state: dict, answer: str) -> None:
-    """Stream an already-generated answer to UI token-by-token.
-
-    W-12: This is the fallback for pre-generated answers (e.g. forced final answer).
-    For normal responses, _stream_answer_realtime is preferred.
-
-    Splits the answer into small chunks and emits each via kotlin_client.
-    This provides ChatGPT-style progressive text display in the UI.
+    """Pre-generated answer fallback. Returned via the graph's `final_result`
+    so the chat handler streams it to UI through the orchestrator's main
+    Chat server-streaming RPC. The legacy /internal/streaming-token side-
+    channel was retired in V7b — this is now a no-op when the answer has
+    nothing to do beyond being returned by the caller.
     """
-    if not answer:
-        return
-
-    task = CodingTask(**state["task"])
-    client_id = state.get("client_id", "")
-    project_id = state.get("project_id")
-    message_id = f"stream-{uuid.uuid4().hex[:12]}"
-
-    # Split into chunks and emit
-    offset = 0
-    emitted = 0
-    while offset < len(answer):
-        chunk = answer[offset:offset + _STREAM_CHUNK_SIZE]
-        offset += _STREAM_CHUNK_SIZE
-
-        ok = await kotlin_client.emit_streaming_token(
-            task_id=task.id,
-            client_id=client_id,
-            project_id=project_id,
-            token=chunk,
-            message_id=message_id,
-        )
-        if ok:
-            emitted += 1
-
-    # Emit final token to signal stream end
-    await kotlin_client.emit_streaming_token(
-        task_id=task.id,
-        client_id=client_id,
-        project_id=project_id,
-        token="",
-        message_id=message_id,
-        is_final=True,
-    )
-
-    logger.info(
-        "Streamed answer to UI: %d chunks, %d chars, message_id=%s",
-        emitted, len(answer), message_id,
-    )
+    return
 
 
 async def _stream_answer_realtime(state: dict, messages: list[dict], context_tokens: int) -> str:
-    """W-12: Stream LLM answer in real-time, emitting tokens as they arrive.
+    """Streams LLM tokens from the router into a single buffered answer.
 
-    Posts directly to the router's `/api/chat` with streaming enabled and
-    forwards each token to the UI via kotlin_client. Caller contract is the
-    minimal one — capability + client_id — router picks the model.
+    Token-by-token side-channel push to Kotlin (`kotlin_client.emit_streaming_token`)
+    was retired in V7b — that path POSTed to `/internal/streaming-token` which
+    the Kotlin server removed. Real-time UI streaming now happens via the
+    orchestrator's main Chat server-streaming RPC; this helper concentrates
+    on collecting the model output for the graph's `final_result`.
     """
     import json as _json
 
@@ -484,7 +446,6 @@ async def _stream_answer_realtime(state: dict, messages: list[dict], context_tok
 
     task = CodingTask(**state["task"])
     client_id = state.get("client_id", "") or ""
-    project_id = state.get("project_id")
     capability = (task.capability or "chat").lower()
     message_id = f"stream-{uuid.uuid4().hex[:12]}"
 
@@ -506,7 +467,6 @@ async def _stream_answer_realtime(state: dict, messages: list[dict], context_tok
     }
 
     content_parts: list[str] = []
-    emitted = 0
     try:
         timeout = httpx.Timeout(connect=10, read=None, write=10, pool=30)
         async with httpx.AsyncClient(timeout=timeout) as client:
@@ -523,31 +483,13 @@ async def _stream_answer_realtime(state: dict, messages: list[dict], context_tok
                     token = msg.get("content") or ""
                     if token:
                         content_parts.append(token)
-                        ok = await kotlin_client.emit_streaming_token(
-                            task_id=task.id,
-                            client_id=client_id,
-                            project_id=project_id,
-                            token=token,
-                            message_id=message_id,
-                        )
-                        if ok:
-                            emitted += 1
                     if chunk.get("done"):
                         break
 
-        await kotlin_client.emit_streaming_token(
-            task_id=task.id,
-            client_id=client_id,
-            project_id=project_id,
-            token="",
-            message_id=message_id,
-            is_final=True,
-        )
-
         answer = "".join(content_parts)
         logger.info(
-            "REALTIME_STREAM | tokens=%d | chars=%d | message_id=%s",
-            emitted, len(answer), message_id,
+            "REALTIME_STREAM | chars=%d | message_id=%s",
+            len(answer), message_id,
         )
         return answer
 

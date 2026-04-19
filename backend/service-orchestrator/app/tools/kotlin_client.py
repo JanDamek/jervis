@@ -17,7 +17,6 @@ from __future__ import annotations
 import json
 import logging
 
-import httpx
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from app.config import settings
@@ -87,19 +86,17 @@ def _task_summary_to_dict(t) -> dict:
 
 
 class KotlinServerClient:
-    """HTTP client for Kotlin server — push-based communication."""
+    """gRPC client for Kotlin server — push-based progress / status callbacks.
 
-    def __init__(self, base_url: str | None = None):
+    Every method dials a stub from `app.grpc_server_client`; no HTTP path
+    remains after V7b retired the legacy `/internal/streaming-token` and
+    `/api/internal/orchestrator/error` calls (their Kotlin endpoints had
+    already been removed). The class keeps its name and singleton handle
+    (`kotlin_client`) so callers continue to compile unchanged.
+    """
+
+    def __init__(self, base_url: str | None = None):  # base_url accepted for API compat; unused
         self.base_url = base_url or settings.kotlin_server_url
-        self._client: httpx.AsyncClient | None = None
-
-    async def _get_client(self) -> httpx.AsyncClient:
-        if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(
-                base_url=self.base_url,
-                timeout=5.0,
-            )
-        return self._client
 
     async def report_progress(
         self,
@@ -274,23 +271,6 @@ class KotlinServerClient:
             logger.warning("Failed to report qualification done for task %s: %s", task_id, e)
             return False
 
-    async def report_task_error(self, task_id: str, error: str) -> bool:
-        """Report a critical task error to Kotlin server.
-
-        Only used for errors that callbacks might not detect
-        (e.g., graph construction failure before any state is saved).
-        """
-        try:
-            client = await self._get_client()
-            resp = await client.post(
-                "/api/internal/orchestrator/error",
-                json={"taskId": task_id, "error": error},
-            )
-            return resp.status_code == 200
-        except Exception as e:
-            logger.warning("Failed to report error to Kotlin: %s", e)
-            return False
-
     async def notify_agent_dispatched(
         self,
         task_id: str,
@@ -323,37 +303,6 @@ class KotlinServerClient:
             return resp.ok
         except Exception as e:
             logger.warning("Failed to notify agent dispatched for task %s: %s", task_id, e)
-            return False
-
-    async def emit_streaming_token(
-        self,
-        task_id: str,
-        client_id: str,
-        project_id: str | None,
-        token: str,
-        message_id: str,
-        is_final: bool = False,
-    ) -> bool:
-        """Push a single streaming token to Kotlin server for real-time UI display.
-
-        Kotlin emits as STREAMING_TOKEN ChatResponseDto to UI via SharedFlow.
-        """
-        try:
-            client = await self._get_client()
-            await client.post(
-                "/internal/streaming-token",
-                json={
-                    "taskId": task_id,
-                    "clientId": client_id,
-                    "projectId": project_id or "",
-                    "token": token,
-                    "messageId": message_id,
-                    "isFinal": is_final,
-                },
-            )
-            return True
-        except Exception as e:
-            logger.debug("Failed to emit streaming token: %s", e)
             return False
 
     # ------------------------------------------------------------------
