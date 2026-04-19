@@ -8,9 +8,9 @@ version = "0.1.0"
 description = "Generated Protobuf + gRPC stubs for inter-service contracts in the Jervis monorepo."
 requires-python = ">=3.12"
 dependencies = [
-    "grpcio>=1.74,<1.80",
-    "grpcio-tools>=1.74,<1.80",
-    "grpcio-reflection>=1.74,<1.80",
+    "grpcio>=1.78,<1.80",
+    "grpcio-tools>=1.78,<1.80",
+    "grpcio-reflection>=1.78,<1.80",
     # Google skipped 5.30-5.33 — 5.x tops out at 5.29.x, next is 6.30.x.
     # `>=5.29,<7` keeps us on the 5.x series with grpcio 1.71 (which ships
     # protos built against 5.x generated code).

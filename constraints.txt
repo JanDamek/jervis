@@ -32,9 +32,9 @@ pydantic-settings==2.7.1
 # gencode major version (6.x), otherwise Python fails at import with
 # `VersionError: Detected mismatched Protobuf Gencode/Runtime major
 # versions`. grpcio 1.74+ is the first line that carries protobuf 6.x.
-grpcio==1.74.0
-grpcio-reflection==1.74.0
-grpcio-tools==1.74.0
+grpcio==1.78.0
+grpcio-reflection==1.78.0
+grpcio-tools==1.78.0
 protobuf==6.31.1
 
 # MongoDB async + sync
