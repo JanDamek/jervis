@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from jervis.common import types_pb2 as jervis_dot_common_dot_types__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n!jervis/o365_gateway/gateway.proto\x12\x13jervis.o365_gateway\x1a\x19jervis/common/types.proto\"\xea\x01\n\x0bO365Request\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x0e\n\x06method\x18\x02 \x01(\t\x12\x0c\n\x04path\x18\x03 \x01(\t\x12:\n\x05query\x18\x04 \x03(\x0b\x32+.jervis.o365_gateway.O365Request.QueryEntry\x12\x11\n\tbody_json\x18\x05 \x01(\t\x12\x14\n\x0c\x63ontent_type\x18\x06 \x01(\t\x1a,\n\nQueryEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"\xa7\x01\n\x0cO365Response\x12\x13\n\x0bstatus_code\x18\x01 \x01(\x05\x12\x11\n\tbody_json\x18\x02 \x01(\t\x12?\n\x07headers\x18\x03 \x03(\x0b\x32..jervis.o365_gateway.O365Response.HeadersEntry\x1a.\n\x0cHeadersEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"\xd4\x01\n\x11O365BytesResponse\x12\x13\n\x0bstatus_code\x18\x01 \x01(\x05\x12\x0c\n\x04\x62ody\x18\x02 \x01(\x0c\x12\x14\n\x0c\x63ontent_type\x18\x03 \x01(\t\x12\x10\n\x08\x66ilename\x18\x04 \x01(\t\x12\x44\n\x07headers\x18\x05 \x03(\x0b\x32\x33.jervis.o365_gateway.O365BytesResponse.HeadersEntry\x1a.\n\x0cHeadersEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x32\xbe\x01\n\x12O365GatewayService\x12N\n\x07Request\x12 .jervis.o365_gateway.O365Request\x1a!.jervis.o365_gateway.O365Response\x12X\n\x0cRequestBytes\x12 .jervis.o365_gateway.O365Request\x1a&.jervis.o365_gateway.O365BytesResponseB7\n!com.jervis.contracts.o365_gatewayB\x10O365GatewayProtoP\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n!jervis/o365_gateway/gateway.proto\x12\x13jervis.o365_gateway\x1a\x19jervis/common/types.proto\"\xea\x01\n\x0bO365Request\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x0e\n\x06method\x18\x02 \x01(\t\x12\x0c\n\x04path\x18\x03 \x01(\t\x12:\n\x05query\x18\x04 \x03(\x0b\x32+.jervis.o365_gateway.O365Request.QueryEntry\x12\x11\n\tbody_json\x18\x05 \x01(\t\x12\x14\n\x0c\x63ontent_type\x18\x06 \x01(\t\x1a,\n\nQueryEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"\xa7\x01\n\x0cO365Response\x12\x13\n\x0bstatus_code\x18\x01 \x01(\x05\x12\x11\n\tbody_json\x18\x02 \x01(\t\x12?\n\x07headers\x18\x03 \x03(\x0b\x32..jervis.o365_gateway.O365Response.HeadersEntry\x1a.\n\x0cHeadersEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"\xd4\x01\n\x11O365BytesResponse\x12\x13\n\x0bstatus_code\x18\x01 \x01(\x05\x12\x0c\n\x04\x62ody\x18\x02 \x01(\x0c\x12\x14\n\x0c\x63ontent_type\x18\x03 \x01(\t\x12\x10\n\x08\x66ilename\x18\x04 \x01(\t\x12\x44\n\x07headers\x18\x05 \x03(\x0b\x32\x33.jervis.o365_gateway.O365BytesResponse.HeadersEntry\x1a.\n\x0cHeadersEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"-\n\tGraphUser\x12\n\n\x02id\x18\x01 \x01(\t\x12\x14\n\x0c\x64isplay_name\x18\x02 \x01(\t\"4\n\x10GraphApplication\x12\n\n\x02id\x18\x01 \x01(\t\x12\x14\n\x0c\x64isplay_name\x18\x02 \x01(\t\"4\n\x0bMessageBody\x12\x14\n\x0c\x63ontent_type\x18\x01 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x02 \x01(\t\"w\n\x0bMessageFrom\x12,\n\x04user\x18\x01 \x01(\x0b\x32\x1e.jervis.o365_gateway.GraphUser\x12:\n\x0b\x61pplication\x18\x02 \x01(\x0b\x32%.jervis.o365_gateway.GraphApplication\"\x99\x01\n\x0eMessagePreview\x12\n\n\x02id\x18\x01 \x01(\t\x12\x19\n\x11\x63reated_date_time\x18\x02 \x01(\t\x12.\n\x04\x62ody\x18\x03 \x01(\x0b\x32 .jervis.o365_gateway.MessageBody\x12\x30\n\x06sender\x18\x04 \x01(\x0b\x32 .jervis.o365_gateway.MessageFrom\"\xcd\x01\n\x0b\x43hatMessage\x12\n\n\x02id\x18\x01 \x01(\t\x12\x19\n\x11\x63reated_date_time\x18\x02 \x01(\t\x12\x1f\n\x17last_modified_date_time\x18\x03 \x01(\t\x12.\n\x04\x62ody\x18\x04 \x01(\x0b\x32 .jervis.o365_gateway.MessageBody\x12\x30\n\x06sender\x18\x05 \x01(\x0b\x32 .jervis.o365_gateway.MessageFrom\x12\x14\n\x0cmessage_type\x18\x06 \x01(\t\"\xb9\x01\n\x0b\x43hatSummary\x12\n\n\x02id\x18\x01 \x01(\t\x12\r\n\x05topic\x18\x02 \x01(\t\x12\x11\n\tchat_type\x18\x03 \x01(\t\x12\x19\n\x11\x63reated_date_time\x18\x04 \x01(\t\x12\x1e\n\x16last_updated_date_time\x18\x05 \x01(\t\x12\x41\n\x14last_message_preview\x18\x06 \x01(\x0b\x32#.jervis.o365_gateway.MessagePreview\"^\n\x10ListChatsRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\x12\x0b\n\x03top\x18\x03 \x01(\x05\"D\n\x11ListChatsResponse\x12/\n\x05\x63hats\x18\x01 \x03(\x0b\x32 .jervis.o365_gateway.ChatSummary\"n\n\x0fReadChatRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\x12\x0f\n\x07\x63hat_id\x18\x03 \x01(\t\x12\x0b\n\x03top\x18\x04 \x01(\x05\"N\n\x18ListChatMessagesResponse\x12\x32\n\x08messages\x18\x01 \x03(\x0b\x32 .jervis.o365_gateway.ChatMessage\"\x8f\x01\n\x16SendChatMessageRequest\x12*\n\x03\x63tx\x18\x01 \x01(\x0b\x32\x1d.jervis.common.RequestContext\x12\x11\n\tclient_id\x18\x02 \x01(\t\x12\x0f\n\x07\x63hat_id\x18\x03 \x01(\t\x12\x0f\n\x07\x63ontent\x18\x04 \x01(\t\x12\x14\n\x0c\x63ontent_type\x18\x05 \x01(\t2\xdd\x03\n\x12O365GatewayService\x12N\n\x07Request\x12 .jervis.o365_gateway.O365Request\x1a!.jervis.o365_gateway.O365Response\x12X\n\x0cRequestBytes\x12 .jervis.o365_gateway.O365Request\x1a&.jervis.o365_gateway.O365BytesResponse\x12Z\n\tListChats\x12%.jervis.o365_gateway.ListChatsRequest\x1a&.jervis.o365_gateway.ListChatsResponse\x12_\n\x08ReadChat\x12$.jervis.o365_gateway.ReadChatRequest\x1a-.jervis.o365_gateway.ListChatMessagesResponse\x12`\n\x0fSendChatMessage\x12+.jervis.o365_gateway.SendChatMessageRequest\x1a .jervis.o365_gateway.ChatMessageB7\n!com.jervis.contracts.o365_gatewayB\x10O365GatewayProtoP\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -51,6 +51,30 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_O365BYTESRESPONSE']._serialized_end=705
   _globals['_O365BYTESRESPONSE_HEADERSENTRY']._serialized_start=444
   _globals['_O365BYTESRESPONSE_HEADERSENTRY']._serialized_end=490
-  _globals['_O365GATEWAYSERVICE']._serialized_start=708
-  _globals['_O365GATEWAYSERVICE']._serialized_end=898
+  _globals['_GRAPHUSER']._serialized_start=707
+  _globals['_GRAPHUSER']._serialized_end=752
+  _globals['_GRAPHAPPLICATION']._serialized_start=754
+  _globals['_GRAPHAPPLICATION']._serialized_end=806
+  _globals['_MESSAGEBODY']._serialized_start=808
+  _globals['_MESSAGEBODY']._serialized_end=860
+  _globals['_MESSAGEFROM']._serialized_start=862
+  _globals['_MESSAGEFROM']._serialized_end=981
+  _globals['_MESSAGEPREVIEW']._serialized_start=984
+  _globals['_MESSAGEPREVIEW']._serialized_end=1137
+  _globals['_CHATMESSAGE']._serialized_start=1140
+  _globals['_CHATMESSAGE']._serialized_end=1345
+  _globals['_CHATSUMMARY']._serialized_start=1348
+  _globals['_CHATSUMMARY']._serialized_end=1533
+  _globals['_LISTCHATSREQUEST']._serialized_start=1535
+  _globals['_LISTCHATSREQUEST']._serialized_end=1629
+  _globals['_LISTCHATSRESPONSE']._serialized_start=1631
+  _globals['_LISTCHATSRESPONSE']._serialized_end=1699
+  _globals['_READCHATREQUEST']._serialized_start=1701
+  _globals['_READCHATREQUEST']._serialized_end=1811
+  _globals['_LISTCHATMESSAGESRESPONSE']._serialized_start=1813
+  _globals['_LISTCHATMESSAGESRESPONSE']._serialized_end=1891
+  _globals['_SENDCHATMESSAGEREQUEST']._serialized_start=1894
+  _globals['_SENDCHATMESSAGEREQUEST']._serialized_end=2037
+  _globals['_O365GATEWAYSERVICE']._serialized_start=2040
+  _globals['_O365GATEWAYSERVICE']._serialized_end=2517
 # @@protoc_insertion_point(module_scope)

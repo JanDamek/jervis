@@ -47,7 +47,7 @@ public interface O365RequestOrBuilder extends
 
   /**
    * <pre>
-   * relative to /api/o365/ — e.g. "chats/{clientId}/{chatId}/messages"
+   * relative to /api/o365/ - e.g. "chats/{clientId}/{chatId}/messages"
    * </pre>
    *
    * <code>string path = 3;</code>
@@ -56,7 +56,7 @@ public interface O365RequestOrBuilder extends
   java.lang.String getPath();
   /**
    * <pre>
-   * relative to /api/o365/ — e.g. "chats/{clientId}/{chatId}/messages"
+   * relative to /api/o365/ - e.g. "chats/{clientId}/{chatId}/messages"
    * </pre>
    *
    * <code>string path = 3;</code>

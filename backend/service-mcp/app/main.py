@@ -2684,12 +2684,10 @@ async def o365_teams_list_chats(
     Returns chat list with topic, type, and last message preview.
     Requires an active O365 session for the client.
     """
-    from app.o365_gateway_client import O365GatewayError, o365_request
+    from app.o365_gateway_client import O365GatewayError, list_chats
 
     try:
-        chats = await o365_request(
-            "GET", f"chats/{client_id}", query={"top": min(top, 50)},
-        )
+        chats = await list_chats(client_id, min(top, 50))
     except O365GatewayError as e:
         return f"Error ({e.status_code}): {e.body[:300]}"
 
@@ -2697,18 +2695,16 @@ async def o365_teams_list_chats(
         return "No chats found."
     lines = []
     for c in chats:
-        topic = c.get("topic") or "(no topic)"
-        chat_type = c.get("chatType", "?")
-        chat_id = c.get("id", "?")
+        topic = c.topic or "(no topic)"
+        chat_type = c.chat_type or "?"
+        cid = c.id or "?"
         preview = ""
-        mp = c.get("lastMessagePreview")
-        if mp and mp.get("body"):
-            preview_text = mp["body"].get("content", "")[:100]
-            from_user = ""
-            if mp.get("from") and mp["from"].get("user"):
-                from_user = mp["from"]["user"].get("displayName", "")
+        if c.HasField("last_message_preview"):
+            mp = c.last_message_preview
+            preview_text = mp.body.content[:100] if mp.HasField("body") else ""
+            from_user = mp.sender.user.display_name if mp.HasField("sender") and mp.sender.HasField("user") else ""
             preview = f" | {from_user}: {preview_text}"
-        lines.append(f"[{chat_type}] {topic} (id={chat_id}){preview}")
+        lines.append(f"[{chat_type}] {topic} (id={cid}){preview}")
     return "\n".join(lines)
 
 
@@ -2719,12 +2715,10 @@ async def o365_teams_read_chat(
     top: int = 20,
 ) -> str:
     """Read messages from a specific Teams chat."""
-    from app.o365_gateway_client import O365GatewayError, o365_request
+    from app.o365_gateway_client import O365GatewayError, read_chat
 
     try:
-        messages = await o365_request(
-            "GET", f"chats/{client_id}/{chat_id}/messages", query={"top": top},
-        )
+        messages = await read_chat(client_id, chat_id, top)
     except O365GatewayError as e:
         return f"Error ({e.status_code}): {e.body[:300]}"
 
@@ -2733,15 +2727,13 @@ async def o365_teams_read_chat(
     lines = []
     for m in messages:
         sender = "?"
-        if m.get("from"):
-            if m["from"].get("user"):
-                sender = m["from"]["user"].get("displayName", "?")
-            elif m["from"].get("application"):
-                sender = m["from"]["application"].get("displayName", "bot")
-        body = ""
-        if m.get("body"):
-            body = m["body"].get("content", "")[:500]
-        ts = m.get("createdDateTime", "")
+        if m.HasField("sender"):
+            if m.sender.HasField("user"):
+                sender = m.sender.user.display_name or "?"
+            elif m.sender.HasField("application"):
+                sender = m.sender.application.display_name or "bot"
+        body = m.body.content[:500] if m.HasField("body") else ""
+        ts = m.created_date_time or ""
         lines.append(f"[{ts}] {sender}: {body}")
     return "\n---\n".join(lines)
 
@@ -2754,16 +2746,13 @@ async def o365_teams_send_message(
     content_type: str = "text",
 ) -> str:
     """Send a message to a Teams chat."""
-    from app.o365_gateway_client import O365GatewayError, o365_request
+    from app.o365_gateway_client import O365GatewayError, send_chat_message
 
     try:
-        data = await o365_request(
-            "POST", f"chats/{client_id}/{chat_id}/messages",
-            body={"contentType": content_type, "content": content},
-        )
+        msg = await send_chat_message(client_id, chat_id, content, content_type)
     except O365GatewayError as e:
         return f"Error ({e.status_code}): {e.body[:300]}"
-    return f"Message sent (id={data.get('id', '?')})"
+    return f"Message sent (id={msg.id or '?'})"
 
 
 @mcp.tool

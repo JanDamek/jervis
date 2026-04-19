@@ -26,12 +26,15 @@ if _version_not_supported:
 
 
 class O365GatewayServiceStub(object):
-    """O365GatewayService — thin pod-to-pod proxy on top of the jervis-o365-gateway
-    service. The orchestrator's Teams / Mail / Calendar / Drive tools dial
-    this one RPC; the gateway routes based on `path` and forwards the
-    (token-managed) Microsoft Graph call. Response bodies are returned as
-    JSON text (or binary via RequestBytes) exactly as the gateway receives
-    them from Graph, so tool code can keep the existing parsing.
+    """O365GatewayService — one umbrella gRPC for the O365 gateway pod. It
+    fronts every Microsoft Graph call Jervis makes (Teams chats / channels,
+    Mail, Calendar, Online meetings, Drive, session). Graph-specific DTOs
+    are shared across RPC groups so the same `ChatMessage` is returned for
+    Teams chats and channel reads.
+
+    Typed RPCs land incrementally (slice V5a -> Teams chats, V5b -> channels,
+    etc.). The legacy Request / RequestBytes passthrough stays until every
+    group is typed; it is dropped in V5h.
     """
 
     def __init__(self, channel):
@@ -50,24 +53,62 @@ class O365GatewayServiceStub(object):
                 request_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.O365Request.SerializeToString,
                 response_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.O365BytesResponse.FromString,
                 _registered_method=True)
+        self.ListChats = channel.unary_unary(
+                '/jervis.o365_gateway.O365GatewayService/ListChats',
+                request_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListChatsRequest.SerializeToString,
+                response_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListChatsResponse.FromString,
+                _registered_method=True)
+        self.ReadChat = channel.unary_unary(
+                '/jervis.o365_gateway.O365GatewayService/ReadChat',
+                request_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.ReadChatRequest.SerializeToString,
+                response_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListChatMessagesResponse.FromString,
+                _registered_method=True)
+        self.SendChatMessage = channel.unary_unary(
+                '/jervis.o365_gateway.O365GatewayService/SendChatMessage',
+                request_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.SendChatMessageRequest.SerializeToString,
+                response_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.ChatMessage.FromString,
+                _registered_method=True)
 
 
 class O365GatewayServiceServicer(object):
-    """O365GatewayService — thin pod-to-pod proxy on top of the jervis-o365-gateway
-    service. The orchestrator's Teams / Mail / Calendar / Drive tools dial
-    this one RPC; the gateway routes based on `path` and forwards the
-    (token-managed) Microsoft Graph call. Response bodies are returned as
-    JSON text (or binary via RequestBytes) exactly as the gateway receives
-    them from Graph, so tool code can keep the existing parsing.
+    """O365GatewayService — one umbrella gRPC for the O365 gateway pod. It
+    fronts every Microsoft Graph call Jervis makes (Teams chats / channels,
+    Mail, Calendar, Online meetings, Drive, session). Graph-specific DTOs
+    are shared across RPC groups so the same `ChatMessage` is returned for
+    Teams chats and channel reads.
+
+    Typed RPCs land incrementally (slice V5a -> Teams chats, V5b -> channels,
+    etc.). The legacy Request / RequestBytes passthrough stays until every
+    group is typed; it is dropped in V5h.
     """
 
     def Request(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """=== Legacy passthrough (drop at V5h) =====================================
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def RequestBytes(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListChats(self, request, context):
+        """=== V5a - Teams chats ====================================================
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ReadChat(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def SendChatMessage(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -86,6 +127,21 @@ def add_O365GatewayServiceServicer_to_server(servicer, server):
                     request_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.O365Request.FromString,
                     response_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.O365BytesResponse.SerializeToString,
             ),
+            'ListChats': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListChats,
+                    request_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListChatsRequest.FromString,
+                    response_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListChatsResponse.SerializeToString,
+            ),
+            'ReadChat': grpc.unary_unary_rpc_method_handler(
+                    servicer.ReadChat,
+                    request_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.ReadChatRequest.FromString,
+                    response_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListChatMessagesResponse.SerializeToString,
+            ),
+            'SendChatMessage': grpc.unary_unary_rpc_method_handler(
+                    servicer.SendChatMessage,
+                    request_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.SendChatMessageRequest.FromString,
+                    response_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.ChatMessage.SerializeToString,
+            ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
             'jervis.o365_gateway.O365GatewayService', rpc_method_handlers)
@@ -95,12 +151,15 @@ def add_O365GatewayServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class O365GatewayService(object):
-    """O365GatewayService — thin pod-to-pod proxy on top of the jervis-o365-gateway
-    service. The orchestrator's Teams / Mail / Calendar / Drive tools dial
-    this one RPC; the gateway routes based on `path` and forwards the
-    (token-managed) Microsoft Graph call. Response bodies are returned as
-    JSON text (or binary via RequestBytes) exactly as the gateway receives
-    them from Graph, so tool code can keep the existing parsing.
+    """O365GatewayService — one umbrella gRPC for the O365 gateway pod. It
+    fronts every Microsoft Graph call Jervis makes (Teams chats / channels,
+    Mail, Calendar, Online meetings, Drive, session). Graph-specific DTOs
+    are shared across RPC groups so the same `ChatMessage` is returned for
+    Teams chats and channel reads.
+
+    Typed RPCs land incrementally (slice V5a -> Teams chats, V5b -> channels,
+    etc.). The legacy Request / RequestBytes passthrough stays until every
+    group is typed; it is dropped in V5h.
     """
 
     @staticmethod
@@ -147,6 +206,87 @@ class O365GatewayService(object):
             '/jervis.o365_gateway.O365GatewayService/RequestBytes',
             jervis_dot_o365__gateway_dot_gateway__pb2.O365Request.SerializeToString,
             jervis_dot_o365__gateway_dot_gateway__pb2.O365BytesResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListChats(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.o365_gateway.O365GatewayService/ListChats',
+            jervis_dot_o365__gateway_dot_gateway__pb2.ListChatsRequest.SerializeToString,
+            jervis_dot_o365__gateway_dot_gateway__pb2.ListChatsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ReadChat(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.o365_gateway.O365GatewayService/ReadChat',
+            jervis_dot_o365__gateway_dot_gateway__pb2.ReadChatRequest.SerializeToString,
+            jervis_dot_o365__gateway_dot_gateway__pb2.ListChatMessagesResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SendChatMessage(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.o365_gateway.O365GatewayService/SendChatMessage',
+            jervis_dot_o365__gateway_dot_gateway__pb2.SendChatMessageRequest.SerializeToString,
+            jervis_dot_o365__gateway_dot_gateway__pb2.ChatMessage.FromString,
             options,
             channel_credentials,
             insecure,

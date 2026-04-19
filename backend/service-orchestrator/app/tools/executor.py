@@ -3773,26 +3773,22 @@ async def _execute_mongo_update_document(
 
 
 async def _execute_o365_teams_list_chats(client_id: str, top: int = 20) -> str:
-    from app.o365_gateway_client import O365GatewayError, o365_request
+    from app.o365_gateway_client import O365GatewayError, list_chats
 
     try:
-        chats = await o365_request(
-            "GET", f"chats/{client_id}", query={"top": min(top, 50)},
-        )
+        chats = await list_chats(client_id, min(top, 50))
         if not chats:
             return "No chats found."
         lines = []
         for c in chats:
-            topic = c.get("topic") or "(no topic)"
-            chat_type = c.get("chatType", "?")
-            chat_id = c.get("id", "?")
+            topic = c.topic or "(no topic)"
+            chat_type = c.chat_type or "?"
+            chat_id = c.id or "?"
             preview = ""
-            mp = c.get("lastMessagePreview")
-            if mp and mp.get("body"):
-                preview_text = mp["body"].get("content", "")[:100]
-                from_user = ""
-                if mp.get("from") and mp["from"].get("user"):
-                    from_user = mp["from"]["user"].get("displayName", "")
+            if c.HasField("last_message_preview"):
+                mp = c.last_message_preview
+                preview_text = mp.body.content[:100] if mp.HasField("body") else ""
+                from_user = mp.sender.user.display_name if mp.HasField("sender") and mp.sender.HasField("user") else ""
                 preview = f" | {from_user}: {preview_text}"
             lines.append(f"[{chat_type}] {topic} (id={chat_id}){preview}")
         return "\n".join(lines)
@@ -3805,19 +3801,17 @@ async def _execute_o365_teams_list_chats(client_id: str, top: int = 20) -> str:
 async def _execute_o365_teams_read_chat(client_id: str, chat_id: str, top: int = 20) -> str:
     if not chat_id:
         return "Error: chat_id is required."
-    from app.o365_gateway_client import O365GatewayError, o365_request
+    from app.o365_gateway_client import O365GatewayError, read_chat
 
     try:
-        messages = await o365_request(
-            "GET", f"chats/{client_id}/{chat_id}/messages", query={"top": top},
-        )
+        messages = await read_chat(client_id, chat_id, top)
         if not messages:
             return "No messages found."
         lines = []
         for m in messages:
-            sender = _extract_sender(m)
-            body = (m.get("body") or {}).get("content", "")[:500]
-            ts = m.get("createdDateTime", "")
+            sender = _extract_sender_proto(m)
+            body = m.body.content[:500] if m.HasField("body") else ""
+            ts = m.created_date_time or ""
             lines.append(f"[{ts}] {sender}: {body}")
         return "\n---\n".join(lines)
     except O365GatewayError as e:
@@ -3831,14 +3825,11 @@ async def _execute_o365_teams_send_message(
 ) -> str:
     if not chat_id or not content:
         return "Error: chat_id and content are required."
-    from app.o365_gateway_client import O365GatewayError, o365_request
+    from app.o365_gateway_client import O365GatewayError, send_chat_message
 
     try:
-        data = await o365_request(
-            "POST", f"chats/{client_id}/{chat_id}/messages",
-            body={"contentType": content_type, "content": content},
-        )
-        return f"Message sent (id={data.get('id', '?')})"
+        msg = await send_chat_message(client_id, chat_id, content, content_type)
+        return f"Message sent (id={msg.id or '?'})"
     except O365GatewayError as e:
         return f"Error ({e.status_code}): {e.body[:300]}"
     except Exception as e:
@@ -4244,7 +4235,7 @@ async def _execute_o365_files_search(
 # -- Helper --
 
 def _extract_sender(message: dict) -> str:
-    """Extract sender display name from a Graph API message."""
+    """Extract sender display name from a Graph API message (dict form)."""
     from_data = message.get("from")
     if not from_data:
         return "?"
@@ -4252,6 +4243,18 @@ def _extract_sender(message: dict) -> str:
         return from_data["user"].get("displayName", "?")
     if from_data.get("application"):
         return from_data["application"].get("displayName", "bot")
+    return "?"
+
+
+def _extract_sender_proto(message) -> str:
+    """Extract sender display name from a typed ChatMessage proto."""
+    if not message.HasField("sender"):
+        return "?"
+    s = message.sender
+    if s.HasField("user"):
+        return s.user.display_name or "?"
+    if s.HasField("application"):
+        return s.application.display_name or "bot"
     return "?"
 
 

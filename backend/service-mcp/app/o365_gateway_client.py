@@ -79,3 +79,52 @@ async def o365_request(
         return _json.loads(resp.body_json)
     except Exception:
         return {"raw": resp.body_json}
+
+
+# === V5a — Teams chats typed ================================================
+
+async def list_chats(
+    client_id: str, top: int = 20, timeout: float = 30.0,
+) -> list[gateway_pb2.ChatSummary]:
+    stub = _get_stub()
+    req = gateway_pb2.ListChatsRequest(ctx=_ctx(), client_id=client_id, top=top)
+    try:
+        resp = await stub.ListChats(req, timeout=timeout)
+    except grpc.aio.AioRpcError as e:
+        raise O365GatewayError(e.code().value[0] if e.code() else 502, e.details() or "")
+    return list(resp.chats)
+
+
+async def read_chat(
+    client_id: str, chat_id: str, top: int = 20, timeout: float = 30.0,
+) -> list[gateway_pb2.ChatMessage]:
+    stub = _get_stub()
+    req = gateway_pb2.ReadChatRequest(
+        ctx=_ctx(), client_id=client_id, chat_id=chat_id, top=top,
+    )
+    try:
+        resp = await stub.ReadChat(req, timeout=timeout)
+    except grpc.aio.AioRpcError as e:
+        raise O365GatewayError(e.code().value[0] if e.code() else 502, e.details() or "")
+    return list(resp.messages)
+
+
+async def send_chat_message(
+    client_id: str,
+    chat_id: str,
+    content: str,
+    content_type: str = "text",
+    timeout: float = 30.0,
+) -> gateway_pb2.ChatMessage:
+    stub = _get_stub()
+    req = gateway_pb2.SendChatMessageRequest(
+        ctx=_ctx(),
+        client_id=client_id,
+        chat_id=chat_id,
+        content=content,
+        content_type=content_type,
+    )
+    try:
+        return await stub.SendChatMessage(req, timeout=timeout)
+    except grpc.aio.AioRpcError as e:
+        raise O365GatewayError(e.code().value[0] if e.code() else 502, e.details() or "")

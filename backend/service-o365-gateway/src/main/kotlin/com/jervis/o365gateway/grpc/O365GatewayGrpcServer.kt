@@ -2,12 +2,30 @@ package com.jervis.o365gateway.grpc
 
 import com.google.protobuf.ByteString
 import com.jervis.contracts.interceptors.ServerContextInterceptor
+import com.jervis.contracts.o365_gateway.ChatMessage as ProtoChatMessage
+import com.jervis.contracts.o365_gateway.ChatSummary as ProtoChatSummary
+import com.jervis.contracts.o365_gateway.GraphApplication as ProtoGraphApplication
+import com.jervis.contracts.o365_gateway.GraphUser as ProtoGraphUser
+import com.jervis.contracts.o365_gateway.ListChatMessagesResponse
+import com.jervis.contracts.o365_gateway.ListChatsRequest
+import com.jervis.contracts.o365_gateway.ListChatsResponse
+import com.jervis.contracts.o365_gateway.MessageBody as ProtoMessageBody
+import com.jervis.contracts.o365_gateway.MessageFrom as ProtoMessageFrom
+import com.jervis.contracts.o365_gateway.MessagePreview as ProtoMessagePreview
 import com.jervis.contracts.o365_gateway.O365BytesResponse
 import com.jervis.contracts.o365_gateway.O365GatewayServiceGrpcKt
 import com.jervis.contracts.o365_gateway.O365Request
 import com.jervis.contracts.o365_gateway.O365Response
+import com.jervis.contracts.o365_gateway.ReadChatRequest
+import com.jervis.contracts.o365_gateway.SendChatMessageRequest
 import com.jervis.o365gateway.model.CreateEventRequest
+import com.jervis.o365gateway.model.GraphApplication
+import com.jervis.o365gateway.model.GraphChat
+import com.jervis.o365gateway.model.GraphMessage
 import com.jervis.o365gateway.model.GraphMessageBody
+import com.jervis.o365gateway.model.GraphMessageFrom
+import com.jervis.o365gateway.model.GraphMessagePreview
+import com.jervis.o365gateway.model.GraphUser
 import com.jervis.o365gateway.model.SendMailRequest
 import com.jervis.o365gateway.service.BrowserPoolClient
 import com.jervis.o365gateway.service.GraphApiService
@@ -90,6 +108,30 @@ private class GatewayServicer(
                 .setBodyJson("""{"error":"${e.message?.replace("\"", "'")?.take(300)}"}""")
                 .build()
         }
+    }
+
+    // === V5a - Teams chats typed =============================================
+
+    override suspend fun listChats(request: ListChatsRequest): ListChatsResponse {
+        val top = (if (request.top == 0) 20 else request.top).coerceIn(1, 50)
+        val chats = graphApi.listChats(request.clientId, top)
+        return ListChatsResponse.newBuilder()
+            .apply { chats.forEach { addChats(it.toProto()) } }
+            .build()
+    }
+
+    override suspend fun readChat(request: ReadChatRequest): ListChatMessagesResponse {
+        val top = if (request.top == 0) 20 else request.top
+        val messages = graphApi.readChat(request.clientId, request.chatId, top)
+        return ListChatMessagesResponse.newBuilder()
+            .apply { messages.forEach { addMessages(it.toProto()) } }
+            .build()
+    }
+
+    override suspend fun sendChatMessage(request: SendChatMessageRequest): ProtoChatMessage {
+        val ct = request.contentType.ifBlank { "text" }
+        val result = graphApi.sendChatMessage(request.clientId, request.chatId, request.content, ct)
+        return result.toProto()
     }
 
     override suspend fun requestBytes(request: O365Request): O365BytesResponse {
@@ -226,3 +268,63 @@ private class GatewayServicer(
     private inline fun <reified T> encode(value: T): JsonElement =
         json.encodeToJsonElement(serializer(), value)
 }
+
+// === V5a - Teams chats: Graph DTO -> proto mappers ============================
+
+private fun GraphUser.toProto(): ProtoGraphUser =
+    ProtoGraphUser.newBuilder()
+        .setId(id.orEmpty())
+        .setDisplayName(displayName.orEmpty())
+        .build()
+
+private fun GraphApplication.toProto(): ProtoGraphApplication =
+    ProtoGraphApplication.newBuilder()
+        .setId(id.orEmpty())
+        .setDisplayName(displayName.orEmpty())
+        .build()
+
+private fun GraphMessageBody.toProto(): ProtoMessageBody =
+    ProtoMessageBody.newBuilder()
+        .setContentType(contentType.orEmpty())
+        .setContent(content.orEmpty())
+        .build()
+
+private fun GraphMessageFrom.toProto(): ProtoMessageFrom =
+    ProtoMessageFrom.newBuilder()
+        .apply {
+            user?.let { setUser(it.toProto()) }
+            application?.let { setApplication(it.toProto()) }
+        }
+        .build()
+
+private fun GraphMessagePreview.toProto(): ProtoMessagePreview =
+    ProtoMessagePreview.newBuilder()
+        .setId(id.orEmpty())
+        .setCreatedDateTime(createdDateTime.orEmpty())
+        .apply {
+            body?.let { setBody(it.toProto()) }
+            from?.let { setSender(it.toProto()) }
+        }
+        .build()
+
+private fun GraphChat.toProto(): ProtoChatSummary =
+    ProtoChatSummary.newBuilder()
+        .setId(id)
+        .setTopic(topic.orEmpty())
+        .setChatType(chatType.orEmpty())
+        .setCreatedDateTime(createdDateTime.orEmpty())
+        .setLastUpdatedDateTime(lastUpdatedDateTime.orEmpty())
+        .apply { lastMessagePreview?.let { setLastMessagePreview(it.toProto()) } }
+        .build()
+
+private fun GraphMessage.toProto(): ProtoChatMessage =
+    ProtoChatMessage.newBuilder()
+        .setId(id)
+        .setCreatedDateTime(createdDateTime.orEmpty())
+        .setLastModifiedDateTime(lastModifiedDateTime.orEmpty())
+        .setMessageType(messageType.orEmpty())
+        .apply {
+            body?.let { setBody(it.toProto()) }
+            from?.let { setSender(it.toProto()) }
+        }
+        .build()

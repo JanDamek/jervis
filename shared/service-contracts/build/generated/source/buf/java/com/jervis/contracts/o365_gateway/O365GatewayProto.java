@@ -56,6 +56,66 @@ public final class O365GatewayProto extends com.google.protobuf.GeneratedFile {
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_jervis_o365_gateway_O365BytesResponse_HeadersEntry_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_o365_gateway_GraphUser_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_o365_gateway_GraphUser_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_o365_gateway_GraphApplication_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_o365_gateway_GraphApplication_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_o365_gateway_MessageBody_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_o365_gateway_MessageBody_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_o365_gateway_MessageFrom_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_o365_gateway_MessageFrom_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_o365_gateway_MessagePreview_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_o365_gateway_MessagePreview_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_o365_gateway_ChatMessage_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_o365_gateway_ChatMessage_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_o365_gateway_ChatSummary_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_o365_gateway_ChatSummary_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_o365_gateway_ListChatsRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_o365_gateway_ListChatsRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_o365_gateway_ListChatsResponse_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_o365_gateway_ListChatsResponse_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_o365_gateway_ReadChatRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_o365_gateway_ReadChatRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_o365_gateway_ListChatMessagesResponse_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_o365_gateway_ListChatMessagesResponse_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_o365_gateway_SendChatMessageRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_o365_gateway_SendChatMessageRequest_fieldAccessorTable;
 
   public static com.google.protobuf.Descriptors.FileDescriptor
       getDescriptor() {
@@ -82,14 +142,54 @@ public final class O365GatewayProto extends com.google.protobuf.GeneratedFile {
       "ype\030\003 \001(\t\022\020\n\010filename\030\004 \001(\t\022D\n\007headers\030\005" +
       " \003(\01323.jervis.o365_gateway.O365BytesResp" +
       "onse.HeadersEntry\032.\n\014HeadersEntry\022\013\n\003key" +
-      "\030\001 \001(\t\022\r\n\005value\030\002 \001(\t:\0028\0012\276\001\n\022O365Gatewa" +
-      "yService\022N\n\007Request\022 .jervis.o365_gatewa" +
-      "y.O365Request\032!.jervis.o365_gateway.O365" +
-      "Response\022X\n\014RequestBytes\022 .jervis.o365_g" +
-      "ateway.O365Request\032&.jervis.o365_gateway" +
-      ".O365BytesResponseB7\n!com.jervis.contrac" +
-      "ts.o365_gatewayB\020O365GatewayProtoP\001b\006pro" +
-      "to3"
+      "\030\001 \001(\t\022\r\n\005value\030\002 \001(\t:\0028\001\"-\n\tGraphUser\022\n" +
+      "\n\002id\030\001 \001(\t\022\024\n\014display_name\030\002 \001(\t\"4\n\020Grap" +
+      "hApplication\022\n\n\002id\030\001 \001(\t\022\024\n\014display_name" +
+      "\030\002 \001(\t\"4\n\013MessageBody\022\024\n\014content_type\030\001 " +
+      "\001(\t\022\017\n\007content\030\002 \001(\t\"w\n\013MessageFrom\022,\n\004u" +
+      "ser\030\001 \001(\0132\036.jervis.o365_gateway.GraphUse" +
+      "r\022:\n\013application\030\002 \001(\0132%.jervis.o365_gat" +
+      "eway.GraphApplication\"\231\001\n\016MessagePreview" +
+      "\022\n\n\002id\030\001 \001(\t\022\031\n\021created_date_time\030\002 \001(\t\022" +
+      ".\n\004body\030\003 \001(\0132 .jervis.o365_gateway.Mess" +
+      "ageBody\0220\n\006sender\030\004 \001(\0132 .jervis.o365_ga" +
+      "teway.MessageFrom\"\315\001\n\013ChatMessage\022\n\n\002id\030" +
+      "\001 \001(\t\022\031\n\021created_date_time\030\002 \001(\t\022\037\n\027last" +
+      "_modified_date_time\030\003 \001(\t\022.\n\004body\030\004 \001(\0132" +
+      " .jervis.o365_gateway.MessageBody\0220\n\006sen" +
+      "der\030\005 \001(\0132 .jervis.o365_gateway.MessageF" +
+      "rom\022\024\n\014message_type\030\006 \001(\t\"\271\001\n\013ChatSummar" +
+      "y\022\n\n\002id\030\001 \001(\t\022\r\n\005topic\030\002 \001(\t\022\021\n\tchat_typ" +
+      "e\030\003 \001(\t\022\031\n\021created_date_time\030\004 \001(\t\022\036\n\026la" +
+      "st_updated_date_time\030\005 \001(\t\022A\n\024last_messa" +
+      "ge_preview\030\006 \001(\0132#.jervis.o365_gateway.M" +
+      "essagePreview\"^\n\020ListChatsRequest\022*\n\003ctx" +
+      "\030\001 \001(\0132\035.jervis.common.RequestContext\022\021\n" +
+      "\tclient_id\030\002 \001(\t\022\013\n\003top\030\003 \001(\005\"D\n\021ListCha" +
+      "tsResponse\022/\n\005chats\030\001 \003(\0132 .jervis.o365_" +
+      "gateway.ChatSummary\"n\n\017ReadChatRequest\022*" +
+      "\n\003ctx\030\001 \001(\0132\035.jervis.common.RequestConte" +
+      "xt\022\021\n\tclient_id\030\002 \001(\t\022\017\n\007chat_id\030\003 \001(\t\022\013" +
+      "\n\003top\030\004 \001(\005\"N\n\030ListChatMessagesResponse\022" +
+      "2\n\010messages\030\001 \003(\0132 .jervis.o365_gateway." +
+      "ChatMessage\"\217\001\n\026SendChatMessageRequest\022*" +
+      "\n\003ctx\030\001 \001(\0132\035.jervis.common.RequestConte" +
+      "xt\022\021\n\tclient_id\030\002 \001(\t\022\017\n\007chat_id\030\003 \001(\t\022\017" +
+      "\n\007content\030\004 \001(\t\022\024\n\014content_type\030\005 \001(\t2\335\003" +
+      "\n\022O365GatewayService\022N\n\007Request\022 .jervis" +
+      ".o365_gateway.O365Request\032!.jervis.o365_" +
+      "gateway.O365Response\022X\n\014RequestBytes\022 .j" +
+      "ervis.o365_gateway.O365Request\032&.jervis." +
+      "o365_gateway.O365BytesResponse\022Z\n\tListCh" +
+      "ats\022%.jervis.o365_gateway.ListChatsReque" +
+      "st\032&.jervis.o365_gateway.ListChatsRespon" +
+      "se\022_\n\010ReadChat\022$.jervis.o365_gateway.Rea" +
+      "dChatRequest\032-.jervis.o365_gateway.ListC" +
+      "hatMessagesResponse\022`\n\017SendChatMessage\022+" +
+      ".jervis.o365_gateway.SendChatMessageRequ" +
+      "est\032 .jervis.o365_gateway.ChatMessageB7\n" +
+      "!com.jervis.contracts.o365_gatewayB\020O365" +
+      "GatewayProtoP\001b\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
@@ -132,6 +232,78 @@ public final class O365GatewayProto extends com.google.protobuf.GeneratedFile {
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_O365BytesResponse_HeadersEntry_descriptor,
         new java.lang.String[] { "Key", "Value", });
+    internal_static_jervis_o365_gateway_GraphUser_descriptor =
+      getDescriptor().getMessageTypes().get(3);
+    internal_static_jervis_o365_gateway_GraphUser_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_o365_gateway_GraphUser_descriptor,
+        new java.lang.String[] { "Id", "DisplayName", });
+    internal_static_jervis_o365_gateway_GraphApplication_descriptor =
+      getDescriptor().getMessageTypes().get(4);
+    internal_static_jervis_o365_gateway_GraphApplication_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_o365_gateway_GraphApplication_descriptor,
+        new java.lang.String[] { "Id", "DisplayName", });
+    internal_static_jervis_o365_gateway_MessageBody_descriptor =
+      getDescriptor().getMessageTypes().get(5);
+    internal_static_jervis_o365_gateway_MessageBody_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_o365_gateway_MessageBody_descriptor,
+        new java.lang.String[] { "ContentType", "Content", });
+    internal_static_jervis_o365_gateway_MessageFrom_descriptor =
+      getDescriptor().getMessageTypes().get(6);
+    internal_static_jervis_o365_gateway_MessageFrom_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_o365_gateway_MessageFrom_descriptor,
+        new java.lang.String[] { "User", "Application", });
+    internal_static_jervis_o365_gateway_MessagePreview_descriptor =
+      getDescriptor().getMessageTypes().get(7);
+    internal_static_jervis_o365_gateway_MessagePreview_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_o365_gateway_MessagePreview_descriptor,
+        new java.lang.String[] { "Id", "CreatedDateTime", "Body", "Sender", });
+    internal_static_jervis_o365_gateway_ChatMessage_descriptor =
+      getDescriptor().getMessageTypes().get(8);
+    internal_static_jervis_o365_gateway_ChatMessage_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_o365_gateway_ChatMessage_descriptor,
+        new java.lang.String[] { "Id", "CreatedDateTime", "LastModifiedDateTime", "Body", "Sender", "MessageType", });
+    internal_static_jervis_o365_gateway_ChatSummary_descriptor =
+      getDescriptor().getMessageTypes().get(9);
+    internal_static_jervis_o365_gateway_ChatSummary_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_o365_gateway_ChatSummary_descriptor,
+        new java.lang.String[] { "Id", "Topic", "ChatType", "CreatedDateTime", "LastUpdatedDateTime", "LastMessagePreview", });
+    internal_static_jervis_o365_gateway_ListChatsRequest_descriptor =
+      getDescriptor().getMessageTypes().get(10);
+    internal_static_jervis_o365_gateway_ListChatsRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_o365_gateway_ListChatsRequest_descriptor,
+        new java.lang.String[] { "Ctx", "ClientId", "Top", });
+    internal_static_jervis_o365_gateway_ListChatsResponse_descriptor =
+      getDescriptor().getMessageTypes().get(11);
+    internal_static_jervis_o365_gateway_ListChatsResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_o365_gateway_ListChatsResponse_descriptor,
+        new java.lang.String[] { "Chats", });
+    internal_static_jervis_o365_gateway_ReadChatRequest_descriptor =
+      getDescriptor().getMessageTypes().get(12);
+    internal_static_jervis_o365_gateway_ReadChatRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_o365_gateway_ReadChatRequest_descriptor,
+        new java.lang.String[] { "Ctx", "ClientId", "ChatId", "Top", });
+    internal_static_jervis_o365_gateway_ListChatMessagesResponse_descriptor =
+      getDescriptor().getMessageTypes().get(13);
+    internal_static_jervis_o365_gateway_ListChatMessagesResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_o365_gateway_ListChatMessagesResponse_descriptor,
+        new java.lang.String[] { "Messages", });
+    internal_static_jervis_o365_gateway_SendChatMessageRequest_descriptor =
+      getDescriptor().getMessageTypes().get(14);
+    internal_static_jervis_o365_gateway_SendChatMessageRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_o365_gateway_SendChatMessageRequest_descriptor,
+        new java.lang.String[] { "Ctx", "ClientId", "ChatId", "Content", "ContentType", });
     descriptor.resolveAllFeaturesImmutable();
     com.jervis.contracts.common.TypesProto.getDescriptor();
   }

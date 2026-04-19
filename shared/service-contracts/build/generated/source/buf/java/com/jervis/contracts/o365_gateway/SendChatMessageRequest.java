@@ -6,13 +6,13 @@
 package com.jervis.contracts.o365_gateway;
 
 /**
- * Protobuf type {@code jervis.o365_gateway.O365Request}
+ * Protobuf type {@code jervis.o365_gateway.SendChatMessageRequest}
  */
 @com.google.protobuf.Generated
-public final class O365Request extends
+public final class SendChatMessageRequest extends
     com.google.protobuf.GeneratedMessage implements
-    // @@protoc_insertion_point(message_implements:jervis.o365_gateway.O365Request)
-    O365RequestOrBuilder {
+    // @@protoc_insertion_point(message_implements:jervis.o365_gateway.SendChatMessageRequest)
+    SendChatMessageRequestOrBuilder {
 private static final long serialVersionUID = 0L;
   static {
     com.google.protobuf.RuntimeVersion.validateProtobufGencodeVersion(
@@ -21,42 +21,30 @@ private static final long serialVersionUID = 0L;
       /* minor= */ 32,
       /* patch= */ 1,
       /* suffix= */ "",
-      O365Request.class.getName());
+      SendChatMessageRequest.class.getName());
   }
-  // Use O365Request.newBuilder() to construct.
-  private O365Request(com.google.protobuf.GeneratedMessage.Builder<?> builder) {
+  // Use SendChatMessageRequest.newBuilder() to construct.
+  private SendChatMessageRequest(com.google.protobuf.GeneratedMessage.Builder<?> builder) {
     super(builder);
   }
-  private O365Request() {
-    method_ = "";
-    path_ = "";
-    bodyJson_ = "";
+  private SendChatMessageRequest() {
+    clientId_ = "";
+    chatId_ = "";
+    content_ = "";
     contentType_ = "";
   }
 
   public static final com.google.protobuf.Descriptors.Descriptor
       getDescriptor() {
-    return com.jervis.contracts.o365_gateway.O365GatewayProto.internal_static_jervis_o365_gateway_O365Request_descriptor;
+    return com.jervis.contracts.o365_gateway.O365GatewayProto.internal_static_jervis_o365_gateway_SendChatMessageRequest_descriptor;
   }
 
-  @SuppressWarnings({"rawtypes"})
-  @java.lang.Override
-  protected com.google.protobuf.MapFieldReflectionAccessor internalGetMapFieldReflection(
-      int number) {
-    switch (number) {
-      case 4:
-        return internalGetQuery();
-      default:
-        throw new RuntimeException(
-            "Invalid map field number: " + number);
-    }
-  }
   @java.lang.Override
   protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internalGetFieldAccessorTable() {
-    return com.jervis.contracts.o365_gateway.O365GatewayProto.internal_static_jervis_o365_gateway_O365Request_fieldAccessorTable
+    return com.jervis.contracts.o365_gateway.O365GatewayProto.internal_static_jervis_o365_gateway_SendChatMessageRequest_fieldAccessorTable
         .ensureFieldAccessorsInitialized(
-            com.jervis.contracts.o365_gateway.O365Request.class, com.jervis.contracts.o365_gateway.O365Request.Builder.class);
+            com.jervis.contracts.o365_gateway.SendChatMessageRequest.class, com.jervis.contracts.o365_gateway.SendChatMessageRequest.Builder.class);
   }
 
   private int bitField0_;
@@ -86,251 +74,132 @@ private static final long serialVersionUID = 0L;
     return ctx_ == null ? com.jervis.contracts.common.RequestContext.getDefaultInstance() : ctx_;
   }
 
-  public static final int METHOD_FIELD_NUMBER = 2;
+  public static final int CLIENT_ID_FIELD_NUMBER = 2;
   @SuppressWarnings("serial")
-  private volatile java.lang.Object method_ = "";
+  private volatile java.lang.Object clientId_ = "";
   /**
-   * <pre>
-   * GET / POST (uppercase)
-   * </pre>
-   *
-   * <code>string method = 2;</code>
-   * @return The method.
+   * <code>string client_id = 2;</code>
+   * @return The clientId.
    */
   @java.lang.Override
-  public java.lang.String getMethod() {
-    java.lang.Object ref = method_;
+  public java.lang.String getClientId() {
+    java.lang.Object ref = clientId_;
     if (ref instanceof java.lang.String) {
       return (java.lang.String) ref;
     } else {
       com.google.protobuf.ByteString bs = 
           (com.google.protobuf.ByteString) ref;
       java.lang.String s = bs.toStringUtf8();
-      method_ = s;
+      clientId_ = s;
       return s;
     }
   }
   /**
-   * <pre>
-   * GET / POST (uppercase)
-   * </pre>
-   *
-   * <code>string method = 2;</code>
-   * @return The bytes for method.
+   * <code>string client_id = 2;</code>
+   * @return The bytes for clientId.
    */
   @java.lang.Override
   public com.google.protobuf.ByteString
-      getMethodBytes() {
-    java.lang.Object ref = method_;
+      getClientIdBytes() {
+    java.lang.Object ref = clientId_;
     if (ref instanceof java.lang.String) {
       com.google.protobuf.ByteString b = 
           com.google.protobuf.ByteString.copyFromUtf8(
               (java.lang.String) ref);
-      method_ = b;
+      clientId_ = b;
       return b;
     } else {
       return (com.google.protobuf.ByteString) ref;
     }
   }
 
-  public static final int PATH_FIELD_NUMBER = 3;
+  public static final int CHAT_ID_FIELD_NUMBER = 3;
   @SuppressWarnings("serial")
-  private volatile java.lang.Object path_ = "";
+  private volatile java.lang.Object chatId_ = "";
   /**
-   * <pre>
-   * relative to /api/o365/ - e.g. "chats/{clientId}/{chatId}/messages"
-   * </pre>
-   *
-   * <code>string path = 3;</code>
-   * @return The path.
+   * <code>string chat_id = 3;</code>
+   * @return The chatId.
    */
   @java.lang.Override
-  public java.lang.String getPath() {
-    java.lang.Object ref = path_;
+  public java.lang.String getChatId() {
+    java.lang.Object ref = chatId_;
     if (ref instanceof java.lang.String) {
       return (java.lang.String) ref;
     } else {
       com.google.protobuf.ByteString bs = 
           (com.google.protobuf.ByteString) ref;
       java.lang.String s = bs.toStringUtf8();
-      path_ = s;
+      chatId_ = s;
       return s;
     }
   }
   /**
-   * <pre>
-   * relative to /api/o365/ - e.g. "chats/{clientId}/{chatId}/messages"
-   * </pre>
-   *
-   * <code>string path = 3;</code>
-   * @return The bytes for path.
+   * <code>string chat_id = 3;</code>
+   * @return The bytes for chatId.
    */
   @java.lang.Override
   public com.google.protobuf.ByteString
-      getPathBytes() {
-    java.lang.Object ref = path_;
+      getChatIdBytes() {
+    java.lang.Object ref = chatId_;
     if (ref instanceof java.lang.String) {
       com.google.protobuf.ByteString b = 
           com.google.protobuf.ByteString.copyFromUtf8(
               (java.lang.String) ref);
-      path_ = b;
+      chatId_ = b;
       return b;
     } else {
       return (com.google.protobuf.ByteString) ref;
     }
   }
 
-  public static final int QUERY_FIELD_NUMBER = 4;
-  private static final class QueryDefaultEntryHolder {
-    static final com.google.protobuf.MapEntry<
-        java.lang.String, java.lang.String> defaultEntry =
-            com.google.protobuf.MapEntry
-            .<java.lang.String, java.lang.String>newDefaultInstance(
-                com.jervis.contracts.o365_gateway.O365GatewayProto.internal_static_jervis_o365_gateway_O365Request_QueryEntry_descriptor, 
-                com.google.protobuf.WireFormat.FieldType.STRING,
-                "",
-                com.google.protobuf.WireFormat.FieldType.STRING,
-                "");
-  }
+  public static final int CONTENT_FIELD_NUMBER = 4;
   @SuppressWarnings("serial")
-  private com.google.protobuf.MapField<
-      java.lang.String, java.lang.String> query_;
-  private com.google.protobuf.MapField<java.lang.String, java.lang.String>
-  internalGetQuery() {
-    if (query_ == null) {
-      return com.google.protobuf.MapField.emptyMapField(
-          QueryDefaultEntryHolder.defaultEntry);
-    }
-    return query_;
-  }
-  public int getQueryCount() {
-    return internalGetQuery().getMap().size();
-  }
+  private volatile java.lang.Object content_ = "";
   /**
-   * <pre>
-   * query parameters
-   * </pre>
-   *
-   * <code>map&lt;string, string&gt; query = 4;</code>
+   * <code>string content = 4;</code>
+   * @return The content.
    */
   @java.lang.Override
-  public boolean containsQuery(
-      java.lang.String key) {
-    if (key == null) { throw new NullPointerException("map key"); }
-    return internalGetQuery().getMap().containsKey(key);
-  }
-  /**
-   * Use {@link #getQueryMap()} instead.
-   */
-  @java.lang.Override
-  @java.lang.Deprecated
-  public java.util.Map<java.lang.String, java.lang.String> getQuery() {
-    return getQueryMap();
-  }
-  /**
-   * <pre>
-   * query parameters
-   * </pre>
-   *
-   * <code>map&lt;string, string&gt; query = 4;</code>
-   */
-  @java.lang.Override
-  public java.util.Map<java.lang.String, java.lang.String> getQueryMap() {
-    return internalGetQuery().getMap();
-  }
-  /**
-   * <pre>
-   * query parameters
-   * </pre>
-   *
-   * <code>map&lt;string, string&gt; query = 4;</code>
-   */
-  @java.lang.Override
-  public /* nullable */
-java.lang.String getQueryOrDefault(
-      java.lang.String key,
-      /* nullable */
-java.lang.String defaultValue) {
-    if (key == null) { throw new NullPointerException("map key"); }
-    java.util.Map<java.lang.String, java.lang.String> map =
-        internalGetQuery().getMap();
-    return map.containsKey(key) ? map.get(key) : defaultValue;
-  }
-  /**
-   * <pre>
-   * query parameters
-   * </pre>
-   *
-   * <code>map&lt;string, string&gt; query = 4;</code>
-   */
-  @java.lang.Override
-  public java.lang.String getQueryOrThrow(
-      java.lang.String key) {
-    if (key == null) { throw new NullPointerException("map key"); }
-    java.util.Map<java.lang.String, java.lang.String> map =
-        internalGetQuery().getMap();
-    if (!map.containsKey(key)) {
-      throw new java.lang.IllegalArgumentException();
-    }
-    return map.get(key);
-  }
-
-  public static final int BODY_JSON_FIELD_NUMBER = 5;
-  @SuppressWarnings("serial")
-  private volatile java.lang.Object bodyJson_ = "";
-  /**
-   * <pre>
-   * optional JSON body for POST
-   * </pre>
-   *
-   * <code>string body_json = 5;</code>
-   * @return The bodyJson.
-   */
-  @java.lang.Override
-  public java.lang.String getBodyJson() {
-    java.lang.Object ref = bodyJson_;
+  public java.lang.String getContent() {
+    java.lang.Object ref = content_;
     if (ref instanceof java.lang.String) {
       return (java.lang.String) ref;
     } else {
       com.google.protobuf.ByteString bs = 
           (com.google.protobuf.ByteString) ref;
       java.lang.String s = bs.toStringUtf8();
-      bodyJson_ = s;
+      content_ = s;
       return s;
     }
   }
   /**
-   * <pre>
-   * optional JSON body for POST
-   * </pre>
-   *
-   * <code>string body_json = 5;</code>
-   * @return The bytes for bodyJson.
+   * <code>string content = 4;</code>
+   * @return The bytes for content.
    */
   @java.lang.Override
   public com.google.protobuf.ByteString
-      getBodyJsonBytes() {
-    java.lang.Object ref = bodyJson_;
+      getContentBytes() {
+    java.lang.Object ref = content_;
     if (ref instanceof java.lang.String) {
       com.google.protobuf.ByteString b = 
           com.google.protobuf.ByteString.copyFromUtf8(
               (java.lang.String) ref);
-      bodyJson_ = b;
+      content_ = b;
       return b;
     } else {
       return (com.google.protobuf.ByteString) ref;
     }
   }
 
-  public static final int CONTENT_TYPE_FIELD_NUMBER = 6;
+  public static final int CONTENT_TYPE_FIELD_NUMBER = 5;
   @SuppressWarnings("serial")
   private volatile java.lang.Object contentType_ = "";
   /**
    * <pre>
-   * override content-type (defaults to application/json)
+   * "text" | "html", defaults to "text"
    * </pre>
    *
-   * <code>string content_type = 6;</code>
+   * <code>string content_type = 5;</code>
    * @return The contentType.
    */
   @java.lang.Override
@@ -348,10 +217,10 @@ java.lang.String defaultValue) {
   }
   /**
    * <pre>
-   * override content-type (defaults to application/json)
+   * "text" | "html", defaults to "text"
    * </pre>
    *
-   * <code>string content_type = 6;</code>
+   * <code>string content_type = 5;</code>
    * @return The bytes for contentType.
    */
   @java.lang.Override
@@ -386,23 +255,17 @@ java.lang.String defaultValue) {
     if (((bitField0_ & 0x00000001) != 0)) {
       output.writeMessage(1, getCtx());
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(method_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 2, method_);
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(clientId_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 2, clientId_);
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(path_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 3, path_);
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(chatId_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 3, chatId_);
     }
-    com.google.protobuf.GeneratedMessage
-      .serializeStringMapTo(
-        output,
-        internalGetQuery(),
-        QueryDefaultEntryHolder.defaultEntry,
-        4);
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(bodyJson_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 5, bodyJson_);
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(content_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 4, content_);
     }
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(contentType_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 6, contentType_);
+      com.google.protobuf.GeneratedMessage.writeString(output, 5, contentType_);
     }
     getUnknownFields().writeTo(output);
   }
@@ -417,27 +280,17 @@ java.lang.String defaultValue) {
       size += com.google.protobuf.CodedOutputStream
         .computeMessageSize(1, getCtx());
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(method_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(2, method_);
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(clientId_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(2, clientId_);
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(path_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(3, path_);
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(chatId_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(3, chatId_);
     }
-    for (java.util.Map.Entry<java.lang.String, java.lang.String> entry
-         : internalGetQuery().getMap().entrySet()) {
-      com.google.protobuf.MapEntry<java.lang.String, java.lang.String>
-      query__ = QueryDefaultEntryHolder.defaultEntry.newBuilderForType()
-          .setKey(entry.getKey())
-          .setValue(entry.getValue())
-          .build();
-      size += com.google.protobuf.CodedOutputStream
-          .computeMessageSize(4, query__);
-    }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(bodyJson_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(5, bodyJson_);
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(content_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(4, content_);
     }
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(contentType_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(6, contentType_);
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(5, contentType_);
     }
     size += getUnknownFields().getSerializedSize();
     memoizedSize = size;
@@ -449,24 +302,22 @@ java.lang.String defaultValue) {
     if (obj == this) {
      return true;
     }
-    if (!(obj instanceof com.jervis.contracts.o365_gateway.O365Request)) {
+    if (!(obj instanceof com.jervis.contracts.o365_gateway.SendChatMessageRequest)) {
       return super.equals(obj);
     }
-    com.jervis.contracts.o365_gateway.O365Request other = (com.jervis.contracts.o365_gateway.O365Request) obj;
+    com.jervis.contracts.o365_gateway.SendChatMessageRequest other = (com.jervis.contracts.o365_gateway.SendChatMessageRequest) obj;
 
     if (hasCtx() != other.hasCtx()) return false;
     if (hasCtx()) {
       if (!getCtx()
           .equals(other.getCtx())) return false;
     }
-    if (!getMethod()
-        .equals(other.getMethod())) return false;
-    if (!getPath()
-        .equals(other.getPath())) return false;
-    if (!internalGetQuery().equals(
-        other.internalGetQuery())) return false;
-    if (!getBodyJson()
-        .equals(other.getBodyJson())) return false;
+    if (!getClientId()
+        .equals(other.getClientId())) return false;
+    if (!getChatId()
+        .equals(other.getChatId())) return false;
+    if (!getContent()
+        .equals(other.getContent())) return false;
     if (!getContentType()
         .equals(other.getContentType())) return false;
     if (!getUnknownFields().equals(other.getUnknownFields())) return false;
@@ -484,16 +335,12 @@ java.lang.String defaultValue) {
       hash = (37 * hash) + CTX_FIELD_NUMBER;
       hash = (53 * hash) + getCtx().hashCode();
     }
-    hash = (37 * hash) + METHOD_FIELD_NUMBER;
-    hash = (53 * hash) + getMethod().hashCode();
-    hash = (37 * hash) + PATH_FIELD_NUMBER;
-    hash = (53 * hash) + getPath().hashCode();
-    if (!internalGetQuery().getMap().isEmpty()) {
-      hash = (37 * hash) + QUERY_FIELD_NUMBER;
-      hash = (53 * hash) + internalGetQuery().hashCode();
-    }
-    hash = (37 * hash) + BODY_JSON_FIELD_NUMBER;
-    hash = (53 * hash) + getBodyJson().hashCode();
+    hash = (37 * hash) + CLIENT_ID_FIELD_NUMBER;
+    hash = (53 * hash) + getClientId().hashCode();
+    hash = (37 * hash) + CHAT_ID_FIELD_NUMBER;
+    hash = (53 * hash) + getChatId().hashCode();
+    hash = (37 * hash) + CONTENT_FIELD_NUMBER;
+    hash = (53 * hash) + getContent().hashCode();
     hash = (37 * hash) + CONTENT_TYPE_FIELD_NUMBER;
     hash = (53 * hash) + getContentType().hashCode();
     hash = (29 * hash) + getUnknownFields().hashCode();
@@ -501,44 +348,44 @@ java.lang.String defaultValue) {
     return hash;
   }
 
-  public static com.jervis.contracts.o365_gateway.O365Request parseFrom(
+  public static com.jervis.contracts.o365_gateway.SendChatMessageRequest parseFrom(
       java.nio.ByteBuffer data)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data);
   }
-  public static com.jervis.contracts.o365_gateway.O365Request parseFrom(
+  public static com.jervis.contracts.o365_gateway.SendChatMessageRequest parseFrom(
       java.nio.ByteBuffer data,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data, extensionRegistry);
   }
-  public static com.jervis.contracts.o365_gateway.O365Request parseFrom(
+  public static com.jervis.contracts.o365_gateway.SendChatMessageRequest parseFrom(
       com.google.protobuf.ByteString data)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data);
   }
-  public static com.jervis.contracts.o365_gateway.O365Request parseFrom(
+  public static com.jervis.contracts.o365_gateway.SendChatMessageRequest parseFrom(
       com.google.protobuf.ByteString data,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data, extensionRegistry);
   }
-  public static com.jervis.contracts.o365_gateway.O365Request parseFrom(byte[] data)
+  public static com.jervis.contracts.o365_gateway.SendChatMessageRequest parseFrom(byte[] data)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data);
   }
-  public static com.jervis.contracts.o365_gateway.O365Request parseFrom(
+  public static com.jervis.contracts.o365_gateway.SendChatMessageRequest parseFrom(
       byte[] data,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data, extensionRegistry);
   }
-  public static com.jervis.contracts.o365_gateway.O365Request parseFrom(java.io.InputStream input)
+  public static com.jervis.contracts.o365_gateway.SendChatMessageRequest parseFrom(java.io.InputStream input)
       throws java.io.IOException {
     return com.google.protobuf.GeneratedMessage
         .parseWithIOException(PARSER, input);
   }
-  public static com.jervis.contracts.o365_gateway.O365Request parseFrom(
+  public static com.jervis.contracts.o365_gateway.SendChatMessageRequest parseFrom(
       java.io.InputStream input,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws java.io.IOException {
@@ -546,26 +393,26 @@ java.lang.String defaultValue) {
         .parseWithIOException(PARSER, input, extensionRegistry);
   }
 
-  public static com.jervis.contracts.o365_gateway.O365Request parseDelimitedFrom(java.io.InputStream input)
+  public static com.jervis.contracts.o365_gateway.SendChatMessageRequest parseDelimitedFrom(java.io.InputStream input)
       throws java.io.IOException {
     return com.google.protobuf.GeneratedMessage
         .parseDelimitedWithIOException(PARSER, input);
   }
 
-  public static com.jervis.contracts.o365_gateway.O365Request parseDelimitedFrom(
+  public static com.jervis.contracts.o365_gateway.SendChatMessageRequest parseDelimitedFrom(
       java.io.InputStream input,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws java.io.IOException {
     return com.google.protobuf.GeneratedMessage
         .parseDelimitedWithIOException(PARSER, input, extensionRegistry);
   }
-  public static com.jervis.contracts.o365_gateway.O365Request parseFrom(
+  public static com.jervis.contracts.o365_gateway.SendChatMessageRequest parseFrom(
       com.google.protobuf.CodedInputStream input)
       throws java.io.IOException {
     return com.google.protobuf.GeneratedMessage
         .parseWithIOException(PARSER, input);
   }
-  public static com.jervis.contracts.o365_gateway.O365Request parseFrom(
+  public static com.jervis.contracts.o365_gateway.SendChatMessageRequest parseFrom(
       com.google.protobuf.CodedInputStream input,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws java.io.IOException {
@@ -578,7 +425,7 @@ java.lang.String defaultValue) {
   public static Builder newBuilder() {
     return DEFAULT_INSTANCE.toBuilder();
   }
-  public static Builder newBuilder(com.jervis.contracts.o365_gateway.O365Request prototype) {
+  public static Builder newBuilder(com.jervis.contracts.o365_gateway.SendChatMessageRequest prototype) {
     return DEFAULT_INSTANCE.toBuilder().mergeFrom(prototype);
   }
   @java.lang.Override
@@ -594,48 +441,26 @@ java.lang.String defaultValue) {
     return builder;
   }
   /**
-   * Protobuf type {@code jervis.o365_gateway.O365Request}
+   * Protobuf type {@code jervis.o365_gateway.SendChatMessageRequest}
    */
   public static final class Builder extends
       com.google.protobuf.GeneratedMessage.Builder<Builder> implements
-      // @@protoc_insertion_point(builder_implements:jervis.o365_gateway.O365Request)
-      com.jervis.contracts.o365_gateway.O365RequestOrBuilder {
+      // @@protoc_insertion_point(builder_implements:jervis.o365_gateway.SendChatMessageRequest)
+      com.jervis.contracts.o365_gateway.SendChatMessageRequestOrBuilder {
     public static final com.google.protobuf.Descriptors.Descriptor
         getDescriptor() {
-      return com.jervis.contracts.o365_gateway.O365GatewayProto.internal_static_jervis_o365_gateway_O365Request_descriptor;
+      return com.jervis.contracts.o365_gateway.O365GatewayProto.internal_static_jervis_o365_gateway_SendChatMessageRequest_descriptor;
     }
 
-    @SuppressWarnings({"rawtypes"})
-    protected com.google.protobuf.MapFieldReflectionAccessor internalGetMapFieldReflection(
-        int number) {
-      switch (number) {
-        case 4:
-          return internalGetQuery();
-        default:
-          throw new RuntimeException(
-              "Invalid map field number: " + number);
-      }
-    }
-    @SuppressWarnings({"rawtypes"})
-    protected com.google.protobuf.MapFieldReflectionAccessor internalGetMutableMapFieldReflection(
-        int number) {
-      switch (number) {
-        case 4:
-          return internalGetMutableQuery();
-        default:
-          throw new RuntimeException(
-              "Invalid map field number: " + number);
-      }
-    }
     @java.lang.Override
     protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
         internalGetFieldAccessorTable() {
-      return com.jervis.contracts.o365_gateway.O365GatewayProto.internal_static_jervis_o365_gateway_O365Request_fieldAccessorTable
+      return com.jervis.contracts.o365_gateway.O365GatewayProto.internal_static_jervis_o365_gateway_SendChatMessageRequest_fieldAccessorTable
           .ensureFieldAccessorsInitialized(
-              com.jervis.contracts.o365_gateway.O365Request.class, com.jervis.contracts.o365_gateway.O365Request.Builder.class);
+              com.jervis.contracts.o365_gateway.SendChatMessageRequest.class, com.jervis.contracts.o365_gateway.SendChatMessageRequest.Builder.class);
     }
 
-    // Construct using com.jervis.contracts.o365_gateway.O365Request.newBuilder()
+    // Construct using com.jervis.contracts.o365_gateway.SendChatMessageRequest.newBuilder()
     private Builder() {
       maybeForceBuilderInitialization();
     }
@@ -660,10 +485,9 @@ java.lang.String defaultValue) {
         ctxBuilder_.dispose();
         ctxBuilder_ = null;
       }
-      method_ = "";
-      path_ = "";
-      internalGetMutableQuery().clear();
-      bodyJson_ = "";
+      clientId_ = "";
+      chatId_ = "";
+      content_ = "";
       contentType_ = "";
       return this;
     }
@@ -671,17 +495,17 @@ java.lang.String defaultValue) {
     @java.lang.Override
     public com.google.protobuf.Descriptors.Descriptor
         getDescriptorForType() {
-      return com.jervis.contracts.o365_gateway.O365GatewayProto.internal_static_jervis_o365_gateway_O365Request_descriptor;
+      return com.jervis.contracts.o365_gateway.O365GatewayProto.internal_static_jervis_o365_gateway_SendChatMessageRequest_descriptor;
     }
 
     @java.lang.Override
-    public com.jervis.contracts.o365_gateway.O365Request getDefaultInstanceForType() {
-      return com.jervis.contracts.o365_gateway.O365Request.getDefaultInstance();
+    public com.jervis.contracts.o365_gateway.SendChatMessageRequest getDefaultInstanceForType() {
+      return com.jervis.contracts.o365_gateway.SendChatMessageRequest.getDefaultInstance();
     }
 
     @java.lang.Override
-    public com.jervis.contracts.o365_gateway.O365Request build() {
-      com.jervis.contracts.o365_gateway.O365Request result = buildPartial();
+    public com.jervis.contracts.o365_gateway.SendChatMessageRequest build() {
+      com.jervis.contracts.o365_gateway.SendChatMessageRequest result = buildPartial();
       if (!result.isInitialized()) {
         throw newUninitializedMessageException(result);
       }
@@ -689,14 +513,14 @@ java.lang.String defaultValue) {
     }
 
     @java.lang.Override
-    public com.jervis.contracts.o365_gateway.O365Request buildPartial() {
-      com.jervis.contracts.o365_gateway.O365Request result = new com.jervis.contracts.o365_gateway.O365Request(this);
+    public com.jervis.contracts.o365_gateway.SendChatMessageRequest buildPartial() {
+      com.jervis.contracts.o365_gateway.SendChatMessageRequest result = new com.jervis.contracts.o365_gateway.SendChatMessageRequest(this);
       if (bitField0_ != 0) { buildPartial0(result); }
       onBuilt();
       return result;
     }
 
-    private void buildPartial0(com.jervis.contracts.o365_gateway.O365Request result) {
+    private void buildPartial0(com.jervis.contracts.o365_gateway.SendChatMessageRequest result) {
       int from_bitField0_ = bitField0_;
       int to_bitField0_ = 0;
       if (((from_bitField0_ & 0x00000001) != 0)) {
@@ -706,19 +530,15 @@ java.lang.String defaultValue) {
         to_bitField0_ |= 0x00000001;
       }
       if (((from_bitField0_ & 0x00000002) != 0)) {
-        result.method_ = method_;
+        result.clientId_ = clientId_;
       }
       if (((from_bitField0_ & 0x00000004) != 0)) {
-        result.path_ = path_;
+        result.chatId_ = chatId_;
       }
       if (((from_bitField0_ & 0x00000008) != 0)) {
-        result.query_ = internalGetQuery();
-        result.query_.makeImmutable();
+        result.content_ = content_;
       }
       if (((from_bitField0_ & 0x00000010) != 0)) {
-        result.bodyJson_ = bodyJson_;
-      }
-      if (((from_bitField0_ & 0x00000020) != 0)) {
         result.contentType_ = contentType_;
       }
       result.bitField0_ |= to_bitField0_;
@@ -726,40 +546,37 @@ java.lang.String defaultValue) {
 
     @java.lang.Override
     public Builder mergeFrom(com.google.protobuf.Message other) {
-      if (other instanceof com.jervis.contracts.o365_gateway.O365Request) {
-        return mergeFrom((com.jervis.contracts.o365_gateway.O365Request)other);
+      if (other instanceof com.jervis.contracts.o365_gateway.SendChatMessageRequest) {
+        return mergeFrom((com.jervis.contracts.o365_gateway.SendChatMessageRequest)other);
       } else {
         super.mergeFrom(other);
         return this;
       }
     }
 
-    public Builder mergeFrom(com.jervis.contracts.o365_gateway.O365Request other) {
-      if (other == com.jervis.contracts.o365_gateway.O365Request.getDefaultInstance()) return this;
+    public Builder mergeFrom(com.jervis.contracts.o365_gateway.SendChatMessageRequest other) {
+      if (other == com.jervis.contracts.o365_gateway.SendChatMessageRequest.getDefaultInstance()) return this;
       if (other.hasCtx()) {
         mergeCtx(other.getCtx());
       }
-      if (!other.getMethod().isEmpty()) {
-        method_ = other.method_;
+      if (!other.getClientId().isEmpty()) {
+        clientId_ = other.clientId_;
         bitField0_ |= 0x00000002;
         onChanged();
       }
-      if (!other.getPath().isEmpty()) {
-        path_ = other.path_;
+      if (!other.getChatId().isEmpty()) {
+        chatId_ = other.chatId_;
         bitField0_ |= 0x00000004;
         onChanged();
       }
-      internalGetMutableQuery().mergeFrom(
-          other.internalGetQuery());
-      bitField0_ |= 0x00000008;
-      if (!other.getBodyJson().isEmpty()) {
-        bodyJson_ = other.bodyJson_;
-        bitField0_ |= 0x00000010;
+      if (!other.getContent().isEmpty()) {
+        content_ = other.content_;
+        bitField0_ |= 0x00000008;
         onChanged();
       }
       if (!other.getContentType().isEmpty()) {
         contentType_ = other.contentType_;
-        bitField0_ |= 0x00000020;
+        bitField0_ |= 0x00000010;
         onChanged();
       }
       this.mergeUnknownFields(other.getUnknownFields());
@@ -796,34 +613,25 @@ java.lang.String defaultValue) {
               break;
             } // case 10
             case 18: {
-              method_ = input.readStringRequireUtf8();
+              clientId_ = input.readStringRequireUtf8();
               bitField0_ |= 0x00000002;
               break;
             } // case 18
             case 26: {
-              path_ = input.readStringRequireUtf8();
+              chatId_ = input.readStringRequireUtf8();
               bitField0_ |= 0x00000004;
               break;
             } // case 26
             case 34: {
-              com.google.protobuf.MapEntry<java.lang.String, java.lang.String>
-              query__ = input.readMessage(
-                  QueryDefaultEntryHolder.defaultEntry.getParserForType(), extensionRegistry);
-              internalGetMutableQuery().getMutableMap().put(
-                  query__.getKey(), query__.getValue());
+              content_ = input.readStringRequireUtf8();
               bitField0_ |= 0x00000008;
               break;
             } // case 34
             case 42: {
-              bodyJson_ = input.readStringRequireUtf8();
+              contentType_ = input.readStringRequireUtf8();
               bitField0_ |= 0x00000010;
               break;
             } // case 42
-            case 50: {
-              contentType_ = input.readStringRequireUtf8();
-              bitField0_ |= 0x00000020;
-              break;
-            } // case 50
             default: {
               if (!super.parseUnknownField(input, extensionRegistry, tag)) {
                 done = true; // was an endgroup tag
@@ -962,433 +770,218 @@ java.lang.String defaultValue) {
       return ctxBuilder_;
     }
 
-    private java.lang.Object method_ = "";
+    private java.lang.Object clientId_ = "";
     /**
-     * <pre>
-     * GET / POST (uppercase)
-     * </pre>
-     *
-     * <code>string method = 2;</code>
-     * @return The method.
+     * <code>string client_id = 2;</code>
+     * @return The clientId.
      */
-    public java.lang.String getMethod() {
-      java.lang.Object ref = method_;
+    public java.lang.String getClientId() {
+      java.lang.Object ref = clientId_;
       if (!(ref instanceof java.lang.String)) {
         com.google.protobuf.ByteString bs =
             (com.google.protobuf.ByteString) ref;
         java.lang.String s = bs.toStringUtf8();
-        method_ = s;
+        clientId_ = s;
         return s;
       } else {
         return (java.lang.String) ref;
       }
     }
     /**
-     * <pre>
-     * GET / POST (uppercase)
-     * </pre>
-     *
-     * <code>string method = 2;</code>
-     * @return The bytes for method.
+     * <code>string client_id = 2;</code>
+     * @return The bytes for clientId.
      */
     public com.google.protobuf.ByteString
-        getMethodBytes() {
-      java.lang.Object ref = method_;
+        getClientIdBytes() {
+      java.lang.Object ref = clientId_;
       if (ref instanceof String) {
         com.google.protobuf.ByteString b = 
             com.google.protobuf.ByteString.copyFromUtf8(
                 (java.lang.String) ref);
-        method_ = b;
+        clientId_ = b;
         return b;
       } else {
         return (com.google.protobuf.ByteString) ref;
       }
     }
     /**
-     * <pre>
-     * GET / POST (uppercase)
-     * </pre>
-     *
-     * <code>string method = 2;</code>
-     * @param value The method to set.
+     * <code>string client_id = 2;</code>
+     * @param value The clientId to set.
      * @return This builder for chaining.
      */
-    public Builder setMethod(
+    public Builder setClientId(
         java.lang.String value) {
       if (value == null) { throw new NullPointerException(); }
-      method_ = value;
+      clientId_ = value;
       bitField0_ |= 0x00000002;
       onChanged();
       return this;
     }
     /**
-     * <pre>
-     * GET / POST (uppercase)
-     * </pre>
-     *
-     * <code>string method = 2;</code>
+     * <code>string client_id = 2;</code>
      * @return This builder for chaining.
      */
-    public Builder clearMethod() {
-      method_ = getDefaultInstance().getMethod();
+    public Builder clearClientId() {
+      clientId_ = getDefaultInstance().getClientId();
       bitField0_ = (bitField0_ & ~0x00000002);
       onChanged();
       return this;
     }
     /**
-     * <pre>
-     * GET / POST (uppercase)
-     * </pre>
-     *
-     * <code>string method = 2;</code>
-     * @param value The bytes for method to set.
+     * <code>string client_id = 2;</code>
+     * @param value The bytes for clientId to set.
      * @return This builder for chaining.
      */
-    public Builder setMethodBytes(
+    public Builder setClientIdBytes(
         com.google.protobuf.ByteString value) {
       if (value == null) { throw new NullPointerException(); }
       checkByteStringIsUtf8(value);
-      method_ = value;
+      clientId_ = value;
       bitField0_ |= 0x00000002;
       onChanged();
       return this;
     }
 
-    private java.lang.Object path_ = "";
+    private java.lang.Object chatId_ = "";
     /**
-     * <pre>
-     * relative to /api/o365/ - e.g. "chats/{clientId}/{chatId}/messages"
-     * </pre>
-     *
-     * <code>string path = 3;</code>
-     * @return The path.
+     * <code>string chat_id = 3;</code>
+     * @return The chatId.
      */
-    public java.lang.String getPath() {
-      java.lang.Object ref = path_;
+    public java.lang.String getChatId() {
+      java.lang.Object ref = chatId_;
       if (!(ref instanceof java.lang.String)) {
         com.google.protobuf.ByteString bs =
             (com.google.protobuf.ByteString) ref;
         java.lang.String s = bs.toStringUtf8();
-        path_ = s;
+        chatId_ = s;
         return s;
       } else {
         return (java.lang.String) ref;
       }
     }
     /**
-     * <pre>
-     * relative to /api/o365/ - e.g. "chats/{clientId}/{chatId}/messages"
-     * </pre>
-     *
-     * <code>string path = 3;</code>
-     * @return The bytes for path.
+     * <code>string chat_id = 3;</code>
+     * @return The bytes for chatId.
      */
     public com.google.protobuf.ByteString
-        getPathBytes() {
-      java.lang.Object ref = path_;
+        getChatIdBytes() {
+      java.lang.Object ref = chatId_;
       if (ref instanceof String) {
         com.google.protobuf.ByteString b = 
             com.google.protobuf.ByteString.copyFromUtf8(
                 (java.lang.String) ref);
-        path_ = b;
+        chatId_ = b;
         return b;
       } else {
         return (com.google.protobuf.ByteString) ref;
       }
     }
     /**
-     * <pre>
-     * relative to /api/o365/ - e.g. "chats/{clientId}/{chatId}/messages"
-     * </pre>
-     *
-     * <code>string path = 3;</code>
-     * @param value The path to set.
+     * <code>string chat_id = 3;</code>
+     * @param value The chatId to set.
      * @return This builder for chaining.
      */
-    public Builder setPath(
+    public Builder setChatId(
         java.lang.String value) {
       if (value == null) { throw new NullPointerException(); }
-      path_ = value;
+      chatId_ = value;
       bitField0_ |= 0x00000004;
       onChanged();
       return this;
     }
     /**
-     * <pre>
-     * relative to /api/o365/ - e.g. "chats/{clientId}/{chatId}/messages"
-     * </pre>
-     *
-     * <code>string path = 3;</code>
+     * <code>string chat_id = 3;</code>
      * @return This builder for chaining.
      */
-    public Builder clearPath() {
-      path_ = getDefaultInstance().getPath();
+    public Builder clearChatId() {
+      chatId_ = getDefaultInstance().getChatId();
       bitField0_ = (bitField0_ & ~0x00000004);
       onChanged();
       return this;
     }
     /**
-     * <pre>
-     * relative to /api/o365/ - e.g. "chats/{clientId}/{chatId}/messages"
-     * </pre>
-     *
-     * <code>string path = 3;</code>
-     * @param value The bytes for path to set.
+     * <code>string chat_id = 3;</code>
+     * @param value The bytes for chatId to set.
      * @return This builder for chaining.
      */
-    public Builder setPathBytes(
+    public Builder setChatIdBytes(
         com.google.protobuf.ByteString value) {
       if (value == null) { throw new NullPointerException(); }
       checkByteStringIsUtf8(value);
-      path_ = value;
+      chatId_ = value;
       bitField0_ |= 0x00000004;
       onChanged();
       return this;
     }
 
-    private com.google.protobuf.MapField<
-        java.lang.String, java.lang.String> query_;
-    private com.google.protobuf.MapField<java.lang.String, java.lang.String>
-        internalGetQuery() {
-      if (query_ == null) {
-        return com.google.protobuf.MapField.emptyMapField(
-            QueryDefaultEntryHolder.defaultEntry);
-      }
-      return query_;
-    }
-    private com.google.protobuf.MapField<java.lang.String, java.lang.String>
-        internalGetMutableQuery() {
-      if (query_ == null) {
-        query_ = com.google.protobuf.MapField.newMapField(
-            QueryDefaultEntryHolder.defaultEntry);
-      }
-      if (!query_.isMutable()) {
-        query_ = query_.copy();
-      }
-      bitField0_ |= 0x00000008;
-      onChanged();
-      return query_;
-    }
-    public int getQueryCount() {
-      return internalGetQuery().getMap().size();
-    }
+    private java.lang.Object content_ = "";
     /**
-     * <pre>
-     * query parameters
-     * </pre>
-     *
-     * <code>map&lt;string, string&gt; query = 4;</code>
+     * <code>string content = 4;</code>
+     * @return The content.
      */
-    @java.lang.Override
-    public boolean containsQuery(
-        java.lang.String key) {
-      if (key == null) { throw new NullPointerException("map key"); }
-      return internalGetQuery().getMap().containsKey(key);
-    }
-    /**
-     * Use {@link #getQueryMap()} instead.
-     */
-    @java.lang.Override
-    @java.lang.Deprecated
-    public java.util.Map<java.lang.String, java.lang.String> getQuery() {
-      return getQueryMap();
-    }
-    /**
-     * <pre>
-     * query parameters
-     * </pre>
-     *
-     * <code>map&lt;string, string&gt; query = 4;</code>
-     */
-    @java.lang.Override
-    public java.util.Map<java.lang.String, java.lang.String> getQueryMap() {
-      return internalGetQuery().getMap();
-    }
-    /**
-     * <pre>
-     * query parameters
-     * </pre>
-     *
-     * <code>map&lt;string, string&gt; query = 4;</code>
-     */
-    @java.lang.Override
-    public /* nullable */
-java.lang.String getQueryOrDefault(
-        java.lang.String key,
-        /* nullable */
-java.lang.String defaultValue) {
-      if (key == null) { throw new NullPointerException("map key"); }
-      java.util.Map<java.lang.String, java.lang.String> map =
-          internalGetQuery().getMap();
-      return map.containsKey(key) ? map.get(key) : defaultValue;
-    }
-    /**
-     * <pre>
-     * query parameters
-     * </pre>
-     *
-     * <code>map&lt;string, string&gt; query = 4;</code>
-     */
-    @java.lang.Override
-    public java.lang.String getQueryOrThrow(
-        java.lang.String key) {
-      if (key == null) { throw new NullPointerException("map key"); }
-      java.util.Map<java.lang.String, java.lang.String> map =
-          internalGetQuery().getMap();
-      if (!map.containsKey(key)) {
-        throw new java.lang.IllegalArgumentException();
-      }
-      return map.get(key);
-    }
-    public Builder clearQuery() {
-      bitField0_ = (bitField0_ & ~0x00000008);
-      internalGetMutableQuery().getMutableMap()
-          .clear();
-      return this;
-    }
-    /**
-     * <pre>
-     * query parameters
-     * </pre>
-     *
-     * <code>map&lt;string, string&gt; query = 4;</code>
-     */
-    public Builder removeQuery(
-        java.lang.String key) {
-      if (key == null) { throw new NullPointerException("map key"); }
-      internalGetMutableQuery().getMutableMap()
-          .remove(key);
-      return this;
-    }
-    /**
-     * Use alternate mutation accessors instead.
-     */
-    @java.lang.Deprecated
-    public java.util.Map<java.lang.String, java.lang.String>
-        getMutableQuery() {
-      bitField0_ |= 0x00000008;
-      return internalGetMutableQuery().getMutableMap();
-    }
-    /**
-     * <pre>
-     * query parameters
-     * </pre>
-     *
-     * <code>map&lt;string, string&gt; query = 4;</code>
-     */
-    public Builder putQuery(
-        java.lang.String key,
-        java.lang.String value) {
-      if (key == null) { throw new NullPointerException("map key"); }
-      if (value == null) { throw new NullPointerException("map value"); }
-      internalGetMutableQuery().getMutableMap()
-          .put(key, value);
-      bitField0_ |= 0x00000008;
-      return this;
-    }
-    /**
-     * <pre>
-     * query parameters
-     * </pre>
-     *
-     * <code>map&lt;string, string&gt; query = 4;</code>
-     */
-    public Builder putAllQuery(
-        java.util.Map<java.lang.String, java.lang.String> values) {
-      internalGetMutableQuery().getMutableMap()
-          .putAll(values);
-      bitField0_ |= 0x00000008;
-      return this;
-    }
-
-    private java.lang.Object bodyJson_ = "";
-    /**
-     * <pre>
-     * optional JSON body for POST
-     * </pre>
-     *
-     * <code>string body_json = 5;</code>
-     * @return The bodyJson.
-     */
-    public java.lang.String getBodyJson() {
-      java.lang.Object ref = bodyJson_;
+    public java.lang.String getContent() {
+      java.lang.Object ref = content_;
       if (!(ref instanceof java.lang.String)) {
         com.google.protobuf.ByteString bs =
             (com.google.protobuf.ByteString) ref;
         java.lang.String s = bs.toStringUtf8();
-        bodyJson_ = s;
+        content_ = s;
         return s;
       } else {
         return (java.lang.String) ref;
       }
     }
     /**
-     * <pre>
-     * optional JSON body for POST
-     * </pre>
-     *
-     * <code>string body_json = 5;</code>
-     * @return The bytes for bodyJson.
+     * <code>string content = 4;</code>
+     * @return The bytes for content.
      */
     public com.google.protobuf.ByteString
-        getBodyJsonBytes() {
-      java.lang.Object ref = bodyJson_;
+        getContentBytes() {
+      java.lang.Object ref = content_;
       if (ref instanceof String) {
         com.google.protobuf.ByteString b = 
             com.google.protobuf.ByteString.copyFromUtf8(
                 (java.lang.String) ref);
-        bodyJson_ = b;
+        content_ = b;
         return b;
       } else {
         return (com.google.protobuf.ByteString) ref;
       }
     }
     /**
-     * <pre>
-     * optional JSON body for POST
-     * </pre>
-     *
-     * <code>string body_json = 5;</code>
-     * @param value The bodyJson to set.
+     * <code>string content = 4;</code>
+     * @param value The content to set.
      * @return This builder for chaining.
      */
-    public Builder setBodyJson(
+    public Builder setContent(
         java.lang.String value) {
       if (value == null) { throw new NullPointerException(); }
-      bodyJson_ = value;
-      bitField0_ |= 0x00000010;
+      content_ = value;
+      bitField0_ |= 0x00000008;
       onChanged();
       return this;
     }
     /**
-     * <pre>
-     * optional JSON body for POST
-     * </pre>
-     *
-     * <code>string body_json = 5;</code>
+     * <code>string content = 4;</code>
      * @return This builder for chaining.
      */
-    public Builder clearBodyJson() {
-      bodyJson_ = getDefaultInstance().getBodyJson();
-      bitField0_ = (bitField0_ & ~0x00000010);
+    public Builder clearContent() {
+      content_ = getDefaultInstance().getContent();
+      bitField0_ = (bitField0_ & ~0x00000008);
       onChanged();
       return this;
     }
     /**
-     * <pre>
-     * optional JSON body for POST
-     * </pre>
-     *
-     * <code>string body_json = 5;</code>
-     * @param value The bytes for bodyJson to set.
+     * <code>string content = 4;</code>
+     * @param value The bytes for content to set.
      * @return This builder for chaining.
      */
-    public Builder setBodyJsonBytes(
+    public Builder setContentBytes(
         com.google.protobuf.ByteString value) {
       if (value == null) { throw new NullPointerException(); }
       checkByteStringIsUtf8(value);
-      bodyJson_ = value;
-      bitField0_ |= 0x00000010;
+      content_ = value;
+      bitField0_ |= 0x00000008;
       onChanged();
       return this;
     }
@@ -1396,10 +989,10 @@ java.lang.String defaultValue) {
     private java.lang.Object contentType_ = "";
     /**
      * <pre>
-     * override content-type (defaults to application/json)
+     * "text" | "html", defaults to "text"
      * </pre>
      *
-     * <code>string content_type = 6;</code>
+     * <code>string content_type = 5;</code>
      * @return The contentType.
      */
     public java.lang.String getContentType() {
@@ -1416,10 +1009,10 @@ java.lang.String defaultValue) {
     }
     /**
      * <pre>
-     * override content-type (defaults to application/json)
+     * "text" | "html", defaults to "text"
      * </pre>
      *
-     * <code>string content_type = 6;</code>
+     * <code>string content_type = 5;</code>
      * @return The bytes for contentType.
      */
     public com.google.protobuf.ByteString
@@ -1437,10 +1030,10 @@ java.lang.String defaultValue) {
     }
     /**
      * <pre>
-     * override content-type (defaults to application/json)
+     * "text" | "html", defaults to "text"
      * </pre>
      *
-     * <code>string content_type = 6;</code>
+     * <code>string content_type = 5;</code>
      * @param value The contentType to set.
      * @return This builder for chaining.
      */
@@ -1448,30 +1041,30 @@ java.lang.String defaultValue) {
         java.lang.String value) {
       if (value == null) { throw new NullPointerException(); }
       contentType_ = value;
-      bitField0_ |= 0x00000020;
+      bitField0_ |= 0x00000010;
       onChanged();
       return this;
     }
     /**
      * <pre>
-     * override content-type (defaults to application/json)
+     * "text" | "html", defaults to "text"
      * </pre>
      *
-     * <code>string content_type = 6;</code>
+     * <code>string content_type = 5;</code>
      * @return This builder for chaining.
      */
     public Builder clearContentType() {
       contentType_ = getDefaultInstance().getContentType();
-      bitField0_ = (bitField0_ & ~0x00000020);
+      bitField0_ = (bitField0_ & ~0x00000010);
       onChanged();
       return this;
     }
     /**
      * <pre>
-     * override content-type (defaults to application/json)
+     * "text" | "html", defaults to "text"
      * </pre>
      *
-     * <code>string content_type = 6;</code>
+     * <code>string content_type = 5;</code>
      * @param value The bytes for contentType to set.
      * @return This builder for chaining.
      */
@@ -1480,28 +1073,28 @@ java.lang.String defaultValue) {
       if (value == null) { throw new NullPointerException(); }
       checkByteStringIsUtf8(value);
       contentType_ = value;
-      bitField0_ |= 0x00000020;
+      bitField0_ |= 0x00000010;
       onChanged();
       return this;
     }
 
-    // @@protoc_insertion_point(builder_scope:jervis.o365_gateway.O365Request)
+    // @@protoc_insertion_point(builder_scope:jervis.o365_gateway.SendChatMessageRequest)
   }
 
-  // @@protoc_insertion_point(class_scope:jervis.o365_gateway.O365Request)
-  private static final com.jervis.contracts.o365_gateway.O365Request DEFAULT_INSTANCE;
+  // @@protoc_insertion_point(class_scope:jervis.o365_gateway.SendChatMessageRequest)
+  private static final com.jervis.contracts.o365_gateway.SendChatMessageRequest DEFAULT_INSTANCE;
   static {
-    DEFAULT_INSTANCE = new com.jervis.contracts.o365_gateway.O365Request();
+    DEFAULT_INSTANCE = new com.jervis.contracts.o365_gateway.SendChatMessageRequest();
   }
 
-  public static com.jervis.contracts.o365_gateway.O365Request getDefaultInstance() {
+  public static com.jervis.contracts.o365_gateway.SendChatMessageRequest getDefaultInstance() {
     return DEFAULT_INSTANCE;
   }
 
-  private static final com.google.protobuf.Parser<O365Request>
-      PARSER = new com.google.protobuf.AbstractParser<O365Request>() {
+  private static final com.google.protobuf.Parser<SendChatMessageRequest>
+      PARSER = new com.google.protobuf.AbstractParser<SendChatMessageRequest>() {
     @java.lang.Override
-    public O365Request parsePartialFrom(
+    public SendChatMessageRequest parsePartialFrom(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws com.google.protobuf.InvalidProtocolBufferException {
@@ -1520,17 +1113,17 @@ java.lang.String defaultValue) {
     }
   };
 
-  public static com.google.protobuf.Parser<O365Request> parser() {
+  public static com.google.protobuf.Parser<SendChatMessageRequest> parser() {
     return PARSER;
   }
 
   @java.lang.Override
-  public com.google.protobuf.Parser<O365Request> getParserForType() {
+  public com.google.protobuf.Parser<SendChatMessageRequest> getParserForType() {
     return PARSER;
   }
 
   @java.lang.Override
-  public com.jervis.contracts.o365_gateway.O365Request getDefaultInstanceForType() {
+  public com.jervis.contracts.o365_gateway.SendChatMessageRequest getDefaultInstanceForType() {
     return DEFAULT_INSTANCE;
   }
 

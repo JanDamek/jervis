@@ -8,21 +8,34 @@ option java_package = "com.jervis.contracts.o365_gateway";
 option java_multiple_files = true;
 option java_outer_classname = "O365GatewayProto";
 
-// O365GatewayService — thin pod-to-pod proxy on top of the jervis-o365-gateway
-// service. The orchestrator's Teams / Mail / Calendar / Drive tools dial
-// this one RPC; the gateway routes based on `path` and forwards the
-// (token-managed) Microsoft Graph call. Response bodies are returned as
-// JSON text (or binary via RequestBytes) exactly as the gateway receives
-// them from Graph, so tool code can keep the existing parsing.
+// O365GatewayService — one umbrella gRPC for the O365 gateway pod. It
+// fronts every Microsoft Graph call Jervis makes (Teams chats / channels,
+// Mail, Calendar, Online meetings, Drive, session). Graph-specific DTOs
+// are shared across RPC groups so the same `ChatMessage` is returned for
+// Teams chats and channel reads.
+//
+// Typed RPCs land incrementally (slice V5a -> Teams chats, V5b -> channels,
+// etc.). The legacy Request / RequestBytes passthrough stays until every
+// group is typed; it is dropped in V5h.
 service O365GatewayService {
+  // === Legacy passthrough (drop at V5h) =====================================
   rpc Request(O365Request) returns (O365Response);
   rpc RequestBytes(O365Request) returns (O365BytesResponse);
+
+  // === V5a - Teams chats ====================================================
+  rpc ListChats(ListChatsRequest) returns (ListChatsResponse);
+  rpc ReadChat(ReadChatRequest) returns (ListChatMessagesResponse);
+  rpc SendChatMessage(SendChatMessageRequest) returns (ChatMessage);
 }
+
+// ============================================================================
+// Legacy passthrough messages (drop at V5h)
+// ============================================================================
 
 message O365Request {
   jervis.common.RequestContext ctx = 1;
-  string method = 2;                // GET / POST (uppercase)
-  string path = 3;                   // relative to /api/o365/ — e.g. "chats/{clientId}/{chatId}/messages"
+  string method = 2;                 // GET / POST (uppercase)
+  string path = 3;                   // relative to /api/o365/ - e.g. "chats/{clientId}/{chatId}/messages"
   map<string, string> query = 4;     // query parameters
   string body_json = 5;              // optional JSON body for POST
   string content_type = 6;           // override content-type (defaults to application/json)
@@ -40,4 +53,88 @@ message O365BytesResponse {
   string content_type = 3;
   string filename = 4;
   map<string, string> headers = 5;
+}
+
+// ============================================================================
+// Shared Graph message types (Teams chats + channels)
+// ============================================================================
+
+message GraphUser {
+  string id = 1;
+  string display_name = 2;
+}
+
+message GraphApplication {
+  string id = 1;
+  string display_name = 2;
+}
+
+message MessageBody {
+  string content_type = 1;           // "text" | "html"
+  string content = 2;
+}
+
+message MessageFrom {
+  GraphUser user = 1;
+  GraphApplication application = 2;
+}
+
+message MessagePreview {
+  string id = 1;
+  string created_date_time = 2;
+  MessageBody body = 3;
+  MessageFrom sender = 4;
+}
+
+// ChatMessage - single message in a Teams chat or channel.
+message ChatMessage {
+  string id = 1;
+  string created_date_time = 2;
+  string last_modified_date_time = 3;
+  MessageBody body = 4;
+  MessageFrom sender = 5;
+  string message_type = 6;
+}
+
+// ChatSummary - per-chat entry returned by ListChats.
+message ChatSummary {
+  string id = 1;
+  string topic = 2;
+  string chat_type = 3;
+  string created_date_time = 4;
+  string last_updated_date_time = 5;
+  MessagePreview last_message_preview = 6;
+}
+
+// ============================================================================
+// Teams chats - requests / responses (V5a)
+// ============================================================================
+
+message ListChatsRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  int32 top = 3;                     // default 20, max 50
+}
+
+message ListChatsResponse {
+  repeated ChatSummary chats = 1;
+}
+
+message ReadChatRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string chat_id = 3;
+  int32 top = 4;                     // default 20
+}
+
+message ListChatMessagesResponse {
+  repeated ChatMessage messages = 1;
+}
+
+message SendChatMessageRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string chat_id = 3;
+  string content = 4;
+  string content_type = 5;           // "text" | "html", defaults to "text"
 }
