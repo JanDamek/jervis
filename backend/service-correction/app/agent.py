@@ -64,8 +64,8 @@ class CorrectionAgent:
     """Transcript correction agent backed by KB + Ollama."""
 
     def __init__(self):
-        self.kb_url = f"{settings.knowledgebase_url}/api/v1"  # read operations
-        self.kb_write_url = f"{settings.knowledgebase_write_url}/api/v1"  # write operations (ingest, purge)
+        # KB read/write paths now go through jervis_contracts.kb_client (gRPC);
+        # Ollama is external HTTP (allowed) for transcription correction LLM calls.
         self.ollama_url = settings.ollama_url
         self.model = settings.default_correction_model  # qwen3-coder-tool:30b (num_ctx overridden dynamically)
 

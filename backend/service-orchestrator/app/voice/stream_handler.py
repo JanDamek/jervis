@@ -17,9 +17,7 @@ from __future__ import annotations
 import logging
 from typing import AsyncIterator
 
-import httpx
 
-from app.config import settings
 from app.voice.models import VoiceIntent, VoiceStreamEvent, VoiceStreamRequest
 from app.voice.quick_responder import quick_respond
 from app.voice.conversation_agent import ConversationContextAgent, SpeakerProfile
@@ -71,24 +69,21 @@ async def handle_voice_stream(request: VoiceStreamRequest) -> AsyncIterator[Voic
 
 
 async def _handle_dictation(text: str, request: VoiceStreamRequest) -> AsyncIterator[VoiceStreamEvent]:
-    """Store dictated text to KB."""
+    """Store dictated text to KB via the shared kb_client gRPC stub."""
     yield VoiceStreamEvent(event="responding", data={})
 
     try:
-        url = f"{settings.knowledgebase_url.rstrip('/')}/store"
-        payload = {
-            "content": text,
-            "kind": "finding",
-            "source_urn": f"agent://voice-dictation/{request.source}",
-        }
-        if request.client_id:
-            payload["client_id"] = request.client_id
-        if request.project_id:
-            payload["project_id"] = request.project_id
+        from jervis_contracts import kb_client
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(url, json=payload)
-            resp.raise_for_status()
+        await kb_client.ingest(
+            caller="orchestrator.voice.dictation",
+            source_urn=f"agent://voice-dictation/{request.source}",
+            content=text,
+            client_id=request.client_id or "",
+            project_id=request.project_id or "",
+            kind="finding",
+            timeout=10.0,
+        )
 
         yield VoiceStreamEvent(event="stored", data={"kind": "finding", "summary": text[:100]})
         yield VoiceStreamEvent(event="response", data={

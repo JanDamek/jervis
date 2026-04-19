@@ -12,7 +12,6 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-import httpx
 
 from app.config import foreground_headers, estimate_tokens, KB_TIMEOUT_STANDARD
 from app.graph.nodes._helpers import parse_json_response
@@ -114,7 +113,6 @@ async def park_affair(
 async def resume_affair(
     affair_id: str,
     lqm: LocalQuickMemory,
-    kb_url: str,
     client_id: str,
     processing_mode: str = "FOREGROUND",
 ) -> Affair | None:
@@ -135,7 +133,7 @@ async def resume_affair(
 
     # Cold path: load from KB
     try:
-        affair = await _load_affair_from_kb(affair_id, kb_url, client_id, processing_mode)
+        affair = await _load_affair_from_kb(affair_id, client_id, processing_mode)
         if affair:
             affair.status = AffairStatus.ACTIVE
             affair.updated_at = datetime.now(timezone.utc).isoformat()
@@ -188,12 +186,11 @@ async def resolve_affair(
 async def load_affairs_from_kb(
     client_id: str,
     project_id: str | None,
-    kb_url: str,
     processing_mode: str = "FOREGROUND",
 ) -> list[Affair]:
     """Cold start: load ACTIVE+PARKED affairs from KB via semantic search."""
     try:
-        return await _load_affairs_via_search(client_id, kb_url, processing_mode)
+        return await _load_affairs_via_search(client_id, processing_mode)
     except Exception as e:
         logger.warning("Failed to load affairs from KB: %s", e)
         return []
@@ -257,7 +254,6 @@ Respond with ONLY valid JSON:
 
 async def _load_affair_from_kb(
     affair_id: str,
-    kb_url: str,
     client_id: str,
     processing_mode: str = "FOREGROUND",
 ) -> Affair | None:
@@ -283,7 +279,6 @@ async def _load_affair_from_kb(
 
 async def _load_affairs_via_search(
     client_id: str,
-    kb_url: str,
     processing_mode: str = "FOREGROUND",
 ) -> list[Affair]:
     """Load affairs via semantic search with kind=affair."""

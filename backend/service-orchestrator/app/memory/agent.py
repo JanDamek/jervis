@@ -123,7 +123,6 @@ class MemoryAgent:
                 kb_affairs = await load_affairs_from_kb(
                     self.client_id,
                     self.project_id,
-                    settings.knowledgebase_url,
                     self.processing_mode,
                 )
                 for affair in kb_affairs:
@@ -183,10 +182,9 @@ class MemoryAgent:
 
         # Activate target
         if result.type == ContextSwitchType.SWITCH and result.target_affair_id:
-            from app.config import settings
             affair = await resume_affair(
                 result.target_affair_id, self.lqm,
-                settings.knowledgebase_url, self.client_id,
+                self.client_id,
                 self.processing_mode,
             )
             if affair:
@@ -363,8 +361,8 @@ class MemoryAgent:
             self.session.active_affair.updated_at = datetime.now(timezone.utc).isoformat()
             self.lqm.store_affair(self.session.active_affair)
 
-        # Drain write buffer and POST to KB
-        await self._flush_write_buffer(settings.knowledgebase_write_url)
+        # Drain write buffer and ingest into KB via gRPC stub
+        await self._flush_write_buffer()
 
         stats = self.lqm.get_stats()
         logger.info(
@@ -372,8 +370,8 @@ class MemoryAgent:
             stats["affairs_count"], stats["buffer_writes"], stats["cache_size"],
         )
 
-    async def _flush_write_buffer(self, kb_write_url: str) -> None:
-        """Drain write buffer and POST each entry to KB.
+    async def _flush_write_buffer(self) -> None:
+        """Drain the write buffer and ingest each entry into KB.
 
         CRITICAL priority writes use IngestImmediate (synchronous RAG + LLM).
         Other writes use Ingest (queued LLM extraction).

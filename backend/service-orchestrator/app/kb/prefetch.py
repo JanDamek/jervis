@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 
-import httpx
 
 from app.config import settings, foreground_headers
 
@@ -204,166 +203,162 @@ async def fetch_project_context(
     Returns:
         Markdown string with project context, or empty string if KB is empty.
     """
-    kb_url = f"{settings.knowledgebase_url}/api/v1"
+    from jervis_contracts import kb_client
+
     sections: list[str] = []
 
-    # Dynamic priority: FOREGROUND → CRITICAL (0), BACKGROUND → no header (NORMAL)
-    headers = foreground_headers(processing_mode)
+    # Priority hint kept for log fidelity; kb_client attaches it per call now.
+    foreground_headers(processing_mode)
 
-    # KB operations can take long due to embeddings and graph traversal
-    async with httpx.AsyncClient(timeout=120.0, headers=headers) as http:
-        # 1. Repository & branch structure
-        repo_nodes = await _graph_search(
-            http, kb_url, query="", node_type="repository",
-            client_id=client_id, project_id=project_id, limit=5,
-        )
-        branch_nodes = await _graph_search(
-            http, kb_url, query="", node_type="branch",
-            client_id=client_id, project_id=project_id, limit=20,
-        )
+    # 1. Repository & branch structure
+    repo_nodes = await _graph_search(
+        query="", node_type="repository",
+        client_id=client_id, project_id=project_id, limit=5,
+    )
+    branch_nodes = await _graph_search(
+        query="", node_type="branch",
+        client_id=client_id, project_id=project_id, limit=20,
+    )
 
-        if repo_nodes or branch_nodes:
-            sections.append("## Repository Structure")
-            if repo_nodes:
-                for node in repo_nodes:
-                    label = node.get("label", "?")
-                    props = node.get("properties", {})
-                    tech = props.get("techStack", "")
-                    default_br = props.get("defaultBranch", "")
-                    line = f"- **{label}**"
-                    if tech:
-                        line += f" ({tech})"
-                    if default_br:
-                        line += f" [default: {default_br}]"
-                    sections.append(line)
+    if repo_nodes or branch_nodes:
+        sections.append("## Repository Structure")
+        if repo_nodes:
+            for node in repo_nodes:
+                label = node.get("label", "?")
+                props = node.get("properties", {})
+                tech = props.get("techStack", "")
+                default_br = props.get("defaultBranch", "")
+                line = f"- **{label}**"
+                if tech:
+                    line += f" ({tech})"
+                if default_br:
+                    line += f" [default: {default_br}]"
+                sections.append(line)
 
-            if branch_nodes:
-                sections.append("### Branches")
-                for node in branch_nodes:
-                    label = node.get("label", "?")
-                    props = node.get("properties", {})
-                    is_default = props.get("isDefault", False)
-                    status = props.get("status", "")
-                    file_count = props.get("fileCount", 0)
-                    marker = " (default)" if is_default else ""
-                    target_marker = " ← TARGET" if label == target_branch else ""
-                    line = f"- {label}{marker}{target_marker}"
-                    if file_count:
-                        line += f" [{file_count} files]"
-                    if status and status != "active":
-                        line += f" ({status})"
-                    sections.append(line)
+        if branch_nodes:
+            sections.append("### Branches")
+            for node in branch_nodes:
+                label = node.get("label", "?")
+                props = node.get("properties", {})
+                is_default = props.get("isDefault", False)
+                status = props.get("status", "")
+                file_count = props.get("fileCount", 0)
+                marker = " (default)" if is_default else ""
+                target_marker = " ← TARGET" if label == target_branch else ""
+                line = f"- {label}{marker}{target_marker}"
+                if file_count:
+                    line += f" [{file_count} files]"
+                if status and status != "active":
+                    line += f" ({status})"
+                sections.append(line)
 
-        # 2. Project structure from code graph (files + classes)
-        # If target_branch specified, scope to that branch; otherwise get all
-        file_nodes = await _graph_search_branch_aware(
-            http, kb_url, query="", node_type="file",
-            client_id=client_id, project_id=project_id,
-            branch_name=target_branch, limit=50,
-        )
-        class_nodes = await _graph_search_branch_aware(
-            http, kb_url, query="", node_type="class",
-            client_id=client_id, project_id=project_id,
-            branch_name=target_branch, limit=30,
-        )
+    # 2. Project structure from code graph (files + classes)
+    file_nodes = await _graph_search_branch_aware(
+        query="", node_type="file",
+        client_id=client_id, project_id=project_id,
+        branch_name=target_branch, limit=50,
+    )
+    class_nodes = await _graph_search_branch_aware(
+        query="", node_type="class",
+        client_id=client_id, project_id=project_id,
+        branch_name=target_branch, limit=30,
+    )
 
-        if file_nodes or class_nodes:
-            branch_label = f" (branch: {target_branch})" if target_branch else ""
-            sections.append(f"## Project Structure{branch_label}")
-            if file_nodes:
-                sections.append("### Files")
-                for node in file_nodes:
-                    label = node.get("label", "?")
-                    props = node.get("properties", {})
-                    branch = props.get("branchName", "")
-                    annotation = f" [branch: {branch}]" if branch and not target_branch else ""
-                    sections.append(f"- {label}{annotation}")
-            if class_nodes:
-                sections.append("### Classes")
-                for node in class_nodes:
-                    label = node.get("label", "?")
-                    props = node.get("properties", {})
-                    desc = props.get("description", "")
-                    branch = props.get("branchName", "")
-                    file_path = props.get("filePath", "")
-                    line = f"- {label}"
-                    if file_path:
-                        line += f" (`{file_path}`)"
-                    if branch and not target_branch:
-                        line += f" [branch: {branch}]"
-                    if desc:
-                        line += f" — {desc[:100]}"
-                    sections.append(line)
+    if file_nodes or class_nodes:
+        branch_label = f" (branch: {target_branch})" if target_branch else ""
+        sections.append(f"## Project Structure{branch_label}")
+        if file_nodes:
+            sections.append("### Files")
+            for node in file_nodes:
+                label = node.get("label", "?")
+                props = node.get("properties", {})
+                branch = props.get("branchName", "")
+                annotation = f" [branch: {branch}]" if branch and not target_branch else ""
+                sections.append(f"- {label}{annotation}")
+        if class_nodes:
+            sections.append("### Classes")
+            for node in class_nodes:
+                label = node.get("label", "?")
+                props = node.get("properties", {})
+                desc = props.get("description", "")
+                branch = props.get("branchName", "")
+                file_path = props.get("filePath", "")
+                line = f"- {label}"
+                if file_path:
+                    line += f" (`{file_path}`)"
+                if branch and not target_branch:
+                    line += f" [branch: {branch}]"
+                if desc:
+                    line += f" — {desc[:100]}"
+                sections.append(line)
 
-        from jervis_contracts import kb_client
-
-        # 3. Architecture & modules (semantic search)
-        if project_id:
-            arch_queries = search_queries if search_queries else ["project structure modules architecture dependencies technology stack"]
-            for query in arch_queries:
-                try:
-                    results = await kb_client.retrieve(
-                        caller="orchestrator.kb.prefetch.project",
-                        query=query,
-                        client_id=client_id,
-                        project_id=project_id,
-                        max_results=5,
-                        expand_graph=True,
-                        timeout=120.0,
-                    )
-                except Exception:
-                    results = []
-                if results:
-                    if "\n## Architecture & Modules" not in sections:
-                        sections.append("\n## Architecture & Modules")
-                    for item in results:
-                        source = item.get("sourceUrn", "")
-                        content = (item.get("content", "") or "")[:300]
-                        sections.append(f"- **{source}**: {content}")
-                    break
-
-        # 4. Coding conventions (client-level)
-        try:
-            conventions = await kb_client.retrieve(
-                caller="orchestrator.kb.prefetch.project",
-                query="coding conventions technology stack frameworks patterns",
-                client_id=client_id,
-                project_id="",
-                max_results=3,
-                simple=True,
-                timeout=120.0,
-            )
-        except Exception:
-            conventions = []
-        if conventions:
-            sections.append("\n## Coding Conventions")
-            for item in conventions:
-                sections.append(f"- {(item.get('content', '') or '')[:200]}")
-
-        # 5. Task-relevant context
-        task_queries = search_queries if search_queries else [task_description]
-        for query in task_queries:
+    # 3. Architecture & modules (semantic search)
+    if project_id:
+        arch_queries = search_queries if search_queries else ["project structure modules architecture dependencies technology stack"]
+        for query in arch_queries:
             try:
                 results = await kb_client.retrieve(
                     caller="orchestrator.kb.prefetch.project",
                     query=query,
                     client_id=client_id,
-                    project_id=project_id or "",
+                    project_id=project_id,
                     max_results=5,
-                    min_confidence=0.6,
                     expand_graph=True,
                     timeout=120.0,
                 )
             except Exception:
                 results = []
             if results:
-                if "\n## Relevant Context for Task" not in sections:
-                    sections.append("\n## Relevant Context for Task")
+                if "\n## Architecture & Modules" not in sections:
+                    sections.append("\n## Architecture & Modules")
                 for item in results:
                     source = item.get("sourceUrn", "")
                     content = (item.get("content", "") or "")[:300]
                     sections.append(f"- **{source}**: {content}")
                 break
+
+    # 4. Coding conventions (client-level)
+    try:
+        conventions = await kb_client.retrieve(
+            caller="orchestrator.kb.prefetch.project",
+            query="coding conventions technology stack frameworks patterns",
+            client_id=client_id,
+            project_id="",
+            max_results=3,
+            simple=True,
+            timeout=120.0,
+        )
+    except Exception:
+        conventions = []
+    if conventions:
+        sections.append("\n## Coding Conventions")
+        for item in conventions:
+            sections.append(f"- {(item.get('content', '') or '')[:200]}")
+
+    # 5. Task-relevant context
+    task_queries = search_queries if search_queries else [task_description]
+    for query in task_queries:
+        try:
+            results = await kb_client.retrieve(
+                caller="orchestrator.kb.prefetch.project",
+                query=query,
+                client_id=client_id,
+                project_id=project_id or "",
+                max_results=5,
+                min_confidence=0.6,
+                expand_graph=True,
+                timeout=120.0,
+            )
+        except Exception:
+            results = []
+        if results:
+            if "\n## Relevant Context for Task" not in sections:
+                sections.append("\n## Relevant Context for Task")
+            for item in results:
+                source = item.get("sourceUrn", "")
+                content = (item.get("content", "") or "")[:300]
+                sections.append(f"- **{source}**: {content}")
+            break
 
     context = "\n".join(sections) if sections else ""
     if context:
@@ -377,16 +372,13 @@ async def fetch_project_context(
 
 
 async def _graph_search(
-    http: httpx.AsyncClient | None,
-    kb_url: str,
     query: str,
     node_type: str,
     client_id: str,
     project_id: str | None,
     limit: int = 20,
 ) -> list[dict]:
-    """Search KB graph nodes by type (gRPC). http + kb_url kept for signature
-    compatibility with callers that pre-built the httpx client; unused."""
+    """Search KB graph nodes by type via the shared kb_client gRPC stub."""
     from jervis_contracts import kb_client
 
     try:
@@ -405,8 +397,6 @@ async def _graph_search(
 
 
 async def _graph_search_branch_aware(
-    http: httpx.AsyncClient | None,
-    kb_url: str,
     query: str,
     node_type: str,
     client_id: str,
@@ -454,7 +444,6 @@ async def fetch_user_context(
         Markdown string with user context organized by category,
         or empty string if no user knowledge exists.
     """
-    kb_url = f"{settings.knowledgebase_url}/api/v1"
     sections: list[str] = []
     total_chars = 0
 

@@ -782,13 +782,10 @@ class AgentStore:
         - INCOMING: qualified item context + approach
 
         Threshold: any vertex with at least 20 chars of meaningful content.
+
+        KB ingest dials the shared gRPC stub via `kb_client.ingest`; the
+        per-vertex try/except already handles unavailable KB.
         """
-        import httpx
-
-        kb_url = settings.knowledgebase_write_url or settings.knowledgebase_url
-        if not kb_url:
-            return
-
         indexable_types = ("task_ref", "request", "incoming")
         persisted = 0
 

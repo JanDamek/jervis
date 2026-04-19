@@ -503,12 +503,6 @@ async def _run_kb_dedup(client_id: str) -> list[str]:
     Searches KB for potential duplicates, uses LLM to confirm, merges via alias API.
     Uses NORMAL priority → auto-preempted by CRITICAL (foreground chat).
     """
-    import httpx
-
-    kb_url = settings.knowledgebase_url
-    if not kb_url:
-        return []
-
     findings: list[str] = []
     try:
         from jervis_contracts import kb_client
