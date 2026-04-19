@@ -27,12 +27,15 @@ pydantic==2.10.4
 pydantic-settings==2.7.1
 
 # gRPC + Protobuf (pod-to-pod contracts)
-# Google protobuf jumps 5.29.x → 6.30.x (5.30-5.33 never released).
-# Stay on the 5.x series for grpcio 1.71 compatibility.
-grpcio==1.71.0
-grpcio-reflection==1.71.0
-grpcio-tools==1.71.0
-protobuf==5.29.5
+# Generated stubs under libs/jervis_contracts/jervis/**/*_pb2.py were
+# produced with protoc embedding gencode 6.31.1 — runtime MUST match the
+# gencode major version (6.x), otherwise Python fails at import with
+# `VersionError: Detected mismatched Protobuf Gencode/Runtime major
+# versions`. grpcio 1.74+ is the first line that carries protobuf 6.x.
+grpcio==1.74.0
+grpcio-reflection==1.74.0
+grpcio-tools==1.74.0
+protobuf==6.31.1
 
 # MongoDB async + sync
 motor==3.6.0
