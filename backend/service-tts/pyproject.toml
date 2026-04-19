@@ -1,17 +1,21 @@
 [project]
 name = "jervis-tts"
 version = "0.1.0"
-description = "Jervis TTS service — piper-tts synthesis. (Stays Python — ML framework binding)"
+description = "Jervis TTS service — XTTS v2 (Coqui) neural synthesis on VD GPU. (Stays Python — ML framework binding)"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.6",
     "uvicorn[standard]>=0.34.0",
-    # piper-tts + piper-phonemize have no macOS ARM64 wheels. TTS runs only on
-    # the Linux VD (GPU VM) per feedback-audio-services-on-vd.md, so the
-    # marker keeps Mac dev workspace resolvable while prod Docker (Linux)
-    # still installs the real package.
-    "piper-tts==1.2.0; sys_platform == 'linux'",
     "pydantic>=2.0",
+    "grpcio>=1.66.0,<1.80",
+    "grpcio-reflection>=1.66.0,<1.80",
+    # coqui-tts + torch have Linux-only GPU wheels we rely on (CUDA 12.4).
+    # TTS runs only on the VD GPU VM per feedback-audio-services-on-vd.md;
+    # the marker keeps Mac dev workspace resolvable (no runtime there).
+    "coqui-tts>=0.24.0; sys_platform == 'linux'",
+    "torch>=2.3.0; sys_platform == 'linux'",
+    "torchaudio>=2.3.0; sys_platform == 'linux'",
+    "numpy>=1.26.0",
 ]
 
 [build-system]

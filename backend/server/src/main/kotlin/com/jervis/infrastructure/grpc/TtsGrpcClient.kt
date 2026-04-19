@@ -22,9 +22,14 @@ private val logger = KotlinLogging.logger {}
 // Kotlin-side client for jervis.tts.TtsService. Dedicated channel so the
 // synthesis traffic stays off the orchestrator/KB channels. 64 MiB cap
 // covers long WAV responses.
+//
+// XTTS v2 runs on the VD GPU VM as a systemd unit (not in K8s, per
+// feedback-audio-services-on-vd.md) — default host targets
+// ollama.lan.mazlusek.com. Override via env `GRPC_TTS_HOST` in K8s
+// ConfigMap if the deployment moves.
 @Component
 class TtsGrpcClient(
-    @Value("\${grpc.tts.host:jervis-tts}") private val ttsHost: String,
+    @Value("\${grpc.tts.host:ollama.lan.mazlusek.com}") private val ttsHost: String,
     @Value("\${grpc.tts.port:5501}") private val ttsPort: Int,
 ) {
     private val channel: ManagedChannel = run {

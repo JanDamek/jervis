@@ -369,14 +369,25 @@ def _synthesize_text(text: str, speed: float = 1.0, language: str = "", speaker:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup/shutdown lifecycle — pre-load model for instant first request."""
-    print(f"[TTS] Starting XTTS v2 service on port {TTS_PORT}")
+    """Startup/shutdown lifecycle — pre-load model + spawn pod-to-pod gRPC server."""
+    print(f"[TTS] Starting XTTS v2 service — FastAPI :{TTS_PORT} + gRPC :5501")
     # Pre-load model + speaker embedding at startup (not lazy on first request)
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, _load_tts)
     print("[TTS] Model ready, accepting requests")
-    yield
-    print("[TTS] Shutting down")
+
+    # Start the pod-to-pod gRPC server alongside FastAPI. Kotlin server + other
+    # pods dial jervis.tts.TtsService over gRPC; FastAPI stays for dev debug.
+    from app.grpc_server import start_grpc_server
+
+    grpc_port = int(os.getenv("TTS_GRPC_PORT", "5501"))
+    grpc_server = await start_grpc_server(port=grpc_port)
+    app.state.grpc_server = grpc_server
+    try:
+        yield
+    finally:
+        await grpc_server.stop(grace=5.0)
+        print("[TTS] Shutting down")
 
 
 app = FastAPI(title="Jervis TTS Service (XTTS v2)", lifespan=lifespan)
@@ -614,4 +625,4 @@ async def list_speakers():
 
 
 if __name__ == "__main__":
-    uvicorn.run("xtts_server:app", host="0.0.0.0", port=TTS_PORT, workers=TTS_WORKERS)
+    uvicorn.run("app.xtts_server:app", host="0.0.0.0", port=TTS_PORT, workers=TTS_WORKERS)
