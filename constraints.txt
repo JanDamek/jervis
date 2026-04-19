@@ -14,8 +14,11 @@
 # Dev workspace (uv sync) picks these up via root [tool.uv] constraint-dependencies.
 
 # Web / ASGI
+# NOTE: constraints files do NOT support extras (pip rejects `uvicorn[standard]` here).
+# Per-service requirements.txt keeps `uvicorn[standard]` — the extras pull
+# in dependencies we need; constraints just pin the base-package version.
 fastapi==0.115.6
-uvicorn[standard]==0.34.0
+uvicorn==0.34.0
 httpx==0.28.1
 starlette==0.41.3
 
