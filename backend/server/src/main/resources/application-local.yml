@@ -1,8 +1,4 @@
 endpoints:
-  tika:
-    baseUrl: ws://localhost:8081/
-  knowledgebase:
-    baseUrl: http://localhost:8080/
   providers:
     github: ws://localhost:8085/
     gitlab: ws://localhost:8086/

@@ -98,7 +98,6 @@ data:
         enabled: true                  # Master switch for the meeting-attend approval flow
         preroll-minutes: 10            # How early before startTime to ask for approval
         poll-interval-seconds: 60      # Approval loop tick rate
-      kb-callback-base-url: "http://jervis-server:5500"  # KB progress push callback URL
 
     link:
       indexing:
@@ -135,26 +134,19 @@ data:
         api-base: "https://openrouter.ai/api/v1"
 
     # -- Microservice endpoints (K8s service names) -----------------------------
-    # Ollama endpoints are in models-config.yaml, not here.
+    # KB / orchestrator / correction / O365 gateway / meeting-attender / TTS /
+    # whatsapp-browser / o365-browser-pool addresses live under
+    # `grpc.<svc>.{host,port}` (see GrpcChannels.kt) — only external-REST and
+    # kRPC providers are listed here. Ollama endpoints are in models-config.yaml.
     endpoints:
-      searxng:
-        baseUrl: http://nas.lan.mazlusek.com:30053/       # SearXNG web search (NodePort)
       document-extraction:
-        baseUrl: http://jervis-document-extraction:8080/  # Python document extraction (HTML, PDF, DOCX, XLSX, images)
-      knowledgebase:
-        baseUrl: http://jervis-knowledgebase:8080/        # Python KB (RAG+Graph) - read operations
-      knowledgebase-write:
-        baseUrl: http://jervis-knowledgebase-write:8080/  # Python KB - write operations (ingest)
-      orchestrator:
-        baseUrl: http://jervis-orchestrator:8090/    # Python orchestrator (LangGraph)
-      correction:
-        baseUrl: http://jervis-correction:8000/      # Python correction service (transcript correction)
+        baseUrl: http://jervis-document-extraction:8080/  # Python document extraction (HTML/PDF/DOCX/XLSX/images) — external REST
       ollama-router:
-        url: http://jervis-ollama-router:11430       # Ollama Router (GPU routing, model errors)
+        url: http://jervis-ollama-router:11430       # Ollama Router (GPU routing, model errors) — external REST
       providers:
-        github: ws://jervis-github:8085/             # GitHub integration
-        gitlab: ws://jervis-gitlab:8086/             # GitLab integration
-        atlassian: ws://jervis-atlassian:8084/       # Atlassian (Jira/Confluence)
+        github: ws://jervis-github:8085/             # GitHub integration (kRPC)
+        gitlab: ws://jervis-gitlab:8086/             # GitLab integration (kRPC)
+        atlassian: ws://jervis-atlassian:8084/       # Atlassian Jira/Confluence (kRPC)
 
 
 ---
