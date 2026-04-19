@@ -13,10 +13,8 @@ import asyncio
 import logging
 from datetime import datetime, time, timedelta
 
-import httpx
 import zoneinfo
 
-from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -74,22 +72,35 @@ def _seconds_until(target_time: time, target_days: list[int]) -> float:
 
 
 async def _execute_trigger(schedule: dict):
-    """Execute a single proactive trigger."""
+    """Execute a single proactive trigger by calling the FastAPI route handler
+    directly — same pod, no need for the HTTP self-loop that the previous
+    implementation used. Each route already dials a gRPC stub and returns a
+    plain dict, so the result format is identical to what httpx would parse.
+    """
     endpoint = schedule["endpoint"]
-    payload = schedule.get("payload")
-    if payload is not None and "clientId" not in payload:
-        payload["clientId"] = DEFAULT_CLIENT_ID
+    payload = schedule.get("payload") or {}
+    client_id = payload.get("clientId") or payload.get("client_id") or DEFAULT_CLIENT_ID
 
-    url = f"http://localhost:{settings.port}/proactive/{endpoint}"
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(url, json=payload)
-            logger.info(
-                "Proactive trigger [%s]: %s (status=%d)",
-                schedule["name"],
-                resp.json() if resp.status_code == 200 else resp.text,
-                resp.status_code,
+        from app.proactive import routes as proactive_routes
+
+        if endpoint == "morning-briefing":
+            result = await proactive_routes.trigger_morning_briefing(client_id=client_id)
+        elif endpoint == "overdue-check":
+            result = await proactive_routes.trigger_overdue_check()
+        elif endpoint == "weekly-summary":
+            result = await proactive_routes.trigger_weekly_summary(client_id=client_id)
+        elif endpoint == "vip-alert":
+            result = await proactive_routes.trigger_vip_alert(
+                client_id=client_id,
+                sender_name=payload.get("senderName") or payload.get("sender_name", ""),
+                subject=payload.get("subject", ""),
             )
+        else:
+            logger.error("Proactive trigger [%s]: unknown endpoint '%s'", schedule["name"], endpoint)
+            return
+
+        logger.info("Proactive trigger [%s]: %s", schedule["name"], result)
     except Exception as e:
         logger.error("Proactive trigger [%s] failed: %s", schedule["name"], e)
 

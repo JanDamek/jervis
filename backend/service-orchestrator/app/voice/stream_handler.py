@@ -14,7 +14,6 @@ Yields VoiceStreamEvent for SSE streaming.
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import AsyncIterator
 
@@ -146,60 +145,38 @@ async def generate_hint(text: str, client_id: str = "", project_id: str = "", gr
 
 
 async def _handle_via_orchestrator(text: str, request: VoiceStreamRequest) -> AsyncIterator[VoiceStreamEvent]:
-    """Forward to full orchestrator chat pipeline.
-
-    Creates a chat request and streams SSE events back.
+    """Forward to the orchestrator chat pipeline by calling the SSE handler
+    directly — same pod, same process, no HTTP self-loop. The legacy
+    `POST localhost/chat` Ktor route is gone (chat is gRPC-only now), so
+    this path used to silently fail.
     """
     yield VoiceStreamEvent(event="responding", data={})
 
-    chat_url = f"http://localhost:{settings.port}/chat"
+    from app.agent.sse_handler import handle_chat_sse
+    from app.chat.models import ChatRequest
 
-    chat_request = {
-        "session_id": f"voice-{request.source}-{id(request)}",
-        "message": text,
-        "message_sequence": 1,
-        "active_client_id": request.client_id,
-        "active_project_id": request.project_id,
-        "active_group_id": request.group_id,
-        "max_openrouter_tier": "FREE",  # Voice always uses FREE for speed
-    }
+    chat_request = ChatRequest(
+        session_id=f"voice-{request.source}-{id(request)}",
+        message=text,
+        message_sequence=1,
+        active_client_id=request.client_id or "",
+        active_project_id=request.project_id,
+        active_group_id=request.group_id,
+        max_openrouter_tier="FREE",  # Voice always uses FREE for speed
+    )
 
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            async with client.stream("POST", chat_url, json=chat_request) as resp:
-                resp.raise_for_status()
-                current_event = ""
-                current_data = ""
-
-                async for line in resp.aiter_lines():
-                    if line.startswith("event: "):
-                        current_event = line.removeprefix("event: ").strip()
-                    elif line.startswith("data: "):
-                        current_data = line.removeprefix("data: ").strip()
-                    elif not line.strip() and current_data:
-                        # Map chat SSE events to voice SSE events
-                        try:
-                            data = json.loads(current_data)
-                        except json.JSONDecodeError:
-                            current_event = ""
-                            current_data = ""
-                            continue
-
-                        content = data.get("content", "")
-
-                        if current_event == "token" and content:
-                            yield VoiceStreamEvent(event="token", data={"text": content})
-                        elif current_event == "done":
-                            yield VoiceStreamEvent(event="response", data={
-                                "text": content,
-                                "complete": True,
-                            })
-                        elif current_event == "error":
-                            yield VoiceStreamEvent(event="error", data={"text": content})
-
-                        current_event = ""
-                        current_data = ""
-
+        async for event in handle_chat_sse(chat_request):
+            content = event.content or ""
+            if event.type == "token" and content:
+                yield VoiceStreamEvent(event="token", data={"text": content})
+            elif event.type == "done":
+                yield VoiceStreamEvent(event="response", data={
+                    "text": content,
+                    "complete": True,
+                })
+            elif event.type == "error":
+                yield VoiceStreamEvent(event="error", data={"text": content})
     except Exception as e:
         logger.warning("Orchestrator forwarding failed: %s", e)
         yield VoiceStreamEvent(event="error", data={"text": f"Chyba orchestrátoru: {e}"})
