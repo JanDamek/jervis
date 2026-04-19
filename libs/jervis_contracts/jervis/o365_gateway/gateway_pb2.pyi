@@ -713,3 +713,25 @@ class SearchDriveRequest(_message.Message):
     query: str
     top: int
     def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., client_id: _Optional[str] = ..., query: _Optional[str] = ..., top: _Optional[int] = ...) -> None: ...
+
+class SessionStatusRequest(_message.Message):
+    __slots__ = ("ctx", "client_id")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    CLIENT_ID_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    client_id: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., client_id: _Optional[str] = ...) -> None: ...
+
+class SessionStatus(_message.Message):
+    __slots__ = ("client_id", "state", "last_activity", "last_token_extract", "novnc_url")
+    CLIENT_ID_FIELD_NUMBER: _ClassVar[int]
+    STATE_FIELD_NUMBER: _ClassVar[int]
+    LAST_ACTIVITY_FIELD_NUMBER: _ClassVar[int]
+    LAST_TOKEN_EXTRACT_FIELD_NUMBER: _ClassVar[int]
+    NOVNC_URL_FIELD_NUMBER: _ClassVar[int]
+    client_id: str
+    state: str
+    last_activity: str
+    last_token_extract: str
+    novnc_url: str
+    def __init__(self, client_id: _Optional[str] = ..., state: _Optional[str] = ..., last_activity: _Optional[str] = ..., last_token_extract: _Optional[str] = ..., novnc_url: _Optional[str] = ...) -> None: ...

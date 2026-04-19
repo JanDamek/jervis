@@ -56,6 +56,9 @@ service O365GatewayService {
   rpc ListDriveItems(ListDriveItemsRequest) returns (ListDriveItemsResponse);
   rpc GetDriveItem(DriveItemRequest) returns (DriveItem);
   rpc SearchDrive(SearchDriveRequest) returns (ListDriveItemsResponse);
+
+  // === V5g - Session status =================================================
+  rpc GetSessionStatus(SessionStatusRequest) returns (SessionStatus);
 }
 
 // ============================================================================
@@ -498,4 +501,21 @@ message SearchDriveRequest {
   string client_id = 2;
   string query = 3;
   int32 top = 4;                     // default 25
+}
+
+// ============================================================================
+// Session status (V5g)
+// ============================================================================
+
+message SessionStatusRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+}
+
+message SessionStatus {
+  string client_id = 1;
+  string state = 2;
+  string last_activity = 3;
+  string last_token_extract = 4;
+  string novnc_url = 5;
 }

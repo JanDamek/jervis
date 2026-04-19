@@ -383,6 +383,22 @@ async def search_drive(
     return list(resp.items)
 
 
+# === V5g — Session status typed ============================================
+
+async def get_session_status(
+    client_id: str, timeout: float = 15.0,
+) -> gateway_pb2.SessionStatus:
+    stub = _get_stub()
+    req = gateway_pb2.SessionStatusRequest(ctx=_ctx(), client_id=client_id)
+    try:
+        return await stub.GetSessionStatus(req, timeout=timeout)
+    except grpc.aio.AioRpcError as e:
+        code = e.code().value[0] if e.code() else 502
+        if e.code() is not None and e.code().name == "NOT_FOUND":
+            code = 404
+        raise O365GatewayError(code, e.details() or "")
+
+
 # === V5d — Calendar typed ===================================================
 
 async def list_calendar_events(

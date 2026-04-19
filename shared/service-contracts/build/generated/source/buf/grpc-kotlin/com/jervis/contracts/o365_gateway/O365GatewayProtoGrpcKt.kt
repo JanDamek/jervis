@@ -125,6 +125,10 @@ public object O365GatewayServiceGrpcKt {
     @JvmStatic
     get() = O365GatewayServiceGrpc.getSearchDriveMethod()
 
+  public val getSessionStatusMethod: MethodDescriptor<SessionStatusRequest, SessionStatus>
+    @JvmStatic
+    get() = O365GatewayServiceGrpc.getGetSessionStatusMethod()
+
   /**
    * A stub for issuing RPCs to a(n) jervis.o365_gateway.O365GatewayService service as suspending
    * coroutines.
@@ -620,6 +624,28 @@ public object O365GatewayServiceGrpcKt {
       callOptions,
       headers
     )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun getSessionStatus(request: SessionStatusRequest, headers: Metadata =
+        Metadata()): SessionStatus = unaryRpc(
+      channel,
+      O365GatewayServiceGrpc.getGetSessionStatusMethod(),
+      request,
+      callOptions,
+      headers
+    )
   }
 
   /**
@@ -950,6 +976,20 @@ public object O365GatewayServiceGrpcKt {
     public open suspend fun searchDrive(request: SearchDriveRequest): ListDriveItemsResponse = throw
         StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.SearchDrive is unimplemented"))
 
+    /**
+     * Returns the response to an RPC for jervis.o365_gateway.O365GatewayService.GetSessionStatus.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun getSessionStatus(request: SessionStatusRequest): SessionStatus = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.GetSessionStatus is unimplemented"))
+
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(
       context = this.context,
@@ -1060,6 +1100,11 @@ public object O365GatewayServiceGrpcKt {
       context = this.context,
       descriptor = O365GatewayServiceGrpc.getSearchDriveMethod(),
       implementation = ::searchDrive
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = O365GatewayServiceGrpc.getGetSessionStatusMethod(),
+      implementation = ::getSessionStatus
     )).build()
   }
 }

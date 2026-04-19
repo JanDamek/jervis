@@ -3912,10 +3912,10 @@ async def _execute_o365_teams_send_channel_message(
 
 
 async def _execute_o365_session_status(client_id: str) -> str:
-    from app.o365_gateway_client import O365GatewayError, o365_request
+    from app.o365_gateway_client import O365GatewayError, get_session_status
 
     try:
-        data = await o365_request("GET", f"session/{client_id}", timeout=15.0)
+        status = await get_session_status(client_id)
     except O365GatewayError as e:
         if e.status_code == 404:
             return f"No O365 session for client '{client_id}'. Session needs to be initialized."
@@ -3923,13 +3923,13 @@ async def _execute_o365_session_status(client_id: str) -> str:
     except Exception as e:
         return f"Error checking session status: {str(e)[:300]}"
 
-    parts = [f"Session state: {data.get('state', '?')}"]
-    if data.get("lastActivity"):
-        parts.append(f"Last activity: {data['lastActivity']}")
-    if data.get("lastTokenExtract"):
-        parts.append(f"Last token extract: {data['lastTokenExtract']}")
-    if data.get("novncUrl"):
-        parts.append(f"noVNC URL (for manual login): {data['novncUrl']}")
+    parts = [f"Session state: {status.state or '?'}"]
+    if status.last_activity:
+        parts.append(f"Last activity: {status.last_activity}")
+    if status.last_token_extract:
+        parts.append(f"Last token extract: {status.last_token_extract}")
+    if status.novnc_url:
+        parts.append(f"noVNC URL (for manual login): {status.novnc_url}")
     return "\n".join(parts)
 
 

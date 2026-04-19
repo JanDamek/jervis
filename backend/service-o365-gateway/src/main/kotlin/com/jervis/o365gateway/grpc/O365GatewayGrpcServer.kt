@@ -34,6 +34,8 @@ import com.jervis.contracts.o365_gateway.OnlineMeeting as ProtoOnlineMeeting
 import com.jervis.contracts.o365_gateway.OnlineMeetingByJoinUrlRequest
 import com.jervis.contracts.o365_gateway.OnlineMeetingRequest
 import com.jervis.contracts.o365_gateway.SearchDriveRequest
+import com.jervis.contracts.o365_gateway.SessionStatus as ProtoSessionStatus
+import com.jervis.contracts.o365_gateway.SessionStatusRequest
 import com.jervis.contracts.o365_gateway.TranscriptContent
 import com.jervis.contracts.o365_gateway.TranscriptRef
 import com.jervis.contracts.o365_gateway.ListChannelMessagesResponse
@@ -374,6 +376,24 @@ private class GatewayServicer(
         val items = graphApi.searchDrive(request.clientId, request.query, top)
         return ListDriveItemsResponse.newBuilder()
             .apply { items.forEach { addItems(it.toProto()) } }
+            .build()
+    }
+
+    // === V5g - Session status typed ==========================================
+
+    override suspend fun getSessionStatus(request: SessionStatusRequest): ProtoSessionStatus {
+        val status = browserPool.getSessionStatus(request.clientId)
+            ?: throw io.grpc.StatusException(
+                io.grpc.Status.NOT_FOUND.withDescription(
+                    "No session for client '${request.clientId}'",
+                ),
+            )
+        return ProtoSessionStatus.newBuilder()
+            .setClientId(status.clientId)
+            .setState(status.state)
+            .setLastActivity(status.lastActivity.orEmpty())
+            .setLastTokenExtract(status.lastTokenExtract.orEmpty())
+            .setNovncUrl(status.novncUrl.orEmpty())
             .build()
     }
 

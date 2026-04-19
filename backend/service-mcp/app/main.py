@@ -2851,23 +2851,22 @@ async def o365_session_status(
 
     Returns session state, token age, last refresh time, and noVNC URL if login is needed.
     """
-    from app.o365_gateway_client import O365GatewayError, o365_request
+    from app.o365_gateway_client import O365GatewayError, get_session_status
 
     try:
-        data = await o365_request("GET", f"session/{client_id}", timeout=15.0)
+        status = await get_session_status(client_id)
     except O365GatewayError as e:
         if e.status_code == 404:
             return f"No O365 session for client '{client_id}'. Use browser pool to initialize one."
         return f"Error ({e.status_code}): {e.body[:300]}"
 
-    state = data.get("state", "?")
-    lines = [f"Session state: {state}"]
-    if data.get("lastActivity"):
-        lines.append(f"Last activity: {data['lastActivity']}")
-    if data.get("lastTokenExtract"):
-        lines.append(f"Last token extract: {data['lastTokenExtract']}")
-    if data.get("novncUrl"):
-        lines.append(f"noVNC URL (for manual login): {data['novncUrl']}")
+    lines = [f"Session state: {status.state or '?'}"]
+    if status.last_activity:
+        lines.append(f"Last activity: {status.last_activity}")
+    if status.last_token_extract:
+        lines.append(f"Last token extract: {status.last_token_extract}")
+    if status.novnc_url:
+        lines.append(f"noVNC URL (for manual login): {status.novnc_url}")
     return "\n".join(lines)
 
 

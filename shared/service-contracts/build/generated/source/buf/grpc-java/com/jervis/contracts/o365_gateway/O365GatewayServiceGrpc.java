@@ -707,6 +707,37 @@ public final class O365GatewayServiceGrpc {
     return getSearchDriveMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.SessionStatusRequest,
+      com.jervis.contracts.o365_gateway.SessionStatus> getGetSessionStatusMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "GetSessionStatus",
+      requestType = com.jervis.contracts.o365_gateway.SessionStatusRequest.class,
+      responseType = com.jervis.contracts.o365_gateway.SessionStatus.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.SessionStatusRequest,
+      com.jervis.contracts.o365_gateway.SessionStatus> getGetSessionStatusMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.SessionStatusRequest, com.jervis.contracts.o365_gateway.SessionStatus> getGetSessionStatusMethod;
+    if ((getGetSessionStatusMethod = O365GatewayServiceGrpc.getGetSessionStatusMethod) == null) {
+      synchronized (O365GatewayServiceGrpc.class) {
+        if ((getGetSessionStatusMethod = O365GatewayServiceGrpc.getGetSessionStatusMethod) == null) {
+          O365GatewayServiceGrpc.getGetSessionStatusMethod = getGetSessionStatusMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_gateway.SessionStatusRequest, com.jervis.contracts.o365_gateway.SessionStatus>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "GetSessionStatus"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.SessionStatusRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.SessionStatus.getDefaultInstance()))
+              .setSchemaDescriptor(new O365GatewayServiceMethodDescriptorSupplier("GetSessionStatus"))
+              .build();
+        }
+      }
+    }
+    return getGetSessionStatusMethod;
+  }
+
   /**
    * Creates a new async stub that supports all call types for the service
    */
@@ -941,6 +972,16 @@ public final class O365GatewayServiceGrpc {
     default void searchDrive(com.jervis.contracts.o365_gateway.SearchDriveRequest request,
         io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ListDriveItemsResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getSearchDriveMethod(), responseObserver);
+    }
+
+    /**
+     * <pre>
+     * === V5g - Session status =================================================
+     * </pre>
+     */
+    default void getSessionStatus(com.jervis.contracts.o365_gateway.SessionStatusRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.SessionStatus> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetSessionStatusMethod(), responseObserver);
     }
   }
 
@@ -1190,6 +1231,17 @@ public final class O365GatewayServiceGrpc {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getSearchDriveMethod(), getCallOptions()), request, responseObserver);
     }
+
+    /**
+     * <pre>
+     * === V5g - Session status =================================================
+     * </pre>
+     */
+    public void getSessionStatus(com.jervis.contracts.o365_gateway.SessionStatusRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.SessionStatus> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetSessionStatusMethod(), getCallOptions()), request, responseObserver);
+    }
   }
 
   /**
@@ -1394,6 +1446,16 @@ public final class O365GatewayServiceGrpc {
     public com.jervis.contracts.o365_gateway.ListDriveItemsResponse searchDrive(com.jervis.contracts.o365_gateway.SearchDriveRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getSearchDriveMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * === V5g - Session status =================================================
+     * </pre>
+     */
+    public com.jervis.contracts.o365_gateway.SessionStatus getSessionStatus(com.jervis.contracts.o365_gateway.SessionStatusRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetSessionStatusMethod(), getCallOptions(), request);
     }
   }
 
@@ -1622,6 +1684,17 @@ public final class O365GatewayServiceGrpc {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getSearchDriveMethod(), getCallOptions()), request);
     }
+
+    /**
+     * <pre>
+     * === V5g - Session status =================================================
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_gateway.SessionStatus> getSessionStatus(
+        com.jervis.contracts.o365_gateway.SessionStatusRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetSessionStatusMethod(), getCallOptions()), request);
+    }
   }
 
   private static final int METHODID_REQUEST = 0;
@@ -1646,6 +1719,7 @@ public final class O365GatewayServiceGrpc {
   private static final int METHODID_LIST_DRIVE_ITEMS = 19;
   private static final int METHODID_GET_DRIVE_ITEM = 20;
   private static final int METHODID_SEARCH_DRIVE = 21;
+  private static final int METHODID_GET_SESSION_STATUS = 22;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -1751,6 +1825,10 @@ public final class O365GatewayServiceGrpc {
         case METHODID_SEARCH_DRIVE:
           serviceImpl.searchDrive((com.jervis.contracts.o365_gateway.SearchDriveRequest) request,
               (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ListDriveItemsResponse>) responseObserver);
+          break;
+        case METHODID_GET_SESSION_STATUS:
+          serviceImpl.getSessionStatus((com.jervis.contracts.o365_gateway.SessionStatusRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.SessionStatus>) responseObserver);
           break;
         default:
           throw new AssertionError();
@@ -1924,6 +2002,13 @@ public final class O365GatewayServiceGrpc {
               com.jervis.contracts.o365_gateway.SearchDriveRequest,
               com.jervis.contracts.o365_gateway.ListDriveItemsResponse>(
                 service, METHODID_SEARCH_DRIVE)))
+        .addMethod(
+          getGetSessionStatusMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.o365_gateway.SessionStatusRequest,
+              com.jervis.contracts.o365_gateway.SessionStatus>(
+                service, METHODID_GET_SESSION_STATUS)))
         .build();
   }
 
@@ -1994,6 +2079,7 @@ public final class O365GatewayServiceGrpc {
               .addMethod(getListDriveItemsMethod())
               .addMethod(getGetDriveItemMethod())
               .addMethod(getSearchDriveMethod())
+              .addMethod(getGetSessionStatusMethod())
               .build();
         }
       }

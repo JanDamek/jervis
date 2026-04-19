@@ -153,6 +153,11 @@ class O365GatewayServiceStub(object):
                 request_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.SearchDriveRequest.SerializeToString,
                 response_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListDriveItemsResponse.FromString,
                 _registered_method=True)
+        self.GetSessionStatus = channel.unary_unary(
+                '/jervis.o365_gateway.O365GatewayService/GetSessionStatus',
+                request_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.SessionStatusRequest.SerializeToString,
+                response_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.SessionStatus.FromString,
+                _registered_method=True)
 
 
 class O365GatewayServiceServicer(object):
@@ -309,6 +314,13 @@ class O365GatewayServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetSessionStatus(self, request, context):
+        """=== V5g - Session status =================================================
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_O365GatewayServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -421,6 +433,11 @@ def add_O365GatewayServiceServicer_to_server(servicer, server):
                     servicer.SearchDrive,
                     request_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.SearchDriveRequest.FromString,
                     response_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListDriveItemsResponse.SerializeToString,
+            ),
+            'GetSessionStatus': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetSessionStatus,
+                    request_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.SessionStatusRequest.FromString,
+                    response_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.SessionStatus.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -1026,6 +1043,33 @@ class O365GatewayService(object):
             '/jervis.o365_gateway.O365GatewayService/SearchDrive',
             jervis_dot_o365__gateway_dot_gateway__pb2.SearchDriveRequest.SerializeToString,
             jervis_dot_o365__gateway_dot_gateway__pb2.ListDriveItemsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetSessionStatus(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.o365_gateway.O365GatewayService/GetSessionStatus',
+            jervis_dot_o365__gateway_dot_gateway__pb2.SessionStatusRequest.SerializeToString,
+            jervis_dot_o365__gateway_dot_gateway__pb2.SessionStatus.FromString,
             options,
             channel_credentials,
             insecure,
