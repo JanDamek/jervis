@@ -65,8 +65,6 @@ class RpcClientsConfig(
     private val orchestratorGraphGrpc: OrchestratorGraphGrpcClient,
     private val orchestratorDispatchGrpc: OrchestratorDispatchGrpcClient,
 ) {
-    @org.springframework.beans.factory.annotation.Value("\${jervis.kb-callback-base-url:}")
-    private var kbCallbackBaseUrl: String = ""
     private val logger = LoggerFactory.getLogger(RpcClientsConfig::class.java)
 
     private var _knowledgeService: KnowledgeServiceRestClient? = null
@@ -225,19 +223,15 @@ class RpcClientsConfig(
     fun rpcReconnectHandler(): RpcReconnectHandler =
         object : RpcReconnectHandler {
             override suspend fun reconnectKnowledgebase() {
-                _knowledgeService = KnowledgeServiceRestClient(endpoints.knowledgebase.baseUrl, kbCallbackBaseUrl, kbMaintenanceGrpc, kbQueueGrpc, kbIngestGrpc, kbRetrieveGrpc, kbGraphGrpc, kbDocumentGrpc)
+                _knowledgeService = KnowledgeServiceRestClient(kbMaintenanceGrpc, kbQueueGrpc, kbIngestGrpc, kbRetrieveGrpc, kbGraphGrpc, kbDocumentGrpc)
             }
         }
 
     private fun getKnowledgeService(): KnowledgeServiceRestClient =
         _knowledgeService ?: synchronized(this) {
             _knowledgeService
-                ?: KnowledgeServiceRestClient(kbWriteUrl(), kbCallbackBaseUrl, kbMaintenanceGrpc, kbQueueGrpc, kbIngestGrpc, kbRetrieveGrpc, kbGraphGrpc, kbDocumentGrpc).also { _knowledgeService = it }
+                ?: KnowledgeServiceRestClient(kbMaintenanceGrpc, kbQueueGrpc, kbIngestGrpc, kbRetrieveGrpc, kbGraphGrpc, kbDocumentGrpc).also { _knowledgeService = it }
         }
-
-    /** KB write URL (falls back to read URL if write endpoint not configured). */
-    private fun kbWriteUrl(): String =
-        endpoints.knowledgebaseWrite?.baseUrl ?: endpoints.knowledgebase.baseUrl
 
     private fun atlassianUrl(): String =
         endpoints.providers["atlassian"] ?: throw IllegalStateException("No endpoint configured for atlassian")

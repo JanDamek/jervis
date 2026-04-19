@@ -8,7 +8,6 @@ import com.jervis.infrastructure.grpc.KbIngestGrpcClient
 import com.jervis.infrastructure.grpc.KbMaintenanceGrpcClient
 import com.jervis.infrastructure.grpc.KbQueueGrpcClient
 import com.jervis.infrastructure.grpc.KbRetrieveGrpcClient
-import com.jervis.infrastructure.llm.KnowledgeServiceRestClient
 import com.jervis.common.types.ClientId
 import com.jervis.knowledgebase.KnowledgeService
 import com.jervis.knowledgebase.model.CpgIngestRequest
@@ -26,30 +25,8 @@ import com.jervis.knowledgebase.model.IngestResult
 import com.jervis.knowledgebase.model.RetrievalRequest
 import com.jervis.knowledgebase.service.graphdb.model.GraphNode
 import com.jervis.knowledgebase.service.graphdb.model.TraversalSpec
-import io.ktor.client.HttpClient
-import io.ktor.client.call.body
-import io.ktor.client.statement.bodyAsText
-import io.ktor.client.engine.cio.CIO
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.client.request.accept
-import io.ktor.client.request.forms.formData
-import io.ktor.client.request.forms.submitFormWithBinaryData
-import io.ktor.client.request.get
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.http.ContentType
-import io.ktor.http.isSuccess
-import io.ktor.http.Headers
-import io.ktor.http.HttpHeaders
-import io.ktor.http.contentType
-import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.contentOrNull
 import kotlinx.coroutines.delay
 import mu.KotlinLogging
 import java.time.format.DateTimeFormatter
@@ -57,14 +34,14 @@ import java.time.format.DateTimeFormatter
 private val logger = KotlinLogging.logger {}
 
 /**
- * REST client for Python knowledgebase microservice.
+ * KB service client — pure gRPC (Ktor REST removed in V6c).
  *
- * The Python service uses FastAPI with REST endpoints instead of KRPC.
- * This client bridges the Kotlin KnowledgeService interface to REST calls.
+ * Each method delegates to the matching `Kb*GrpcClient` and the file
+ * keeps its `KnowledgeServiceRestClient` name for consumer compatibility.
+ * Rename to `KnowledgeServiceClient` is left as a follow-up so this slice
+ * stays focused on dead-code removal.
  */
 class KnowledgeServiceRestClient(
-    private val baseUrl: String,
-    private val callbackBaseUrl: String = "",
     private val kbMaintenanceGrpc: KbMaintenanceGrpcClient? = null,
     private val kbQueueGrpc: KbQueueGrpcClient? = null,
     private val kbIngestGrpc: KbIngestGrpcClient? = null,
@@ -115,31 +92,13 @@ class KnowledgeServiceRestClient(
             uploadedAt = d.uploadedAtIso,
             indexedAt = d.indexedAtIso.takeIf { it.isNotEmpty() },
         )
-    private val client = HttpClient(CIO) {
-        install(ContentNegotiation) {
-            json(
-                Json {
-                    ignoreUnknownKeys = true
-                    isLenient = true
-                    encodeDefaults = true
-                },
-            )
-        }
-        install(HttpTimeout) {
-            requestTimeoutMillis = Long.MAX_VALUE
-            connectTimeoutMillis = 30_000   // 30s connect timeout only
-            socketTimeoutMillis = Long.MAX_VALUE // KB embedding trvá jak trvá, čekáme na GPU
-        }
-    }
 
     companion object {
-        /** Max retries for transient failures (SocketTimeout, connection reset). */
+        /** Max retries for transient failures (gRPC UNAVAILABLE / DEADLINE_EXCEEDED). */
         private const val MAX_RETRIES = 2
         /** Delay between retries (ms). Doubles on each retry. */
         private const val RETRY_BASE_DELAY_MS = 5_000L
     }
-
-    private val apiBaseUrl = baseUrl.trimEnd('/') + "/api/v1"
 
     override suspend fun ingest(request: IngestRequest): IngestResult {
         logger.debug { "Calling knowledgebase ingest: sourceUrn=${request.sourceUrn}" }
@@ -697,7 +656,7 @@ class KnowledgeServiceRestClient(
     }
 
     fun close() {
-        client.close()
+        // gRPC channels are owned by GrpcChannels; nothing to close here.
     }
 }
 
