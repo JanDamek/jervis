@@ -38,11 +38,16 @@ scp_cmd() {
 
 echo "=== Deploying $SERVICE_NAME (XTTS v2 + gRPC) to $GPU_HOST ==="
 
-# Step 1: Stop old TTS procs (both Piper legacy and previous XTTS runs)
+# Step 1: Stop old TTS procs (both Piper legacy and previous XTTS runs).
+# Must NOT match the ssh/bash process itself — `pkill -f` scans the full
+# cmdline. Two defenses: (a) the [x]-style character class matches 'x' as
+# a regex but the literal bracketed form in our own cmdline doesn't match
+# the regex back; (b) run each pkill in a fresh SSH so the pattern of one
+# call never appears as literal in the cmdline of another.
 echo "Step 1/7: Stopping old TTS..."
-ssh_cmd "pkill -f 'tts_server:app' 2>/dev/null || true"
-ssh_cmd "pkill -f 'xtts_server' 2>/dev/null || true"
-ssh_cmd "pkill -f 'app.xtts_server' 2>/dev/null || true"
+ssh_cmd "pkill -f '[t]ts_server:app' 2>/dev/null; true"
+ssh_cmd "pkill -f '[x]tts_server' 2>/dev/null; true"
+ssh_cmd "pkill -f 'app[.]xtts_server' 2>/dev/null; true"
 echo "  old TTS stopped"
 
 # Step 2: Setup directory and venv
