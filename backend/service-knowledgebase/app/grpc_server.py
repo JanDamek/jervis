@@ -622,20 +622,25 @@ class IngestServicer(ingest_pb2_grpc.KnowledgeIngestServiceServicer):
                 cred = SourceCredibility(request.credibility)
             except ValueError:
                 cred = None
-        return IReq(
-            clientId=request.client_id,
-            projectId=request.project_id or None,
-            groupId=request.group_id or None,
-            sourceUrn=request.source_urn,
-            kind=request.kind or "note",
-            content=request.content,
-            metadata=dict(request.metadata),
-            observedAt=request.observed_at_iso or None,
-            maxTier=request.max_tier or "NONE",
-            credibility=cred,
-            branchScope=request.branch_scope or None,
-            branchRole=request.branch_role or None,
-        )
+        kwargs: dict[str, Any] = {
+            "clientId": request.client_id,
+            "projectId": request.project_id or None,
+            "groupId": request.group_id or None,
+            "sourceUrn": request.source_urn,
+            "kind": request.kind or "note",
+            "content": request.content,
+            "metadata": dict(request.metadata),
+            "maxTier": request.max_tier or "NONE",
+            "credibility": cred,
+            "branchScope": request.branch_scope or None,
+            "branchRole": request.branch_role or None,
+        }
+        # Empty `observed_at_iso` (proto default "") = client didn't set it —
+        # omit the kwarg so Pydantic's `default_factory=datetime.now` kicks in.
+        # Explicit None would override the default and fail validation.
+        if request.observed_at_iso:
+            kwargs["observedAt"] = request.observed_at_iso
+        return IReq(**kwargs)
 
     def _ingest_result_to_proto(self, result) -> ingest_pb2.IngestResult:
         status = getattr(result, "status", None) or "success"
