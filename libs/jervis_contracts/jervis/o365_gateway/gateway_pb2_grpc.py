@@ -113,6 +113,31 @@ class O365GatewayServiceStub(object):
                 request_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.CreateCalendarEventRequest.SerializeToString,
                 response_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.CalendarEvent.FromString,
                 _registered_method=True)
+        self.GetOnlineMeetingByJoinUrl = channel.unary_unary(
+                '/jervis.o365_gateway.O365GatewayService/GetOnlineMeetingByJoinUrl',
+                request_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.OnlineMeetingByJoinUrlRequest.SerializeToString,
+                response_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.OnlineMeeting.FromString,
+                _registered_method=True)
+        self.GetOnlineMeeting = channel.unary_unary(
+                '/jervis.o365_gateway.O365GatewayService/GetOnlineMeeting',
+                request_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.OnlineMeetingRequest.SerializeToString,
+                response_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.OnlineMeeting.FromString,
+                _registered_method=True)
+        self.ListMeetingRecordings = channel.unary_unary(
+                '/jervis.o365_gateway.O365GatewayService/ListMeetingRecordings',
+                request_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.OnlineMeetingRequest.SerializeToString,
+                response_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListRecordingsResponse.FromString,
+                _registered_method=True)
+        self.ListMeetingTranscripts = channel.unary_unary(
+                '/jervis.o365_gateway.O365GatewayService/ListMeetingTranscripts',
+                request_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.OnlineMeetingRequest.SerializeToString,
+                response_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListTranscriptsResponse.FromString,
+                _registered_method=True)
+        self.DownloadTranscriptVtt = channel.unary_unary(
+                '/jervis.o365_gateway.O365GatewayService/DownloadTranscriptVtt',
+                request_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.TranscriptRef.SerializeToString,
+                response_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.TranscriptContent.FromString,
+                _registered_method=True)
 
 
 class O365GatewayServiceServicer(object):
@@ -216,6 +241,40 @@ class O365GatewayServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetOnlineMeetingByJoinUrl(self, request, context):
+        """=== V5e - Online meetings ================================================
+        Part of the O365 umbrella: online meetings are a resource inside O365,
+        not a separate service. All five RPCs live here so consumers dial one
+        channel for everything meeting-related.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetOnlineMeeting(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListMeetingRecordings(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListMeetingTranscripts(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def DownloadTranscriptVtt(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_O365GatewayServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -288,6 +347,31 @@ def add_O365GatewayServiceServicer_to_server(servicer, server):
                     servicer.CreateCalendarEvent,
                     request_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.CreateCalendarEventRequest.FromString,
                     response_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.CalendarEvent.SerializeToString,
+            ),
+            'GetOnlineMeetingByJoinUrl': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetOnlineMeetingByJoinUrl,
+                    request_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.OnlineMeetingByJoinUrlRequest.FromString,
+                    response_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.OnlineMeeting.SerializeToString,
+            ),
+            'GetOnlineMeeting': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetOnlineMeeting,
+                    request_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.OnlineMeetingRequest.FromString,
+                    response_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.OnlineMeeting.SerializeToString,
+            ),
+            'ListMeetingRecordings': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListMeetingRecordings,
+                    request_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.OnlineMeetingRequest.FromString,
+                    response_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListRecordingsResponse.SerializeToString,
+            ),
+            'ListMeetingTranscripts': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListMeetingTranscripts,
+                    request_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.OnlineMeetingRequest.FromString,
+                    response_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListTranscriptsResponse.SerializeToString,
+            ),
+            'DownloadTranscriptVtt': grpc.unary_unary_rpc_method_handler(
+                    servicer.DownloadTranscriptVtt,
+                    request_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.TranscriptRef.FromString,
+                    response_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.TranscriptContent.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -677,6 +761,141 @@ class O365GatewayService(object):
             '/jervis.o365_gateway.O365GatewayService/CreateCalendarEvent',
             jervis_dot_o365__gateway_dot_gateway__pb2.CreateCalendarEventRequest.SerializeToString,
             jervis_dot_o365__gateway_dot_gateway__pb2.CalendarEvent.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetOnlineMeetingByJoinUrl(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.o365_gateway.O365GatewayService/GetOnlineMeetingByJoinUrl',
+            jervis_dot_o365__gateway_dot_gateway__pb2.OnlineMeetingByJoinUrlRequest.SerializeToString,
+            jervis_dot_o365__gateway_dot_gateway__pb2.OnlineMeeting.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetOnlineMeeting(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.o365_gateway.O365GatewayService/GetOnlineMeeting',
+            jervis_dot_o365__gateway_dot_gateway__pb2.OnlineMeetingRequest.SerializeToString,
+            jervis_dot_o365__gateway_dot_gateway__pb2.OnlineMeeting.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListMeetingRecordings(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.o365_gateway.O365GatewayService/ListMeetingRecordings',
+            jervis_dot_o365__gateway_dot_gateway__pb2.OnlineMeetingRequest.SerializeToString,
+            jervis_dot_o365__gateway_dot_gateway__pb2.ListRecordingsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListMeetingTranscripts(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.o365_gateway.O365GatewayService/ListMeetingTranscripts',
+            jervis_dot_o365__gateway_dot_gateway__pb2.OnlineMeetingRequest.SerializeToString,
+            jervis_dot_o365__gateway_dot_gateway__pb2.ListTranscriptsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def DownloadTranscriptVtt(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.o365_gateway.O365GatewayService/DownloadTranscriptVtt',
+            jervis_dot_o365__gateway_dot_gateway__pb2.TranscriptRef.SerializeToString,
+            jervis_dot_o365__gateway_dot_gateway__pb2.TranscriptContent.FromString,
             options,
             channel_credentials,
             insecure,

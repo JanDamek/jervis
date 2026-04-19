@@ -318,6 +318,79 @@ async def list_calendar_events(
     return list(resp.events)
 
 
+# === V5e — Online meetings typed ============================================
+
+async def get_online_meeting_by_join_url(
+    client_id: str, join_web_url: str, timeout: float = 30.0,
+) -> gateway_pb2.OnlineMeeting:
+    stub = _get_stub()
+    req = gateway_pb2.OnlineMeetingByJoinUrlRequest(
+        ctx=_ctx(), client_id=client_id, join_web_url=join_web_url,
+    )
+    try:
+        return await stub.GetOnlineMeetingByJoinUrl(req, timeout=timeout)
+    except grpc.aio.AioRpcError as e:
+        raise O365GatewayError(e.code().value[0] if e.code() else 502, e.details() or "")
+
+
+async def get_online_meeting(
+    client_id: str, meeting_id: str, timeout: float = 30.0,
+) -> gateway_pb2.OnlineMeeting:
+    stub = _get_stub()
+    req = gateway_pb2.OnlineMeetingRequest(
+        ctx=_ctx(), client_id=client_id, meeting_id=meeting_id,
+    )
+    try:
+        return await stub.GetOnlineMeeting(req, timeout=timeout)
+    except grpc.aio.AioRpcError as e:
+        raise O365GatewayError(e.code().value[0] if e.code() else 502, e.details() or "")
+
+
+async def list_meeting_recordings(
+    client_id: str, meeting_id: str, timeout: float = 30.0,
+) -> list[gateway_pb2.CallRecording]:
+    stub = _get_stub()
+    req = gateway_pb2.OnlineMeetingRequest(
+        ctx=_ctx(), client_id=client_id, meeting_id=meeting_id,
+    )
+    try:
+        resp = await stub.ListMeetingRecordings(req, timeout=timeout)
+    except grpc.aio.AioRpcError as e:
+        raise O365GatewayError(e.code().value[0] if e.code() else 502, e.details() or "")
+    return list(resp.recordings)
+
+
+async def list_meeting_transcripts(
+    client_id: str, meeting_id: str, timeout: float = 30.0,
+) -> list[gateway_pb2.CallTranscript]:
+    stub = _get_stub()
+    req = gateway_pb2.OnlineMeetingRequest(
+        ctx=_ctx(), client_id=client_id, meeting_id=meeting_id,
+    )
+    try:
+        resp = await stub.ListMeetingTranscripts(req, timeout=timeout)
+    except grpc.aio.AioRpcError as e:
+        raise O365GatewayError(e.code().value[0] if e.code() else 502, e.details() or "")
+    return list(resp.transcripts)
+
+
+async def download_transcript_vtt(
+    client_id: str, meeting_id: str, transcript_id: str, timeout: float = 60.0,
+) -> bytes:
+    stub = _get_stub()
+    req = gateway_pb2.TranscriptRef(
+        ctx=_ctx(),
+        client_id=client_id,
+        meeting_id=meeting_id,
+        transcript_id=transcript_id,
+    )
+    try:
+        resp = await stub.DownloadTranscriptVtt(req, timeout=timeout)
+    except grpc.aio.AioRpcError as e:
+        raise O365GatewayError(e.code().value[0] if e.code() else 502, e.details() or "")
+    return bytes(resp.vtt)
+
+
 async def create_calendar_event(
     client_id: str,
     subject: str,

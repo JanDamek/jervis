@@ -12,9 +12,21 @@ import com.jervis.contracts.o365_gateway.DateTimeTimeZone as ProtoDateTimeTimeZo
 import com.jervis.contracts.o365_gateway.EmailAddress as ProtoEmailAddress
 import com.jervis.contracts.o365_gateway.GraphApplication as ProtoGraphApplication
 import com.jervis.contracts.o365_gateway.GraphUser as ProtoGraphUser
+import com.jervis.contracts.o365_gateway.CallRecording as ProtoCallRecording
+import com.jervis.contracts.o365_gateway.CallTranscript as ProtoCallTranscript
+import com.jervis.contracts.o365_gateway.ChatInfo as ProtoChatInfo
 import com.jervis.contracts.o365_gateway.ListCalendarEventsRequest
 import com.jervis.contracts.o365_gateway.ListCalendarEventsResponse
+import com.jervis.contracts.o365_gateway.ListRecordingsResponse
+import com.jervis.contracts.o365_gateway.ListTranscriptsResponse
 import com.jervis.contracts.o365_gateway.Location as ProtoLocation
+import com.jervis.contracts.o365_gateway.MeetingParticipant as ProtoMeetingParticipant
+import com.jervis.contracts.o365_gateway.MeetingParticipants as ProtoMeetingParticipants
+import com.jervis.contracts.o365_gateway.OnlineMeeting as ProtoOnlineMeeting
+import com.jervis.contracts.o365_gateway.OnlineMeetingByJoinUrlRequest
+import com.jervis.contracts.o365_gateway.OnlineMeetingRequest
+import com.jervis.contracts.o365_gateway.TranscriptContent
+import com.jervis.contracts.o365_gateway.TranscriptRef
 import com.jervis.contracts.o365_gateway.ListChannelMessagesResponse
 import com.jervis.contracts.o365_gateway.ListChannelsRequest
 import com.jervis.contracts.o365_gateway.ListChannelsResponse
@@ -49,11 +61,17 @@ import com.jervis.o365gateway.model.GraphApplication
 import com.jervis.o365gateway.model.GraphChannel
 import com.jervis.o365gateway.model.GraphChat
 import com.jervis.o365gateway.model.GraphAttendee
+import com.jervis.o365gateway.model.GraphCallRecording
+import com.jervis.o365gateway.model.GraphCallTranscript
+import com.jervis.o365gateway.model.GraphChatInfo
 import com.jervis.o365gateway.model.GraphDateTimeTimeZone
 import com.jervis.o365gateway.model.GraphEmailAddress
 import com.jervis.o365gateway.model.GraphEmailAddressDetail
 import com.jervis.o365gateway.model.GraphEvent
 import com.jervis.o365gateway.model.GraphLocation
+import com.jervis.o365gateway.model.GraphMeetingParticipant
+import com.jervis.o365gateway.model.GraphMeetingParticipants
+import com.jervis.o365gateway.model.GraphOnlineMeeting
 import com.jervis.o365gateway.model.GraphMailBody
 import com.jervis.o365gateway.model.GraphMailMessage
 import com.jervis.o365gateway.model.GraphMessage
@@ -272,6 +290,51 @@ private class GatewayServicer(
             isOnlineMeeting = request.isOnlineMeeting,
         )
         return graphApi.createEvent(request.clientId, createReq).toProto()
+    }
+
+    // === V5e - Online meetings typed =========================================
+
+    override suspend fun getOnlineMeetingByJoinUrl(
+        request: OnlineMeetingByJoinUrlRequest,
+    ): ProtoOnlineMeeting {
+        val meeting = graphApi.getOnlineMeetingByJoinUrl(request.clientId, request.joinWebUrl)
+            ?: throw io.grpc.StatusException(
+                io.grpc.Status.NOT_FOUND.withDescription("No meeting matches joinWebUrl"),
+            )
+        return meeting.toProto()
+    }
+
+    override suspend fun getOnlineMeeting(request: OnlineMeetingRequest): ProtoOnlineMeeting {
+        val meeting = graphApi.getOnlineMeeting(request.clientId, request.meetingId)
+        return meeting.toProto()
+    }
+
+    override suspend fun listMeetingRecordings(
+        request: OnlineMeetingRequest,
+    ): ListRecordingsResponse {
+        val recordings = graphApi.listMeetingRecordings(request.clientId, request.meetingId)
+        return ListRecordingsResponse.newBuilder()
+            .apply { recordings.forEach { addRecordings(it.toProto()) } }
+            .build()
+    }
+
+    override suspend fun listMeetingTranscripts(
+        request: OnlineMeetingRequest,
+    ): ListTranscriptsResponse {
+        val transcripts = graphApi.listMeetingTranscripts(request.clientId, request.meetingId)
+        return ListTranscriptsResponse.newBuilder()
+            .apply { transcripts.forEach { addTranscripts(it.toProto()) } }
+            .build()
+    }
+
+    override suspend fun downloadTranscriptVtt(request: TranscriptRef): TranscriptContent {
+        val vtt = graphApi.downloadTranscriptVtt(
+            request.clientId, request.meetingId, request.transcriptId,
+        )
+        return TranscriptContent.newBuilder()
+            .setVtt(ByteString.copyFrom(vtt))
+            .setContentType("text/vtt")
+            .build()
     }
 
     override suspend fun requestBytes(request: O365Request): O365BytesResponse {
@@ -577,6 +640,61 @@ private fun ProtoAttendee.toGraph(): GraphAttendee =
         type = type.takeIf { it.isNotBlank() } ?: "required",
         status = null,
     )
+
+// === V5e - Online meetings: Graph DTO -> proto mappers =======================
+
+private fun GraphChatInfo.toProto(): ProtoChatInfo =
+    ProtoChatInfo.newBuilder()
+        .setThreadId(threadId.orEmpty())
+        .setMessageId(messageId.orEmpty())
+        .setReplyChainMessageId(replyChainMessageId.orEmpty())
+        .build()
+
+private fun GraphMeetingParticipant.toProto(): ProtoMeetingParticipant =
+    ProtoMeetingParticipant.newBuilder()
+        .setRole(role.orEmpty())
+        .setUpn(upn.orEmpty())
+        .apply { identity?.user?.let { setUser(it.toProto()) } }
+        .build()
+
+private fun GraphMeetingParticipants.toProto(): ProtoMeetingParticipants =
+    ProtoMeetingParticipants.newBuilder()
+        .apply {
+            organizer?.let { setOrganizer(it.toProto()) }
+            attendees?.forEach { addAttendees(it.toProto()) }
+        }
+        .build()
+
+private fun GraphOnlineMeeting.toProto(): ProtoOnlineMeeting =
+    ProtoOnlineMeeting.newBuilder()
+        .setId(id)
+        .setJoinWebUrl(joinWebUrl.orEmpty())
+        .setSubject(subject.orEmpty())
+        .setStartDateTime(startDateTime.orEmpty())
+        .setEndDateTime(endDateTime.orEmpty())
+        .apply {
+            chatInfo?.let { setChatInfo(it.toProto()) }
+            participants?.let { setParticipants(it.toProto()) }
+        }
+        .build()
+
+private fun GraphCallRecording.toProto(): ProtoCallRecording =
+    ProtoCallRecording.newBuilder()
+        .setId(id)
+        .setMeetingId(meetingId.orEmpty())
+        .setCallId(callId.orEmpty())
+        .setCreatedDateTime(createdDateTime.orEmpty())
+        .setRecordingContentUrl(recordingContentUrl.orEmpty())
+        .setContentCorrelationId(contentCorrelationId.orEmpty())
+        .build()
+
+private fun GraphCallTranscript.toProto(): ProtoCallTranscript =
+    ProtoCallTranscript.newBuilder()
+        .setId(id)
+        .setMeetingId(meetingId.orEmpty())
+        .setCreatedDateTime(createdDateTime.orEmpty())
+        .setTranscriptContentUrl(transcriptContentUrl.orEmpty())
+        .build()
 
 private fun GraphEvent.toProto(): ProtoCalendarEvent =
     ProtoCalendarEvent.newBuilder()

@@ -493,3 +493,129 @@ class CreateCalendarEventRequest(_message.Message):
     attendees: _containers.RepeatedCompositeFieldContainer[Attendee]
     is_online_meeting: bool
     def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., client_id: _Optional[str] = ..., subject: _Optional[str] = ..., body: _Optional[_Union[MailBody, _Mapping]] = ..., start: _Optional[_Union[DateTimeTimeZone, _Mapping]] = ..., end: _Optional[_Union[DateTimeTimeZone, _Mapping]] = ..., location: _Optional[_Union[Location, _Mapping]] = ..., attendees: _Optional[_Iterable[_Union[Attendee, _Mapping]]] = ..., is_online_meeting: bool = ...) -> None: ...
+
+class ChatInfo(_message.Message):
+    __slots__ = ("thread_id", "message_id", "reply_chain_message_id")
+    THREAD_ID_FIELD_NUMBER: _ClassVar[int]
+    MESSAGE_ID_FIELD_NUMBER: _ClassVar[int]
+    REPLY_CHAIN_MESSAGE_ID_FIELD_NUMBER: _ClassVar[int]
+    thread_id: str
+    message_id: str
+    reply_chain_message_id: str
+    def __init__(self, thread_id: _Optional[str] = ..., message_id: _Optional[str] = ..., reply_chain_message_id: _Optional[str] = ...) -> None: ...
+
+class MeetingParticipant(_message.Message):
+    __slots__ = ("user", "role", "upn")
+    USER_FIELD_NUMBER: _ClassVar[int]
+    ROLE_FIELD_NUMBER: _ClassVar[int]
+    UPN_FIELD_NUMBER: _ClassVar[int]
+    user: GraphUser
+    role: str
+    upn: str
+    def __init__(self, user: _Optional[_Union[GraphUser, _Mapping]] = ..., role: _Optional[str] = ..., upn: _Optional[str] = ...) -> None: ...
+
+class MeetingParticipants(_message.Message):
+    __slots__ = ("organizer", "attendees")
+    ORGANIZER_FIELD_NUMBER: _ClassVar[int]
+    ATTENDEES_FIELD_NUMBER: _ClassVar[int]
+    organizer: MeetingParticipant
+    attendees: _containers.RepeatedCompositeFieldContainer[MeetingParticipant]
+    def __init__(self, organizer: _Optional[_Union[MeetingParticipant, _Mapping]] = ..., attendees: _Optional[_Iterable[_Union[MeetingParticipant, _Mapping]]] = ...) -> None: ...
+
+class OnlineMeeting(_message.Message):
+    __slots__ = ("id", "join_web_url", "subject", "start_date_time", "end_date_time", "chat_info", "participants")
+    ID_FIELD_NUMBER: _ClassVar[int]
+    JOIN_WEB_URL_FIELD_NUMBER: _ClassVar[int]
+    SUBJECT_FIELD_NUMBER: _ClassVar[int]
+    START_DATE_TIME_FIELD_NUMBER: _ClassVar[int]
+    END_DATE_TIME_FIELD_NUMBER: _ClassVar[int]
+    CHAT_INFO_FIELD_NUMBER: _ClassVar[int]
+    PARTICIPANTS_FIELD_NUMBER: _ClassVar[int]
+    id: str
+    join_web_url: str
+    subject: str
+    start_date_time: str
+    end_date_time: str
+    chat_info: ChatInfo
+    participants: MeetingParticipants
+    def __init__(self, id: _Optional[str] = ..., join_web_url: _Optional[str] = ..., subject: _Optional[str] = ..., start_date_time: _Optional[str] = ..., end_date_time: _Optional[str] = ..., chat_info: _Optional[_Union[ChatInfo, _Mapping]] = ..., participants: _Optional[_Union[MeetingParticipants, _Mapping]] = ...) -> None: ...
+
+class CallRecording(_message.Message):
+    __slots__ = ("id", "meeting_id", "call_id", "created_date_time", "recording_content_url", "content_correlation_id")
+    ID_FIELD_NUMBER: _ClassVar[int]
+    MEETING_ID_FIELD_NUMBER: _ClassVar[int]
+    CALL_ID_FIELD_NUMBER: _ClassVar[int]
+    CREATED_DATE_TIME_FIELD_NUMBER: _ClassVar[int]
+    RECORDING_CONTENT_URL_FIELD_NUMBER: _ClassVar[int]
+    CONTENT_CORRELATION_ID_FIELD_NUMBER: _ClassVar[int]
+    id: str
+    meeting_id: str
+    call_id: str
+    created_date_time: str
+    recording_content_url: str
+    content_correlation_id: str
+    def __init__(self, id: _Optional[str] = ..., meeting_id: _Optional[str] = ..., call_id: _Optional[str] = ..., created_date_time: _Optional[str] = ..., recording_content_url: _Optional[str] = ..., content_correlation_id: _Optional[str] = ...) -> None: ...
+
+class CallTranscript(_message.Message):
+    __slots__ = ("id", "meeting_id", "created_date_time", "transcript_content_url")
+    ID_FIELD_NUMBER: _ClassVar[int]
+    MEETING_ID_FIELD_NUMBER: _ClassVar[int]
+    CREATED_DATE_TIME_FIELD_NUMBER: _ClassVar[int]
+    TRANSCRIPT_CONTENT_URL_FIELD_NUMBER: _ClassVar[int]
+    id: str
+    meeting_id: str
+    created_date_time: str
+    transcript_content_url: str
+    def __init__(self, id: _Optional[str] = ..., meeting_id: _Optional[str] = ..., created_date_time: _Optional[str] = ..., transcript_content_url: _Optional[str] = ...) -> None: ...
+
+class OnlineMeetingByJoinUrlRequest(_message.Message):
+    __slots__ = ("ctx", "client_id", "join_web_url")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    CLIENT_ID_FIELD_NUMBER: _ClassVar[int]
+    JOIN_WEB_URL_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    client_id: str
+    join_web_url: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., client_id: _Optional[str] = ..., join_web_url: _Optional[str] = ...) -> None: ...
+
+class OnlineMeetingRequest(_message.Message):
+    __slots__ = ("ctx", "client_id", "meeting_id")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    CLIENT_ID_FIELD_NUMBER: _ClassVar[int]
+    MEETING_ID_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    client_id: str
+    meeting_id: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., client_id: _Optional[str] = ..., meeting_id: _Optional[str] = ...) -> None: ...
+
+class ListRecordingsResponse(_message.Message):
+    __slots__ = ("recordings",)
+    RECORDINGS_FIELD_NUMBER: _ClassVar[int]
+    recordings: _containers.RepeatedCompositeFieldContainer[CallRecording]
+    def __init__(self, recordings: _Optional[_Iterable[_Union[CallRecording, _Mapping]]] = ...) -> None: ...
+
+class ListTranscriptsResponse(_message.Message):
+    __slots__ = ("transcripts",)
+    TRANSCRIPTS_FIELD_NUMBER: _ClassVar[int]
+    transcripts: _containers.RepeatedCompositeFieldContainer[CallTranscript]
+    def __init__(self, transcripts: _Optional[_Iterable[_Union[CallTranscript, _Mapping]]] = ...) -> None: ...
+
+class TranscriptRef(_message.Message):
+    __slots__ = ("ctx", "client_id", "meeting_id", "transcript_id")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    CLIENT_ID_FIELD_NUMBER: _ClassVar[int]
+    MEETING_ID_FIELD_NUMBER: _ClassVar[int]
+    TRANSCRIPT_ID_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    client_id: str
+    meeting_id: str
+    transcript_id: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., client_id: _Optional[str] = ..., meeting_id: _Optional[str] = ..., transcript_id: _Optional[str] = ...) -> None: ...
+
+class TranscriptContent(_message.Message):
+    __slots__ = ("vtt", "content_type")
+    VTT_FIELD_NUMBER: _ClassVar[int]
+    CONTENT_TYPE_FIELD_NUMBER: _ClassVar[int]
+    vtt: bytes
+    content_type: str
+    def __init__(self, vtt: _Optional[bytes] = ..., content_type: _Optional[str] = ...) -> None: ...

@@ -90,6 +90,29 @@ public object O365GatewayServiceGrpcKt {
     @JvmStatic
     get() = O365GatewayServiceGrpc.getCreateCalendarEventMethod()
 
+  public val getOnlineMeetingByJoinUrlMethod:
+      MethodDescriptor<OnlineMeetingByJoinUrlRequest, OnlineMeeting>
+    @JvmStatic
+    get() = O365GatewayServiceGrpc.getGetOnlineMeetingByJoinUrlMethod()
+
+  public val getOnlineMeetingMethod: MethodDescriptor<OnlineMeetingRequest, OnlineMeeting>
+    @JvmStatic
+    get() = O365GatewayServiceGrpc.getGetOnlineMeetingMethod()
+
+  public val listMeetingRecordingsMethod:
+      MethodDescriptor<OnlineMeetingRequest, ListRecordingsResponse>
+    @JvmStatic
+    get() = O365GatewayServiceGrpc.getListMeetingRecordingsMethod()
+
+  public val listMeetingTranscriptsMethod:
+      MethodDescriptor<OnlineMeetingRequest, ListTranscriptsResponse>
+    @JvmStatic
+    get() = O365GatewayServiceGrpc.getListMeetingTranscriptsMethod()
+
+  public val downloadTranscriptVttMethod: MethodDescriptor<TranscriptRef, TranscriptContent>
+    @JvmStatic
+    get() = O365GatewayServiceGrpc.getDownloadTranscriptVttMethod()
+
   /**
    * A stub for issuing RPCs to a(n) jervis.o365_gateway.O365GatewayService service as suspending
    * coroutines.
@@ -409,6 +432,116 @@ public object O365GatewayServiceGrpcKt {
       callOptions,
       headers
     )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun getOnlineMeetingByJoinUrl(request: OnlineMeetingByJoinUrlRequest,
+        headers: Metadata = Metadata()): OnlineMeeting = unaryRpc(
+      channel,
+      O365GatewayServiceGrpc.getGetOnlineMeetingByJoinUrlMethod(),
+      request,
+      callOptions,
+      headers
+    )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun getOnlineMeeting(request: OnlineMeetingRequest, headers: Metadata =
+        Metadata()): OnlineMeeting = unaryRpc(
+      channel,
+      O365GatewayServiceGrpc.getGetOnlineMeetingMethod(),
+      request,
+      callOptions,
+      headers
+    )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun listMeetingRecordings(request: OnlineMeetingRequest, headers: Metadata =
+        Metadata()): ListRecordingsResponse = unaryRpc(
+      channel,
+      O365GatewayServiceGrpc.getListMeetingRecordingsMethod(),
+      request,
+      callOptions,
+      headers
+    )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun listMeetingTranscripts(request: OnlineMeetingRequest, headers: Metadata =
+        Metadata()): ListTranscriptsResponse = unaryRpc(
+      channel,
+      O365GatewayServiceGrpc.getListMeetingTranscriptsMethod(),
+      request,
+      callOptions,
+      headers
+    )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun downloadTranscriptVtt(request: TranscriptRef, headers: Metadata =
+        Metadata()): TranscriptContent = unaryRpc(
+      channel,
+      O365GatewayServiceGrpc.getDownloadTranscriptVttMethod(),
+      request,
+      callOptions,
+      headers
+    )
   }
 
   /**
@@ -619,6 +752,83 @@ public object O365GatewayServiceGrpcKt {
         = throw
         StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.CreateCalendarEvent is unimplemented"))
 
+    /**
+     * Returns the response to an RPC for
+     * jervis.o365_gateway.O365GatewayService.GetOnlineMeetingByJoinUrl.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun getOnlineMeetingByJoinUrl(request: OnlineMeetingByJoinUrlRequest):
+        OnlineMeeting = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.GetOnlineMeetingByJoinUrl is unimplemented"))
+
+    /**
+     * Returns the response to an RPC for jervis.o365_gateway.O365GatewayService.GetOnlineMeeting.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun getOnlineMeeting(request: OnlineMeetingRequest): OnlineMeeting = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.GetOnlineMeeting is unimplemented"))
+
+    /**
+     * Returns the response to an RPC for
+     * jervis.o365_gateway.O365GatewayService.ListMeetingRecordings.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun listMeetingRecordings(request: OnlineMeetingRequest):
+        ListRecordingsResponse = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.ListMeetingRecordings is unimplemented"))
+
+    /**
+     * Returns the response to an RPC for
+     * jervis.o365_gateway.O365GatewayService.ListMeetingTranscripts.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun listMeetingTranscripts(request: OnlineMeetingRequest):
+        ListTranscriptsResponse = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.ListMeetingTranscripts is unimplemented"))
+
+    /**
+     * Returns the response to an RPC for
+     * jervis.o365_gateway.O365GatewayService.DownloadTranscriptVtt.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun downloadTranscriptVtt(request: TranscriptRef): TranscriptContent = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.DownloadTranscriptVtt is unimplemented"))
+
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(
       context = this.context,
@@ -689,6 +899,31 @@ public object O365GatewayServiceGrpcKt {
       context = this.context,
       descriptor = O365GatewayServiceGrpc.getCreateCalendarEventMethod(),
       implementation = ::createCalendarEvent
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = O365GatewayServiceGrpc.getGetOnlineMeetingByJoinUrlMethod(),
+      implementation = ::getOnlineMeetingByJoinUrl
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = O365GatewayServiceGrpc.getGetOnlineMeetingMethod(),
+      implementation = ::getOnlineMeeting
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = O365GatewayServiceGrpc.getListMeetingRecordingsMethod(),
+      implementation = ::listMeetingRecordings
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = O365GatewayServiceGrpc.getListMeetingTranscriptsMethod(),
+      implementation = ::listMeetingTranscripts
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = O365GatewayServiceGrpc.getDownloadTranscriptVttMethod(),
+      implementation = ::downloadTranscriptVtt
     )).build()
   }
 }

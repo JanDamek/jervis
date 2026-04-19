@@ -459,6 +459,161 @@ public final class O365GatewayServiceGrpc {
     return getCreateCalendarEventMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.OnlineMeetingByJoinUrlRequest,
+      com.jervis.contracts.o365_gateway.OnlineMeeting> getGetOnlineMeetingByJoinUrlMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "GetOnlineMeetingByJoinUrl",
+      requestType = com.jervis.contracts.o365_gateway.OnlineMeetingByJoinUrlRequest.class,
+      responseType = com.jervis.contracts.o365_gateway.OnlineMeeting.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.OnlineMeetingByJoinUrlRequest,
+      com.jervis.contracts.o365_gateway.OnlineMeeting> getGetOnlineMeetingByJoinUrlMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.OnlineMeetingByJoinUrlRequest, com.jervis.contracts.o365_gateway.OnlineMeeting> getGetOnlineMeetingByJoinUrlMethod;
+    if ((getGetOnlineMeetingByJoinUrlMethod = O365GatewayServiceGrpc.getGetOnlineMeetingByJoinUrlMethod) == null) {
+      synchronized (O365GatewayServiceGrpc.class) {
+        if ((getGetOnlineMeetingByJoinUrlMethod = O365GatewayServiceGrpc.getGetOnlineMeetingByJoinUrlMethod) == null) {
+          O365GatewayServiceGrpc.getGetOnlineMeetingByJoinUrlMethod = getGetOnlineMeetingByJoinUrlMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_gateway.OnlineMeetingByJoinUrlRequest, com.jervis.contracts.o365_gateway.OnlineMeeting>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "GetOnlineMeetingByJoinUrl"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.OnlineMeetingByJoinUrlRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.OnlineMeeting.getDefaultInstance()))
+              .setSchemaDescriptor(new O365GatewayServiceMethodDescriptorSupplier("GetOnlineMeetingByJoinUrl"))
+              .build();
+        }
+      }
+    }
+    return getGetOnlineMeetingByJoinUrlMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.OnlineMeetingRequest,
+      com.jervis.contracts.o365_gateway.OnlineMeeting> getGetOnlineMeetingMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "GetOnlineMeeting",
+      requestType = com.jervis.contracts.o365_gateway.OnlineMeetingRequest.class,
+      responseType = com.jervis.contracts.o365_gateway.OnlineMeeting.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.OnlineMeetingRequest,
+      com.jervis.contracts.o365_gateway.OnlineMeeting> getGetOnlineMeetingMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.OnlineMeetingRequest, com.jervis.contracts.o365_gateway.OnlineMeeting> getGetOnlineMeetingMethod;
+    if ((getGetOnlineMeetingMethod = O365GatewayServiceGrpc.getGetOnlineMeetingMethod) == null) {
+      synchronized (O365GatewayServiceGrpc.class) {
+        if ((getGetOnlineMeetingMethod = O365GatewayServiceGrpc.getGetOnlineMeetingMethod) == null) {
+          O365GatewayServiceGrpc.getGetOnlineMeetingMethod = getGetOnlineMeetingMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_gateway.OnlineMeetingRequest, com.jervis.contracts.o365_gateway.OnlineMeeting>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "GetOnlineMeeting"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.OnlineMeetingRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.OnlineMeeting.getDefaultInstance()))
+              .setSchemaDescriptor(new O365GatewayServiceMethodDescriptorSupplier("GetOnlineMeeting"))
+              .build();
+        }
+      }
+    }
+    return getGetOnlineMeetingMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.OnlineMeetingRequest,
+      com.jervis.contracts.o365_gateway.ListRecordingsResponse> getListMeetingRecordingsMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "ListMeetingRecordings",
+      requestType = com.jervis.contracts.o365_gateway.OnlineMeetingRequest.class,
+      responseType = com.jervis.contracts.o365_gateway.ListRecordingsResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.OnlineMeetingRequest,
+      com.jervis.contracts.o365_gateway.ListRecordingsResponse> getListMeetingRecordingsMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.OnlineMeetingRequest, com.jervis.contracts.o365_gateway.ListRecordingsResponse> getListMeetingRecordingsMethod;
+    if ((getListMeetingRecordingsMethod = O365GatewayServiceGrpc.getListMeetingRecordingsMethod) == null) {
+      synchronized (O365GatewayServiceGrpc.class) {
+        if ((getListMeetingRecordingsMethod = O365GatewayServiceGrpc.getListMeetingRecordingsMethod) == null) {
+          O365GatewayServiceGrpc.getListMeetingRecordingsMethod = getListMeetingRecordingsMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_gateway.OnlineMeetingRequest, com.jervis.contracts.o365_gateway.ListRecordingsResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "ListMeetingRecordings"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.OnlineMeetingRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.ListRecordingsResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new O365GatewayServiceMethodDescriptorSupplier("ListMeetingRecordings"))
+              .build();
+        }
+      }
+    }
+    return getListMeetingRecordingsMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.OnlineMeetingRequest,
+      com.jervis.contracts.o365_gateway.ListTranscriptsResponse> getListMeetingTranscriptsMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "ListMeetingTranscripts",
+      requestType = com.jervis.contracts.o365_gateway.OnlineMeetingRequest.class,
+      responseType = com.jervis.contracts.o365_gateway.ListTranscriptsResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.OnlineMeetingRequest,
+      com.jervis.contracts.o365_gateway.ListTranscriptsResponse> getListMeetingTranscriptsMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.OnlineMeetingRequest, com.jervis.contracts.o365_gateway.ListTranscriptsResponse> getListMeetingTranscriptsMethod;
+    if ((getListMeetingTranscriptsMethod = O365GatewayServiceGrpc.getListMeetingTranscriptsMethod) == null) {
+      synchronized (O365GatewayServiceGrpc.class) {
+        if ((getListMeetingTranscriptsMethod = O365GatewayServiceGrpc.getListMeetingTranscriptsMethod) == null) {
+          O365GatewayServiceGrpc.getListMeetingTranscriptsMethod = getListMeetingTranscriptsMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_gateway.OnlineMeetingRequest, com.jervis.contracts.o365_gateway.ListTranscriptsResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "ListMeetingTranscripts"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.OnlineMeetingRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.ListTranscriptsResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new O365GatewayServiceMethodDescriptorSupplier("ListMeetingTranscripts"))
+              .build();
+        }
+      }
+    }
+    return getListMeetingTranscriptsMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.TranscriptRef,
+      com.jervis.contracts.o365_gateway.TranscriptContent> getDownloadTranscriptVttMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "DownloadTranscriptVtt",
+      requestType = com.jervis.contracts.o365_gateway.TranscriptRef.class,
+      responseType = com.jervis.contracts.o365_gateway.TranscriptContent.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.TranscriptRef,
+      com.jervis.contracts.o365_gateway.TranscriptContent> getDownloadTranscriptVttMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.TranscriptRef, com.jervis.contracts.o365_gateway.TranscriptContent> getDownloadTranscriptVttMethod;
+    if ((getDownloadTranscriptVttMethod = O365GatewayServiceGrpc.getDownloadTranscriptVttMethod) == null) {
+      synchronized (O365GatewayServiceGrpc.class) {
+        if ((getDownloadTranscriptVttMethod = O365GatewayServiceGrpc.getDownloadTranscriptVttMethod) == null) {
+          O365GatewayServiceGrpc.getDownloadTranscriptVttMethod = getDownloadTranscriptVttMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_gateway.TranscriptRef, com.jervis.contracts.o365_gateway.TranscriptContent>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "DownloadTranscriptVtt"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.TranscriptRef.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.TranscriptContent.getDefaultInstance()))
+              .setSchemaDescriptor(new O365GatewayServiceMethodDescriptorSupplier("DownloadTranscriptVtt"))
+              .build();
+        }
+      }
+    }
+    return getDownloadTranscriptVttMethod;
+  }
+
   /**
    * Creates a new async stub that supports all call types for the service
    */
@@ -628,6 +783,47 @@ public final class O365GatewayServiceGrpc {
     default void createCalendarEvent(com.jervis.contracts.o365_gateway.CreateCalendarEventRequest request,
         io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.CalendarEvent> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getCreateCalendarEventMethod(), responseObserver);
+    }
+
+    /**
+     * <pre>
+     * === V5e - Online meetings ================================================
+     * Part of the O365 umbrella: online meetings are a resource inside O365,
+     * not a separate service. All five RPCs live here so consumers dial one
+     * channel for everything meeting-related.
+     * </pre>
+     */
+    default void getOnlineMeetingByJoinUrl(com.jervis.contracts.o365_gateway.OnlineMeetingByJoinUrlRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.OnlineMeeting> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetOnlineMeetingByJoinUrlMethod(), responseObserver);
+    }
+
+    /**
+     */
+    default void getOnlineMeeting(com.jervis.contracts.o365_gateway.OnlineMeetingRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.OnlineMeeting> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetOnlineMeetingMethod(), responseObserver);
+    }
+
+    /**
+     */
+    default void listMeetingRecordings(com.jervis.contracts.o365_gateway.OnlineMeetingRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ListRecordingsResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getListMeetingRecordingsMethod(), responseObserver);
+    }
+
+    /**
+     */
+    default void listMeetingTranscripts(com.jervis.contracts.o365_gateway.OnlineMeetingRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ListTranscriptsResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getListMeetingTranscriptsMethod(), responseObserver);
+    }
+
+    /**
+     */
+    default void downloadTranscriptVtt(com.jervis.contracts.o365_gateway.TranscriptRef request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.TranscriptContent> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getDownloadTranscriptVttMethod(), responseObserver);
     }
   }
 
@@ -804,6 +1000,52 @@ public final class O365GatewayServiceGrpc {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getCreateCalendarEventMethod(), getCallOptions()), request, responseObserver);
     }
+
+    /**
+     * <pre>
+     * === V5e - Online meetings ================================================
+     * Part of the O365 umbrella: online meetings are a resource inside O365,
+     * not a separate service. All five RPCs live here so consumers dial one
+     * channel for everything meeting-related.
+     * </pre>
+     */
+    public void getOnlineMeetingByJoinUrl(com.jervis.contracts.o365_gateway.OnlineMeetingByJoinUrlRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.OnlineMeeting> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetOnlineMeetingByJoinUrlMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getOnlineMeeting(com.jervis.contracts.o365_gateway.OnlineMeetingRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.OnlineMeeting> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetOnlineMeetingMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void listMeetingRecordings(com.jervis.contracts.o365_gateway.OnlineMeetingRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ListRecordingsResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getListMeetingRecordingsMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void listMeetingTranscripts(com.jervis.contracts.o365_gateway.OnlineMeetingRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ListTranscriptsResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getListMeetingTranscriptsMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void downloadTranscriptVtt(com.jervis.contracts.o365_gateway.TranscriptRef request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.TranscriptContent> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getDownloadTranscriptVttMethod(), getCallOptions()), request, responseObserver);
+    }
   }
 
   /**
@@ -943,6 +1185,47 @@ public final class O365GatewayServiceGrpc {
     public com.jervis.contracts.o365_gateway.CalendarEvent createCalendarEvent(com.jervis.contracts.o365_gateway.CreateCalendarEventRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getCreateCalendarEventMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * === V5e - Online meetings ================================================
+     * Part of the O365 umbrella: online meetings are a resource inside O365,
+     * not a separate service. All five RPCs live here so consumers dial one
+     * channel for everything meeting-related.
+     * </pre>
+     */
+    public com.jervis.contracts.o365_gateway.OnlineMeeting getOnlineMeetingByJoinUrl(com.jervis.contracts.o365_gateway.OnlineMeetingByJoinUrlRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetOnlineMeetingByJoinUrlMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_gateway.OnlineMeeting getOnlineMeeting(com.jervis.contracts.o365_gateway.OnlineMeetingRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetOnlineMeetingMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_gateway.ListRecordingsResponse listMeetingRecordings(com.jervis.contracts.o365_gateway.OnlineMeetingRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getListMeetingRecordingsMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_gateway.ListTranscriptsResponse listMeetingTranscripts(com.jervis.contracts.o365_gateway.OnlineMeetingRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getListMeetingTranscriptsMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_gateway.TranscriptContent downloadTranscriptVtt(com.jervis.contracts.o365_gateway.TranscriptRef request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getDownloadTranscriptVttMethod(), getCallOptions(), request);
     }
   }
 
@@ -1098,6 +1381,52 @@ public final class O365GatewayServiceGrpc {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getCreateCalendarEventMethod(), getCallOptions()), request);
     }
+
+    /**
+     * <pre>
+     * === V5e - Online meetings ================================================
+     * Part of the O365 umbrella: online meetings are a resource inside O365,
+     * not a separate service. All five RPCs live here so consumers dial one
+     * channel for everything meeting-related.
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_gateway.OnlineMeeting> getOnlineMeetingByJoinUrl(
+        com.jervis.contracts.o365_gateway.OnlineMeetingByJoinUrlRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetOnlineMeetingByJoinUrlMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_gateway.OnlineMeeting> getOnlineMeeting(
+        com.jervis.contracts.o365_gateway.OnlineMeetingRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetOnlineMeetingMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_gateway.ListRecordingsResponse> listMeetingRecordings(
+        com.jervis.contracts.o365_gateway.OnlineMeetingRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getListMeetingRecordingsMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_gateway.ListTranscriptsResponse> listMeetingTranscripts(
+        com.jervis.contracts.o365_gateway.OnlineMeetingRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getListMeetingTranscriptsMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_gateway.TranscriptContent> downloadTranscriptVtt(
+        com.jervis.contracts.o365_gateway.TranscriptRef request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getDownloadTranscriptVttMethod(), getCallOptions()), request);
+    }
   }
 
   private static final int METHODID_REQUEST = 0;
@@ -1114,6 +1443,11 @@ public final class O365GatewayServiceGrpc {
   private static final int METHODID_SEND_MAIL = 11;
   private static final int METHODID_LIST_CALENDAR_EVENTS = 12;
   private static final int METHODID_CREATE_CALENDAR_EVENT = 13;
+  private static final int METHODID_GET_ONLINE_MEETING_BY_JOIN_URL = 14;
+  private static final int METHODID_GET_ONLINE_MEETING = 15;
+  private static final int METHODID_LIST_MEETING_RECORDINGS = 16;
+  private static final int METHODID_LIST_MEETING_TRANSCRIPTS = 17;
+  private static final int METHODID_DOWNLOAD_TRANSCRIPT_VTT = 18;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -1187,6 +1521,26 @@ public final class O365GatewayServiceGrpc {
         case METHODID_CREATE_CALENDAR_EVENT:
           serviceImpl.createCalendarEvent((com.jervis.contracts.o365_gateway.CreateCalendarEventRequest) request,
               (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.CalendarEvent>) responseObserver);
+          break;
+        case METHODID_GET_ONLINE_MEETING_BY_JOIN_URL:
+          serviceImpl.getOnlineMeetingByJoinUrl((com.jervis.contracts.o365_gateway.OnlineMeetingByJoinUrlRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.OnlineMeeting>) responseObserver);
+          break;
+        case METHODID_GET_ONLINE_MEETING:
+          serviceImpl.getOnlineMeeting((com.jervis.contracts.o365_gateway.OnlineMeetingRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.OnlineMeeting>) responseObserver);
+          break;
+        case METHODID_LIST_MEETING_RECORDINGS:
+          serviceImpl.listMeetingRecordings((com.jervis.contracts.o365_gateway.OnlineMeetingRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ListRecordingsResponse>) responseObserver);
+          break;
+        case METHODID_LIST_MEETING_TRANSCRIPTS:
+          serviceImpl.listMeetingTranscripts((com.jervis.contracts.o365_gateway.OnlineMeetingRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ListTranscriptsResponse>) responseObserver);
+          break;
+        case METHODID_DOWNLOAD_TRANSCRIPT_VTT:
+          serviceImpl.downloadTranscriptVtt((com.jervis.contracts.o365_gateway.TranscriptRef) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.TranscriptContent>) responseObserver);
           break;
         default:
           throw new AssertionError();
@@ -1304,6 +1658,41 @@ public final class O365GatewayServiceGrpc {
               com.jervis.contracts.o365_gateway.CreateCalendarEventRequest,
               com.jervis.contracts.o365_gateway.CalendarEvent>(
                 service, METHODID_CREATE_CALENDAR_EVENT)))
+        .addMethod(
+          getGetOnlineMeetingByJoinUrlMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.o365_gateway.OnlineMeetingByJoinUrlRequest,
+              com.jervis.contracts.o365_gateway.OnlineMeeting>(
+                service, METHODID_GET_ONLINE_MEETING_BY_JOIN_URL)))
+        .addMethod(
+          getGetOnlineMeetingMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.o365_gateway.OnlineMeetingRequest,
+              com.jervis.contracts.o365_gateway.OnlineMeeting>(
+                service, METHODID_GET_ONLINE_MEETING)))
+        .addMethod(
+          getListMeetingRecordingsMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.o365_gateway.OnlineMeetingRequest,
+              com.jervis.contracts.o365_gateway.ListRecordingsResponse>(
+                service, METHODID_LIST_MEETING_RECORDINGS)))
+        .addMethod(
+          getListMeetingTranscriptsMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.o365_gateway.OnlineMeetingRequest,
+              com.jervis.contracts.o365_gateway.ListTranscriptsResponse>(
+                service, METHODID_LIST_MEETING_TRANSCRIPTS)))
+        .addMethod(
+          getDownloadTranscriptVttMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.o365_gateway.TranscriptRef,
+              com.jervis.contracts.o365_gateway.TranscriptContent>(
+                service, METHODID_DOWNLOAD_TRANSCRIPT_VTT)))
         .build();
   }
 
@@ -1366,6 +1755,11 @@ public final class O365GatewayServiceGrpc {
               .addMethod(getSendMailMethod())
               .addMethod(getListCalendarEventsMethod())
               .addMethod(getCreateCalendarEventMethod())
+              .addMethod(getGetOnlineMeetingByJoinUrlMethod())
+              .addMethod(getGetOnlineMeetingMethod())
+              .addMethod(getListMeetingRecordingsMethod())
+              .addMethod(getListMeetingTranscriptsMethod())
+              .addMethod(getDownloadTranscriptVttMethod())
               .build();
         }
       }

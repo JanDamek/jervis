@@ -41,6 +41,16 @@ service O365GatewayService {
   // === V5d - Calendar =======================================================
   rpc ListCalendarEvents(ListCalendarEventsRequest) returns (ListCalendarEventsResponse);
   rpc CreateCalendarEvent(CreateCalendarEventRequest) returns (CalendarEvent);
+
+  // === V5e - Online meetings ================================================
+  // Part of the O365 umbrella: online meetings are a resource inside O365,
+  // not a separate service. All five RPCs live here so consumers dial one
+  // channel for everything meeting-related.
+  rpc GetOnlineMeetingByJoinUrl(OnlineMeetingByJoinUrlRequest) returns (OnlineMeeting);
+  rpc GetOnlineMeeting(OnlineMeetingRequest) returns (OnlineMeeting);
+  rpc ListMeetingRecordings(OnlineMeetingRequest) returns (ListRecordingsResponse);
+  rpc ListMeetingTranscripts(OnlineMeetingRequest) returns (ListTranscriptsResponse);
+  rpc DownloadTranscriptVtt(TranscriptRef) returns (TranscriptContent);
 }
 
 // ============================================================================
@@ -344,4 +354,83 @@ message CreateCalendarEventRequest {
   Location location = 7;
   repeated Attendee attendees = 8;
   bool is_online_meeting = 9;
+}
+
+// ============================================================================
+// Online meetings (V5e) — Microsoft Graph me/onlineMeetings
+// ============================================================================
+
+message ChatInfo {
+  string thread_id = 1;              // reusable as chatId in me/chats/{chatId}
+  string message_id = 2;
+  string reply_chain_message_id = 3;
+}
+
+message MeetingParticipant {
+  GraphUser user = 1;
+  string role = 2;
+  string upn = 3;
+}
+
+message MeetingParticipants {
+  MeetingParticipant organizer = 1;
+  repeated MeetingParticipant attendees = 2;
+}
+
+message OnlineMeeting {
+  string id = 1;
+  string join_web_url = 2;
+  string subject = 3;
+  string start_date_time = 4;
+  string end_date_time = 5;
+  ChatInfo chat_info = 6;
+  MeetingParticipants participants = 7;
+}
+
+message CallRecording {
+  string id = 1;
+  string meeting_id = 2;
+  string call_id = 3;
+  string created_date_time = 4;
+  string recording_content_url = 5;
+  string content_correlation_id = 6;
+}
+
+message CallTranscript {
+  string id = 1;
+  string meeting_id = 2;
+  string created_date_time = 3;
+  string transcript_content_url = 4;
+}
+
+message OnlineMeetingByJoinUrlRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string join_web_url = 3;
+}
+
+message OnlineMeetingRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string meeting_id = 3;
+}
+
+message ListRecordingsResponse {
+  repeated CallRecording recordings = 1;
+}
+
+message ListTranscriptsResponse {
+  repeated CallTranscript transcripts = 1;
+}
+
+message TranscriptRef {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string meeting_id = 3;
+  string transcript_id = 4;
+}
+
+message TranscriptContent {
+  bytes vtt = 1;                     // raw VTT text, binary-safe
+  string content_type = 2;           // "text/vtt"
 }
