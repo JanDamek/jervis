@@ -619,3 +619,97 @@ class TranscriptContent(_message.Message):
     vtt: bytes
     content_type: str
     def __init__(self, vtt: _Optional[bytes] = ..., content_type: _Optional[str] = ...) -> None: ...
+
+class Hashes(_message.Message):
+    __slots__ = ("sha256_hash",)
+    SHA256_HASH_FIELD_NUMBER: _ClassVar[int]
+    sha256_hash: str
+    def __init__(self, sha256_hash: _Optional[str] = ...) -> None: ...
+
+class FileInfo(_message.Message):
+    __slots__ = ("mime_type", "hashes")
+    MIME_TYPE_FIELD_NUMBER: _ClassVar[int]
+    HASHES_FIELD_NUMBER: _ClassVar[int]
+    mime_type: str
+    hashes: Hashes
+    def __init__(self, mime_type: _Optional[str] = ..., hashes: _Optional[_Union[Hashes, _Mapping]] = ...) -> None: ...
+
+class FolderInfo(_message.Message):
+    __slots__ = ("child_count",)
+    CHILD_COUNT_FIELD_NUMBER: _ClassVar[int]
+    child_count: int
+    def __init__(self, child_count: _Optional[int] = ...) -> None: ...
+
+class ItemReference(_message.Message):
+    __slots__ = ("drive_id", "id", "path")
+    DRIVE_ID_FIELD_NUMBER: _ClassVar[int]
+    ID_FIELD_NUMBER: _ClassVar[int]
+    PATH_FIELD_NUMBER: _ClassVar[int]
+    drive_id: str
+    id: str
+    path: str
+    def __init__(self, drive_id: _Optional[str] = ..., id: _Optional[str] = ..., path: _Optional[str] = ...) -> None: ...
+
+class DriveItem(_message.Message):
+    __slots__ = ("id", "name", "size", "created_date_time", "last_modified_date_time", "web_url", "file", "folder", "download_url", "parent_reference")
+    ID_FIELD_NUMBER: _ClassVar[int]
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    SIZE_FIELD_NUMBER: _ClassVar[int]
+    CREATED_DATE_TIME_FIELD_NUMBER: _ClassVar[int]
+    LAST_MODIFIED_DATE_TIME_FIELD_NUMBER: _ClassVar[int]
+    WEB_URL_FIELD_NUMBER: _ClassVar[int]
+    FILE_FIELD_NUMBER: _ClassVar[int]
+    FOLDER_FIELD_NUMBER: _ClassVar[int]
+    DOWNLOAD_URL_FIELD_NUMBER: _ClassVar[int]
+    PARENT_REFERENCE_FIELD_NUMBER: _ClassVar[int]
+    id: str
+    name: str
+    size: int
+    created_date_time: str
+    last_modified_date_time: str
+    web_url: str
+    file: FileInfo
+    folder: FolderInfo
+    download_url: str
+    parent_reference: ItemReference
+    def __init__(self, id: _Optional[str] = ..., name: _Optional[str] = ..., size: _Optional[int] = ..., created_date_time: _Optional[str] = ..., last_modified_date_time: _Optional[str] = ..., web_url: _Optional[str] = ..., file: _Optional[_Union[FileInfo, _Mapping]] = ..., folder: _Optional[_Union[FolderInfo, _Mapping]] = ..., download_url: _Optional[str] = ..., parent_reference: _Optional[_Union[ItemReference, _Mapping]] = ...) -> None: ...
+
+class ListDriveItemsRequest(_message.Message):
+    __slots__ = ("ctx", "client_id", "path", "top")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    CLIENT_ID_FIELD_NUMBER: _ClassVar[int]
+    PATH_FIELD_NUMBER: _ClassVar[int]
+    TOP_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    client_id: str
+    path: str
+    top: int
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., client_id: _Optional[str] = ..., path: _Optional[str] = ..., top: _Optional[int] = ...) -> None: ...
+
+class ListDriveItemsResponse(_message.Message):
+    __slots__ = ("items",)
+    ITEMS_FIELD_NUMBER: _ClassVar[int]
+    items: _containers.RepeatedCompositeFieldContainer[DriveItem]
+    def __init__(self, items: _Optional[_Iterable[_Union[DriveItem, _Mapping]]] = ...) -> None: ...
+
+class DriveItemRequest(_message.Message):
+    __slots__ = ("ctx", "client_id", "item_id")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    CLIENT_ID_FIELD_NUMBER: _ClassVar[int]
+    ITEM_ID_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    client_id: str
+    item_id: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., client_id: _Optional[str] = ..., item_id: _Optional[str] = ...) -> None: ...
+
+class SearchDriveRequest(_message.Message):
+    __slots__ = ("ctx", "client_id", "query", "top")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    CLIENT_ID_FIELD_NUMBER: _ClassVar[int]
+    QUERY_FIELD_NUMBER: _ClassVar[int]
+    TOP_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    client_id: str
+    query: str
+    top: int
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., client_id: _Optional[str] = ..., query: _Optional[str] = ..., top: _Optional[int] = ...) -> None: ...

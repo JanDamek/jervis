@@ -51,6 +51,11 @@ service O365GatewayService {
   rpc ListMeetingRecordings(OnlineMeetingRequest) returns (ListRecordingsResponse);
   rpc ListMeetingTranscripts(OnlineMeetingRequest) returns (ListTranscriptsResponse);
   rpc DownloadTranscriptVtt(TranscriptRef) returns (TranscriptContent);
+
+  // === V5f - Drive (OneDrive / SharePoint) ==================================
+  rpc ListDriveItems(ListDriveItemsRequest) returns (ListDriveItemsResponse);
+  rpc GetDriveItem(DriveItemRequest) returns (DriveItem);
+  rpc SearchDrive(SearchDriveRequest) returns (ListDriveItemsResponse);
 }
 
 // ============================================================================
@@ -433,4 +438,64 @@ message TranscriptRef {
 message TranscriptContent {
   bytes vtt = 1;                     // raw VTT text, binary-safe
   string content_type = 2;           // "text/vtt"
+}
+
+// ============================================================================
+// Drive (OneDrive / SharePoint) (V5f)
+// ============================================================================
+
+message Hashes {
+  string sha256_hash = 1;
+}
+
+message FileInfo {
+  string mime_type = 1;
+  Hashes hashes = 2;
+}
+
+message FolderInfo {
+  int32 child_count = 1;
+}
+
+message ItemReference {
+  string drive_id = 1;
+  string id = 2;
+  string path = 3;
+}
+
+message DriveItem {
+  string id = 1;
+  string name = 2;
+  int64 size = 3;
+  string created_date_time = 4;
+  string last_modified_date_time = 5;
+  string web_url = 6;
+  FileInfo file = 7;                 // unset for folders
+  FolderInfo folder = 8;             // unset for files
+  string download_url = 9;           // @microsoft.graph.downloadUrl
+  ItemReference parent_reference = 10;
+}
+
+message ListDriveItemsRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string path = 3;                   // "root" default
+  int32 top = 4;                     // default 50
+}
+
+message ListDriveItemsResponse {
+  repeated DriveItem items = 1;
+}
+
+message DriveItemRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string item_id = 3;
+}
+
+message SearchDriveRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string query = 3;
+  int32 top = 4;                     // default 25
 }

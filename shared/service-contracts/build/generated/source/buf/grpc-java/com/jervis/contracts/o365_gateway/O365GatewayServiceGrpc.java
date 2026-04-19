@@ -614,6 +614,99 @@ public final class O365GatewayServiceGrpc {
     return getDownloadTranscriptVttMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.ListDriveItemsRequest,
+      com.jervis.contracts.o365_gateway.ListDriveItemsResponse> getListDriveItemsMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "ListDriveItems",
+      requestType = com.jervis.contracts.o365_gateway.ListDriveItemsRequest.class,
+      responseType = com.jervis.contracts.o365_gateway.ListDriveItemsResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.ListDriveItemsRequest,
+      com.jervis.contracts.o365_gateway.ListDriveItemsResponse> getListDriveItemsMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.ListDriveItemsRequest, com.jervis.contracts.o365_gateway.ListDriveItemsResponse> getListDriveItemsMethod;
+    if ((getListDriveItemsMethod = O365GatewayServiceGrpc.getListDriveItemsMethod) == null) {
+      synchronized (O365GatewayServiceGrpc.class) {
+        if ((getListDriveItemsMethod = O365GatewayServiceGrpc.getListDriveItemsMethod) == null) {
+          O365GatewayServiceGrpc.getListDriveItemsMethod = getListDriveItemsMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_gateway.ListDriveItemsRequest, com.jervis.contracts.o365_gateway.ListDriveItemsResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "ListDriveItems"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.ListDriveItemsRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.ListDriveItemsResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new O365GatewayServiceMethodDescriptorSupplier("ListDriveItems"))
+              .build();
+        }
+      }
+    }
+    return getListDriveItemsMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.DriveItemRequest,
+      com.jervis.contracts.o365_gateway.DriveItem> getGetDriveItemMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "GetDriveItem",
+      requestType = com.jervis.contracts.o365_gateway.DriveItemRequest.class,
+      responseType = com.jervis.contracts.o365_gateway.DriveItem.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.DriveItemRequest,
+      com.jervis.contracts.o365_gateway.DriveItem> getGetDriveItemMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.DriveItemRequest, com.jervis.contracts.o365_gateway.DriveItem> getGetDriveItemMethod;
+    if ((getGetDriveItemMethod = O365GatewayServiceGrpc.getGetDriveItemMethod) == null) {
+      synchronized (O365GatewayServiceGrpc.class) {
+        if ((getGetDriveItemMethod = O365GatewayServiceGrpc.getGetDriveItemMethod) == null) {
+          O365GatewayServiceGrpc.getGetDriveItemMethod = getGetDriveItemMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_gateway.DriveItemRequest, com.jervis.contracts.o365_gateway.DriveItem>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "GetDriveItem"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.DriveItemRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.DriveItem.getDefaultInstance()))
+              .setSchemaDescriptor(new O365GatewayServiceMethodDescriptorSupplier("GetDriveItem"))
+              .build();
+        }
+      }
+    }
+    return getGetDriveItemMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.SearchDriveRequest,
+      com.jervis.contracts.o365_gateway.ListDriveItemsResponse> getSearchDriveMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "SearchDrive",
+      requestType = com.jervis.contracts.o365_gateway.SearchDriveRequest.class,
+      responseType = com.jervis.contracts.o365_gateway.ListDriveItemsResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.SearchDriveRequest,
+      com.jervis.contracts.o365_gateway.ListDriveItemsResponse> getSearchDriveMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.SearchDriveRequest, com.jervis.contracts.o365_gateway.ListDriveItemsResponse> getSearchDriveMethod;
+    if ((getSearchDriveMethod = O365GatewayServiceGrpc.getSearchDriveMethod) == null) {
+      synchronized (O365GatewayServiceGrpc.class) {
+        if ((getSearchDriveMethod = O365GatewayServiceGrpc.getSearchDriveMethod) == null) {
+          O365GatewayServiceGrpc.getSearchDriveMethod = getSearchDriveMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_gateway.SearchDriveRequest, com.jervis.contracts.o365_gateway.ListDriveItemsResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "SearchDrive"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.SearchDriveRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.ListDriveItemsResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new O365GatewayServiceMethodDescriptorSupplier("SearchDrive"))
+              .build();
+        }
+      }
+    }
+    return getSearchDriveMethod;
+  }
+
   /**
    * Creates a new async stub that supports all call types for the service
    */
@@ -824,6 +917,30 @@ public final class O365GatewayServiceGrpc {
     default void downloadTranscriptVtt(com.jervis.contracts.o365_gateway.TranscriptRef request,
         io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.TranscriptContent> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getDownloadTranscriptVttMethod(), responseObserver);
+    }
+
+    /**
+     * <pre>
+     * === V5f - Drive (OneDrive / SharePoint) ==================================
+     * </pre>
+     */
+    default void listDriveItems(com.jervis.contracts.o365_gateway.ListDriveItemsRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ListDriveItemsResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getListDriveItemsMethod(), responseObserver);
+    }
+
+    /**
+     */
+    default void getDriveItem(com.jervis.contracts.o365_gateway.DriveItemRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.DriveItem> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetDriveItemMethod(), responseObserver);
+    }
+
+    /**
+     */
+    default void searchDrive(com.jervis.contracts.o365_gateway.SearchDriveRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ListDriveItemsResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getSearchDriveMethod(), responseObserver);
     }
   }
 
@@ -1046,6 +1163,33 @@ public final class O365GatewayServiceGrpc {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getDownloadTranscriptVttMethod(), getCallOptions()), request, responseObserver);
     }
+
+    /**
+     * <pre>
+     * === V5f - Drive (OneDrive / SharePoint) ==================================
+     * </pre>
+     */
+    public void listDriveItems(com.jervis.contracts.o365_gateway.ListDriveItemsRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ListDriveItemsResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getListDriveItemsMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getDriveItem(com.jervis.contracts.o365_gateway.DriveItemRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.DriveItem> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetDriveItemMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void searchDrive(com.jervis.contracts.o365_gateway.SearchDriveRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ListDriveItemsResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getSearchDriveMethod(), getCallOptions()), request, responseObserver);
+    }
   }
 
   /**
@@ -1226,6 +1370,30 @@ public final class O365GatewayServiceGrpc {
     public com.jervis.contracts.o365_gateway.TranscriptContent downloadTranscriptVtt(com.jervis.contracts.o365_gateway.TranscriptRef request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getDownloadTranscriptVttMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * === V5f - Drive (OneDrive / SharePoint) ==================================
+     * </pre>
+     */
+    public com.jervis.contracts.o365_gateway.ListDriveItemsResponse listDriveItems(com.jervis.contracts.o365_gateway.ListDriveItemsRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getListDriveItemsMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_gateway.DriveItem getDriveItem(com.jervis.contracts.o365_gateway.DriveItemRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetDriveItemMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_gateway.ListDriveItemsResponse searchDrive(com.jervis.contracts.o365_gateway.SearchDriveRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getSearchDriveMethod(), getCallOptions(), request);
     }
   }
 
@@ -1427,6 +1595,33 @@ public final class O365GatewayServiceGrpc {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getDownloadTranscriptVttMethod(), getCallOptions()), request);
     }
+
+    /**
+     * <pre>
+     * === V5f - Drive (OneDrive / SharePoint) ==================================
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_gateway.ListDriveItemsResponse> listDriveItems(
+        com.jervis.contracts.o365_gateway.ListDriveItemsRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getListDriveItemsMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_gateway.DriveItem> getDriveItem(
+        com.jervis.contracts.o365_gateway.DriveItemRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetDriveItemMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_gateway.ListDriveItemsResponse> searchDrive(
+        com.jervis.contracts.o365_gateway.SearchDriveRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getSearchDriveMethod(), getCallOptions()), request);
+    }
   }
 
   private static final int METHODID_REQUEST = 0;
@@ -1448,6 +1643,9 @@ public final class O365GatewayServiceGrpc {
   private static final int METHODID_LIST_MEETING_RECORDINGS = 16;
   private static final int METHODID_LIST_MEETING_TRANSCRIPTS = 17;
   private static final int METHODID_DOWNLOAD_TRANSCRIPT_VTT = 18;
+  private static final int METHODID_LIST_DRIVE_ITEMS = 19;
+  private static final int METHODID_GET_DRIVE_ITEM = 20;
+  private static final int METHODID_SEARCH_DRIVE = 21;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -1541,6 +1739,18 @@ public final class O365GatewayServiceGrpc {
         case METHODID_DOWNLOAD_TRANSCRIPT_VTT:
           serviceImpl.downloadTranscriptVtt((com.jervis.contracts.o365_gateway.TranscriptRef) request,
               (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.TranscriptContent>) responseObserver);
+          break;
+        case METHODID_LIST_DRIVE_ITEMS:
+          serviceImpl.listDriveItems((com.jervis.contracts.o365_gateway.ListDriveItemsRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ListDriveItemsResponse>) responseObserver);
+          break;
+        case METHODID_GET_DRIVE_ITEM:
+          serviceImpl.getDriveItem((com.jervis.contracts.o365_gateway.DriveItemRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.DriveItem>) responseObserver);
+          break;
+        case METHODID_SEARCH_DRIVE:
+          serviceImpl.searchDrive((com.jervis.contracts.o365_gateway.SearchDriveRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ListDriveItemsResponse>) responseObserver);
           break;
         default:
           throw new AssertionError();
@@ -1693,6 +1903,27 @@ public final class O365GatewayServiceGrpc {
               com.jervis.contracts.o365_gateway.TranscriptRef,
               com.jervis.contracts.o365_gateway.TranscriptContent>(
                 service, METHODID_DOWNLOAD_TRANSCRIPT_VTT)))
+        .addMethod(
+          getListDriveItemsMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.o365_gateway.ListDriveItemsRequest,
+              com.jervis.contracts.o365_gateway.ListDriveItemsResponse>(
+                service, METHODID_LIST_DRIVE_ITEMS)))
+        .addMethod(
+          getGetDriveItemMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.o365_gateway.DriveItemRequest,
+              com.jervis.contracts.o365_gateway.DriveItem>(
+                service, METHODID_GET_DRIVE_ITEM)))
+        .addMethod(
+          getSearchDriveMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.o365_gateway.SearchDriveRequest,
+              com.jervis.contracts.o365_gateway.ListDriveItemsResponse>(
+                service, METHODID_SEARCH_DRIVE)))
         .build();
   }
 
@@ -1760,6 +1991,9 @@ public final class O365GatewayServiceGrpc {
               .addMethod(getListMeetingRecordingsMethod())
               .addMethod(getListMeetingTranscriptsMethod())
               .addMethod(getDownloadTranscriptVttMethod())
+              .addMethod(getListDriveItemsMethod())
+              .addMethod(getGetDriveItemMethod())
+              .addMethod(getSearchDriveMethod())
               .build();
         }
       }

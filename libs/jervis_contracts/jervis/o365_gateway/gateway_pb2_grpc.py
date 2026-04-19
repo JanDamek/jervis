@@ -138,6 +138,21 @@ class O365GatewayServiceStub(object):
                 request_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.TranscriptRef.SerializeToString,
                 response_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.TranscriptContent.FromString,
                 _registered_method=True)
+        self.ListDriveItems = channel.unary_unary(
+                '/jervis.o365_gateway.O365GatewayService/ListDriveItems',
+                request_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListDriveItemsRequest.SerializeToString,
+                response_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListDriveItemsResponse.FromString,
+                _registered_method=True)
+        self.GetDriveItem = channel.unary_unary(
+                '/jervis.o365_gateway.O365GatewayService/GetDriveItem',
+                request_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.DriveItemRequest.SerializeToString,
+                response_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.DriveItem.FromString,
+                _registered_method=True)
+        self.SearchDrive = channel.unary_unary(
+                '/jervis.o365_gateway.O365GatewayService/SearchDrive',
+                request_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.SearchDriveRequest.SerializeToString,
+                response_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListDriveItemsResponse.FromString,
+                _registered_method=True)
 
 
 class O365GatewayServiceServicer(object):
@@ -275,6 +290,25 @@ class O365GatewayServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ListDriveItems(self, request, context):
+        """=== V5f - Drive (OneDrive / SharePoint) ==================================
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetDriveItem(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def SearchDrive(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_O365GatewayServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -372,6 +406,21 @@ def add_O365GatewayServiceServicer_to_server(servicer, server):
                     servicer.DownloadTranscriptVtt,
                     request_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.TranscriptRef.FromString,
                     response_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.TranscriptContent.SerializeToString,
+            ),
+            'ListDriveItems': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListDriveItems,
+                    request_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListDriveItemsRequest.FromString,
+                    response_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListDriveItemsResponse.SerializeToString,
+            ),
+            'GetDriveItem': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetDriveItem,
+                    request_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.DriveItemRequest.FromString,
+                    response_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.DriveItem.SerializeToString,
+            ),
+            'SearchDrive': grpc.unary_unary_rpc_method_handler(
+                    servicer.SearchDrive,
+                    request_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.SearchDriveRequest.FromString,
+                    response_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListDriveItemsResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -896,6 +945,87 @@ class O365GatewayService(object):
             '/jervis.o365_gateway.O365GatewayService/DownloadTranscriptVtt',
             jervis_dot_o365__gateway_dot_gateway__pb2.TranscriptRef.SerializeToString,
             jervis_dot_o365__gateway_dot_gateway__pb2.TranscriptContent.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListDriveItems(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.o365_gateway.O365GatewayService/ListDriveItems',
+            jervis_dot_o365__gateway_dot_gateway__pb2.ListDriveItemsRequest.SerializeToString,
+            jervis_dot_o365__gateway_dot_gateway__pb2.ListDriveItemsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetDriveItem(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.o365_gateway.O365GatewayService/GetDriveItem',
+            jervis_dot_o365__gateway_dot_gateway__pb2.DriveItemRequest.SerializeToString,
+            jervis_dot_o365__gateway_dot_gateway__pb2.DriveItem.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SearchDrive(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.o365_gateway.O365GatewayService/SearchDrive',
+            jervis_dot_o365__gateway_dot_gateway__pb2.SearchDriveRequest.SerializeToString,
+            jervis_dot_o365__gateway_dot_gateway__pb2.ListDriveItemsResponse.FromString,
             options,
             channel_credentials,
             insecure,

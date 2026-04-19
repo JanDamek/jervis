@@ -340,6 +340,49 @@ async def download_transcript_vtt(
     return bytes(resp.vtt)
 
 
+# === V5f — Drive (OneDrive / SharePoint) typed ==============================
+
+async def list_drive_items(
+    client_id: str, path: str = "root", top: int = 50, timeout: float = 30.0,
+) -> list[gateway_pb2.DriveItem]:
+    stub = _get_stub()
+    req = gateway_pb2.ListDriveItemsRequest(
+        ctx=_ctx(), client_id=client_id, path=path, top=top,
+    )
+    try:
+        resp = await stub.ListDriveItems(req, timeout=timeout)
+    except grpc.aio.AioRpcError as e:
+        raise O365GatewayError(e.code().value[0] if e.code() else 502, e.details() or "")
+    return list(resp.items)
+
+
+async def get_drive_item(
+    client_id: str, item_id: str, timeout: float = 30.0,
+) -> gateway_pb2.DriveItem:
+    stub = _get_stub()
+    req = gateway_pb2.DriveItemRequest(
+        ctx=_ctx(), client_id=client_id, item_id=item_id,
+    )
+    try:
+        return await stub.GetDriveItem(req, timeout=timeout)
+    except grpc.aio.AioRpcError as e:
+        raise O365GatewayError(e.code().value[0] if e.code() else 502, e.details() or "")
+
+
+async def search_drive(
+    client_id: str, query: str, top: int = 25, timeout: float = 30.0,
+) -> list[gateway_pb2.DriveItem]:
+    stub = _get_stub()
+    req = gateway_pb2.SearchDriveRequest(
+        ctx=_ctx(), client_id=client_id, query=query, top=top,
+    )
+    try:
+        resp = await stub.SearchDrive(req, timeout=timeout)
+    except grpc.aio.AioRpcError as e:
+        raise O365GatewayError(e.code().value[0] if e.code() else 502, e.details() or "")
+    return list(resp.items)
+
+
 # === V5d — Calendar typed ===================================================
 
 async def list_calendar_events(

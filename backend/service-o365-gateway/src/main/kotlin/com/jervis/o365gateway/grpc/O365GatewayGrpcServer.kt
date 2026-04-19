@@ -15,6 +15,14 @@ import com.jervis.contracts.o365_gateway.GraphUser as ProtoGraphUser
 import com.jervis.contracts.o365_gateway.CallRecording as ProtoCallRecording
 import com.jervis.contracts.o365_gateway.CallTranscript as ProtoCallTranscript
 import com.jervis.contracts.o365_gateway.ChatInfo as ProtoChatInfo
+import com.jervis.contracts.o365_gateway.DriveItem as ProtoDriveItem
+import com.jervis.contracts.o365_gateway.DriveItemRequest
+import com.jervis.contracts.o365_gateway.FileInfo as ProtoFileInfo
+import com.jervis.contracts.o365_gateway.FolderInfo as ProtoFolderInfo
+import com.jervis.contracts.o365_gateway.Hashes as ProtoHashes
+import com.jervis.contracts.o365_gateway.ItemReference as ProtoItemReference
+import com.jervis.contracts.o365_gateway.ListDriveItemsRequest
+import com.jervis.contracts.o365_gateway.ListDriveItemsResponse
 import com.jervis.contracts.o365_gateway.ListCalendarEventsRequest
 import com.jervis.contracts.o365_gateway.ListCalendarEventsResponse
 import com.jervis.contracts.o365_gateway.ListRecordingsResponse
@@ -25,6 +33,7 @@ import com.jervis.contracts.o365_gateway.MeetingParticipants as ProtoMeetingPart
 import com.jervis.contracts.o365_gateway.OnlineMeeting as ProtoOnlineMeeting
 import com.jervis.contracts.o365_gateway.OnlineMeetingByJoinUrlRequest
 import com.jervis.contracts.o365_gateway.OnlineMeetingRequest
+import com.jervis.contracts.o365_gateway.SearchDriveRequest
 import com.jervis.contracts.o365_gateway.TranscriptContent
 import com.jervis.contracts.o365_gateway.TranscriptRef
 import com.jervis.contracts.o365_gateway.ListChannelMessagesResponse
@@ -65,9 +74,14 @@ import com.jervis.o365gateway.model.GraphCallRecording
 import com.jervis.o365gateway.model.GraphCallTranscript
 import com.jervis.o365gateway.model.GraphChatInfo
 import com.jervis.o365gateway.model.GraphDateTimeTimeZone
+import com.jervis.o365gateway.model.GraphDriveItem
 import com.jervis.o365gateway.model.GraphEmailAddress
 import com.jervis.o365gateway.model.GraphEmailAddressDetail
 import com.jervis.o365gateway.model.GraphEvent
+import com.jervis.o365gateway.model.GraphFileInfo
+import com.jervis.o365gateway.model.GraphFolderInfo
+import com.jervis.o365gateway.model.GraphHashes
+import com.jervis.o365gateway.model.GraphItemReference
 import com.jervis.o365gateway.model.GraphLocation
 import com.jervis.o365gateway.model.GraphMeetingParticipant
 import com.jervis.o365gateway.model.GraphMeetingParticipants
@@ -334,6 +348,32 @@ private class GatewayServicer(
         return TranscriptContent.newBuilder()
             .setVtt(ByteString.copyFrom(vtt))
             .setContentType("text/vtt")
+            .build()
+    }
+
+    // === V5f - Drive (OneDrive / SharePoint) typed ===========================
+
+    override suspend fun listDriveItems(
+        request: ListDriveItemsRequest,
+    ): ListDriveItemsResponse {
+        val top = if (request.top == 0) 50 else request.top
+        val path = request.path.ifBlank { "root" }
+        val items = graphApi.listDriveItems(request.clientId, path, top)
+        return ListDriveItemsResponse.newBuilder()
+            .apply { items.forEach { addItems(it.toProto()) } }
+            .build()
+    }
+
+    override suspend fun getDriveItem(request: DriveItemRequest): ProtoDriveItem {
+        val item = graphApi.getDriveItem(request.clientId, request.itemId)
+        return item.toProto()
+    }
+
+    override suspend fun searchDrive(request: SearchDriveRequest): ListDriveItemsResponse {
+        val top = if (request.top == 0) 25 else request.top
+        val items = graphApi.searchDrive(request.clientId, request.query, top)
+        return ListDriveItemsResponse.newBuilder()
+            .apply { items.forEach { addItems(it.toProto()) } }
             .build()
     }
 
@@ -694,6 +734,47 @@ private fun GraphCallTranscript.toProto(): ProtoCallTranscript =
         .setMeetingId(meetingId.orEmpty())
         .setCreatedDateTime(createdDateTime.orEmpty())
         .setTranscriptContentUrl(transcriptContentUrl.orEmpty())
+        .build()
+
+// === V5f - Drive: Graph DTO -> proto mappers =================================
+
+private fun GraphHashes.toProto(): ProtoHashes =
+    ProtoHashes.newBuilder()
+        .setSha256Hash(sha256Hash.orEmpty())
+        .build()
+
+private fun GraphFileInfo.toProto(): ProtoFileInfo =
+    ProtoFileInfo.newBuilder()
+        .setMimeType(mimeType.orEmpty())
+        .apply { hashes?.let { setHashes(it.toProto()) } }
+        .build()
+
+private fun GraphFolderInfo.toProto(): ProtoFolderInfo =
+    ProtoFolderInfo.newBuilder()
+        .setChildCount(childCount ?: 0)
+        .build()
+
+private fun GraphItemReference.toProto(): ProtoItemReference =
+    ProtoItemReference.newBuilder()
+        .setDriveId(driveId.orEmpty())
+        .setId(id.orEmpty())
+        .setPath(path.orEmpty())
+        .build()
+
+private fun GraphDriveItem.toProto(): ProtoDriveItem =
+    ProtoDriveItem.newBuilder()
+        .setId(id)
+        .setName(name.orEmpty())
+        .setSize(size ?: 0L)
+        .setCreatedDateTime(createdDateTime.orEmpty())
+        .setLastModifiedDateTime(lastModifiedDateTime.orEmpty())
+        .setWebUrl(webUrl.orEmpty())
+        .setDownloadUrl(downloadUrl.orEmpty())
+        .apply {
+            file?.let { setFile(it.toProto()) }
+            folder?.let { setFolder(it.toProto()) }
+            parentReference?.let { setParentReference(it.toProto()) }
+        }
         .build()
 
 private fun GraphEvent.toProto(): ProtoCalendarEvent =

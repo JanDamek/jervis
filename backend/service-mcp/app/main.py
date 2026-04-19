@@ -3067,6 +3067,13 @@ async def o365_calendar_create(
 # ── O365 OneDrive / SharePoint Tools ────────────────────────────────────
 
 
+def _drive_size_str(size: int, is_folder: bool) -> str:
+    if is_folder or size <= 0:
+        return ""
+    kb = size / 1024
+    return f" ({kb:.1f} KB)" if kb < 1024 else f" ({kb / 1024:.1f} MB)"
+
+
 @mcp.tool
 async def o365_files_list(
     client_id: str,
@@ -3074,12 +3081,10 @@ async def o365_files_list(
     top: int = 50,
 ) -> str:
     """List files and folders in OneDrive."""
-    from app.o365_gateway_client import O365GatewayError, o365_request
+    from app.o365_gateway_client import O365GatewayError, list_drive_items
 
     try:
-        items = await o365_request(
-            "GET", f"drive/{client_id}", query={"path": path, "top": top},
-        )
+        items = await list_drive_items(client_id, path=path, top=top)
     except O365GatewayError as e:
         return f"Error ({e.status_code}): {e.body[:300]}"
 
@@ -3087,19 +3092,16 @@ async def o365_files_list(
         return f"No items found at '{path}'."
     lines = []
     for item in items:
-        name = item.get("name", "?")
-        is_folder = item.get("folder") is not None
+        is_folder = item.HasField("folder")
         icon = "[DIR]" if is_folder else "[FILE]"
-        size = ""
-        if not is_folder and item.get("size"):
-            size_kb = item["size"] / 1024
-            size = f" ({size_kb:.1f} KB)" if size_kb < 1024 else f" ({size_kb / 1024:.1f} MB)"
-        modified = item.get("lastModifiedDateTime", "")
-        item_id = item.get("id", "?")
+        size = _drive_size_str(item.size, is_folder)
         child_count = ""
-        if is_folder and item.get("folder", {}).get("childCount") is not None:
-            child_count = f" [{item['folder']['childCount']} items]"
-        lines.append(f"{icon} {name}{size}{child_count} (modified={modified}, id={item_id})")
+        if is_folder and item.folder.child_count:
+            child_count = f" [{item.folder.child_count} items]"
+        lines.append(
+            f"{icon} {item.name or '?'}{size}{child_count} "
+            f"(modified={item.last_modified_date_time}, id={item.id or '?'})"
+        )
     return "\n".join(lines)
 
 
@@ -3113,23 +3115,23 @@ async def o365_files_download(
     Returns the file metadata including download URL. Use the download URL
     to fetch the actual file content.
     """
-    from app.o365_gateway_client import O365GatewayError, o365_request
+    from app.o365_gateway_client import O365GatewayError, get_drive_item
 
     try:
-        item = await o365_request("GET", f"drive/{client_id}/item/{item_id}")
+        item = await get_drive_item(client_id, item_id)
     except O365GatewayError as e:
         return f"Error ({e.status_code}): {e.body[:300]}"
 
     parts = [
-        f"Name: {item.get('name', '?')}",
-        f"Size: {item.get('size', '?')} bytes",
+        f"Name: {item.name or '?'}",
+        f"Size: {item.size} bytes",
     ]
-    if item.get("file"):
-        parts.append(f"MIME type: {item['file'].get('mimeType', '?')}")
-    if item.get("webUrl"):
-        parts.append(f"Web URL: {item['webUrl']}")
-    if item.get("@microsoft.graph.downloadUrl"):
-        parts.append(f"Download URL: {item['@microsoft.graph.downloadUrl']}")
+    if item.HasField("file") and item.file.mime_type:
+        parts.append(f"MIME type: {item.file.mime_type}")
+    if item.web_url:
+        parts.append(f"Web URL: {item.web_url}")
+    if item.download_url:
+        parts.append(f"Download URL: {item.download_url}")
     return "\n".join(parts)
 
 
@@ -3140,12 +3142,10 @@ async def o365_files_search(
     top: int = 25,
 ) -> str:
     """Search for files in OneDrive."""
-    from app.o365_gateway_client import O365GatewayError, o365_request
+    from app.o365_gateway_client import O365GatewayError, search_drive
 
     try:
-        items = await o365_request(
-            "GET", f"drive/{client_id}/search", query={"q": query, "top": top},
-        )
+        items = await search_drive(client_id, query, top)
     except O365GatewayError as e:
         return f"Error ({e.status_code}): {e.body[:300]}"
 
@@ -3153,18 +3153,13 @@ async def o365_files_search(
         return f"No files found for query '{query}'."
     lines = []
     for item in items:
-        name = item.get("name", "?")
-        is_folder = item.get("folder") is not None
+        is_folder = item.HasField("folder")
         icon = "[DIR]" if is_folder else "[FILE]"
-        size = ""
-        if not is_folder and item.get("size"):
-            size_kb = item["size"] / 1024
-            size = f" ({size_kb:.1f} KB)" if size_kb < 1024 else f" ({size_kb / 1024:.1f} MB)"
+        size = _drive_size_str(item.size, is_folder)
         path = ""
-        if item.get("parentReference") and item["parentReference"].get("path"):
-            path = f" in {item['parentReference']['path']}"
-        item_id = item.get("id", "?")
-        lines.append(f"{icon} {name}{size}{path} (id={item_id})")
+        if item.HasField("parent_reference") and item.parent_reference.path:
+            path = f" in {item.parent_reference.path}"
+        lines.append(f"{icon} {item.name or '?'}{size}{path} (id={item.id or '?'})")
     return "\n".join(lines)
 
 
