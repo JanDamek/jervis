@@ -27,11 +27,12 @@ pydantic==2.10.4
 pydantic-settings==2.7.1
 
 # gRPC + Protobuf (pod-to-pod contracts)
-# protobuf must be >=5.34 per libs/jervis_contracts `protobuf>=5.34,<7`.
+# Google protobuf jumps 5.29.x → 6.30.x (5.30-5.33 never released).
+# Stay on the 5.x series for grpcio 1.71 compatibility.
 grpcio==1.71.0
 grpcio-reflection==1.71.0
 grpcio-tools==1.71.0
-protobuf==5.34.2
+protobuf==5.29.5
 
 # MongoDB async + sync
 motor==3.6.0

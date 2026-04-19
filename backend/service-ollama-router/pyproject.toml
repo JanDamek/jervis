@@ -13,7 +13,7 @@ dependencies = [
     "motor>=3.6.0",
     "grpcio>=1.66.0",
     "grpcio-reflection>=1.66.0",
-    "protobuf>=5.34,<7",
+    "protobuf>=5.29,<7",
     "jervis-contracts",
 ]
 

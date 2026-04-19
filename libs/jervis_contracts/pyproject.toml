@@ -11,7 +11,10 @@ dependencies = [
     "grpcio>=1.66,<1.80",
     "grpcio-tools>=1.66,<1.80",
     "grpcio-reflection>=1.66,<1.80",
-    "protobuf>=5.34,<7",
+    # Google skipped 5.30-5.33 — 5.x tops out at 5.29.x, next is 6.30.x.
+    # `>=5.29,<7` keeps us on the 5.x series with grpcio 1.71 (which ships
+    # protos built against 5.x generated code).
+    "protobuf>=5.29,<7",
 ]
 
 [project.optional-dependencies]
