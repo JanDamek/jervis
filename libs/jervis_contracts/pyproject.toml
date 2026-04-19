@@ -6,11 +6,11 @@ build-backend = "setuptools.build_meta"
 name = "jervis-contracts"
 version = "0.1.0"
 description = "Generated Protobuf + gRPC stubs for inter-service contracts in the Jervis monorepo."
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
-    "grpcio>=1.66",
-    "grpcio-tools>=1.66",
-    "grpcio-reflection>=1.66",
+    "grpcio>=1.66,<1.80",
+    "grpcio-tools>=1.66,<1.80",
+    "grpcio-reflection>=1.66,<1.80",
     "protobuf>=5.34,<7",
 ]
 

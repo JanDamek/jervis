@@ -2,7 +2,7 @@
 name = "jervis-joern-mcp"
 version = "0.1.0"
 description = "Jervis Joern MCP stdio bridge — K8s Job dispatcher for Joern CPG analysis."
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "mcp>=1.0.0",
     "httpx>=0.28.0",

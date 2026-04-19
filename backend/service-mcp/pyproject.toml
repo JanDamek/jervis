@@ -2,7 +2,7 @@
 name = "jervis-mcp"
 version = "0.1.0"
 description = "Jervis MCP server — Model Context Protocol bridge. (Kotlin migration candidate)"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "fastmcp>=2.0.0",
     "httpx>=0.28.0",

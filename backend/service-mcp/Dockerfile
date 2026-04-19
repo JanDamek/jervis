@@ -2,12 +2,15 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# Shared cross-service version constraints (SSOT in repo root).
+COPY constraints.txt /constraints.txt
+
 # Pod-to-pod Protobuf contracts package.
 COPY libs/jervis_contracts /libs/jervis_contracts
-RUN pip install --no-cache-dir -e /libs/jervis_contracts
+RUN pip install --no-cache-dir -c /constraints.txt -e /libs/jervis_contracts
 
 COPY backend/service-mcp/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -c /constraints.txt -r requirements.txt
 
 COPY backend/service-mcp/app/ app/
 

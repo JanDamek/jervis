@@ -2,7 +2,7 @@
 name = "jervis-whatsapp-browser"
 version = "0.1.0"
 description = "Jervis WhatsApp Web scraper via Playwright. (Kotlin+Playwright-Java migration candidate)"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn>=0.34.0",

@@ -2,7 +2,7 @@
 name = "jervis-correction"
 version = "0.1.0"
 description = "Jervis transcript correction / text normalization service. (Kotlin migration candidate)"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.6",

@@ -2,7 +2,7 @@
 name = "jervis-document-extraction"
 version = "0.1.0"
 description = "Jervis document extraction — Office / HTML / EPUB / archives. (Kotlin+Apache Tika migration candidate)"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",

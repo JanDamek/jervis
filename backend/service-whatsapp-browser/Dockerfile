@@ -12,11 +12,14 @@ RUN apt-get update --allow-insecure-repositories || true && \
     websockify \
     && rm -rf /var/lib/apt/lists/*
 
+# Shared cross-service version constraints (SSOT in repo root).
+COPY constraints.txt /constraints.txt
+
 COPY libs/jervis_contracts /libs/jervis_contracts
-RUN pip install --no-cache-dir --ignore-installed -e /libs/jervis_contracts
+RUN pip install --no-cache-dir --ignore-installed -c /constraints.txt -e /libs/jervis_contracts
 
 COPY backend/service-whatsapp-browser/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir --ignore-installed -r requirements.txt
+RUN pip install --no-cache-dir --ignore-installed -c /constraints.txt -r requirements.txt
 
 COPY backend/service-whatsapp-browser/app/ app/
 COPY backend/service-whatsapp-browser/entrypoint.sh /entrypoint.sh

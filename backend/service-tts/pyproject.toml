@@ -2,7 +2,7 @@
 name = "jervis-tts"
 version = "0.1.0"
 description = "Jervis TTS service — piper-tts synthesis. (Stays Python — ML framework binding)"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.6",
     "uvicorn[standard]>=0.34.0",

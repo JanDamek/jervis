@@ -14,12 +14,15 @@ RUN apt-get update --allow-insecure-repositories || true && \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
+# Shared cross-service version constraints (SSOT in repo root).
+COPY constraints.txt /constraints.txt
+
 # Pod-to-pod Protobuf contracts.
 COPY libs/jervis_contracts /libs/jervis_contracts
-RUN pip install --no-cache-dir --ignore-installed -e /libs/jervis_contracts
+RUN pip install --no-cache-dir --ignore-installed -c /constraints.txt -e /libs/jervis_contracts
 
 COPY backend/service-o365-browser-pool/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir --ignore-installed -r requirements.txt
+RUN pip install --no-cache-dir --ignore-installed -c /constraints.txt -r requirements.txt
 
 COPY backend/service-o365-browser-pool/app/ app/
 COPY backend/service-o365-browser-pool/entrypoint.sh /entrypoint.sh

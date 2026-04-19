@@ -1,0 +1,34 @@
+# Jervis monorepo — shared Python dependency version constraints.
+#
+# Single source of truth for versions of libraries that appear in multiple
+# service requirements.txt files. Per-service requirements.txt keeps `>=`
+# (flexible) entries; Docker builds pin them via `pip install -c` against
+# this file so every service resolves the same version.
+#
+# Update here, rebuild all services — no per-service drift.
+#
+# Usage in service Dockerfile:
+#   COPY constraints.txt /constraints.txt
+#   RUN pip install --no-cache-dir -r requirements.txt -c /constraints.txt
+#
+# Dev workspace (uv sync) picks these up via root [tool.uv] constraint-dependencies.
+
+# Web / ASGI
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+httpx==0.28.1
+starlette==0.41.3
+
+# Data validation / config
+pydantic==2.10.4
+pydantic-settings==2.7.1
+
+# gRPC + Protobuf (pod-to-pod contracts)
+grpcio==1.71.0
+grpcio-reflection==1.71.0
+grpcio-tools==1.71.0
+protobuf==5.29.5
+
+# MongoDB async + sync
+motor==3.6.0
+pymongo==4.10.1
