@@ -27,36 +27,6 @@ public final class O365GatewayProto extends com.google.protobuf.GeneratedFile {
         (com.google.protobuf.ExtensionRegistryLite) registry);
   }
   static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_jervis_o365_gateway_O365Request_descriptor;
-  static final 
-    com.google.protobuf.GeneratedMessage.FieldAccessorTable
-      internal_static_jervis_o365_gateway_O365Request_fieldAccessorTable;
-  static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_jervis_o365_gateway_O365Request_QueryEntry_descriptor;
-  static final 
-    com.google.protobuf.GeneratedMessage.FieldAccessorTable
-      internal_static_jervis_o365_gateway_O365Request_QueryEntry_fieldAccessorTable;
-  static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_jervis_o365_gateway_O365Response_descriptor;
-  static final 
-    com.google.protobuf.GeneratedMessage.FieldAccessorTable
-      internal_static_jervis_o365_gateway_O365Response_fieldAccessorTable;
-  static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_jervis_o365_gateway_O365Response_HeadersEntry_descriptor;
-  static final 
-    com.google.protobuf.GeneratedMessage.FieldAccessorTable
-      internal_static_jervis_o365_gateway_O365Response_HeadersEntry_fieldAccessorTable;
-  static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_jervis_o365_gateway_O365BytesResponse_descriptor;
-  static final 
-    com.google.protobuf.GeneratedMessage.FieldAccessorTable
-      internal_static_jervis_o365_gateway_O365BytesResponse_fieldAccessorTable;
-  static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_jervis_o365_gateway_O365BytesResponse_HeadersEntry_descriptor;
-  static final 
-    com.google.protobuf.GeneratedMessage.FieldAccessorTable
-      internal_static_jervis_o365_gateway_O365BytesResponse_HeadersEntry_fieldAccessorTable;
-  static final com.google.protobuf.Descriptors.Descriptor
     internal_static_jervis_o365_gateway_GraphUser_descriptor;
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
@@ -372,668 +342,613 @@ public final class O365GatewayProto extends com.google.protobuf.GeneratedFile {
     java.lang.String[] descriptorData = {
       "\n!jervis/o365_gateway/gateway.proto\022\023jer" +
       "vis.o365_gateway\032\031jervis/common/types.pr" +
-      "oto\"\352\001\n\013O365Request\022*\n\003ctx\030\001 \001(\0132\035.jervi" +
-      "s.common.RequestContext\022\016\n\006method\030\002 \001(\t\022" +
-      "\014\n\004path\030\003 \001(\t\022:\n\005query\030\004 \003(\0132+.jervis.o3" +
-      "65_gateway.O365Request.QueryEntry\022\021\n\tbod" +
-      "y_json\030\005 \001(\t\022\024\n\014content_type\030\006 \001(\t\032,\n\nQu" +
-      "eryEntry\022\013\n\003key\030\001 \001(\t\022\r\n\005value\030\002 \001(\t:\0028\001" +
-      "\"\247\001\n\014O365Response\022\023\n\013status_code\030\001 \001(\005\022\021" +
-      "\n\tbody_json\030\002 \001(\t\022?\n\007headers\030\003 \003(\0132..jer" +
-      "vis.o365_gateway.O365Response.HeadersEnt" +
-      "ry\032.\n\014HeadersEntry\022\013\n\003key\030\001 \001(\t\022\r\n\005value" +
-      "\030\002 \001(\t:\0028\001\"\324\001\n\021O365BytesResponse\022\023\n\013stat" +
-      "us_code\030\001 \001(\005\022\014\n\004body\030\002 \001(\014\022\024\n\014content_t" +
-      "ype\030\003 \001(\t\022\020\n\010filename\030\004 \001(\t\022D\n\007headers\030\005" +
-      " \003(\01323.jervis.o365_gateway.O365BytesResp" +
-      "onse.HeadersEntry\032.\n\014HeadersEntry\022\013\n\003key" +
-      "\030\001 \001(\t\022\r\n\005value\030\002 \001(\t:\0028\001\"-\n\tGraphUser\022\n" +
-      "\n\002id\030\001 \001(\t\022\024\n\014display_name\030\002 \001(\t\"4\n\020Grap" +
-      "hApplication\022\n\n\002id\030\001 \001(\t\022\024\n\014display_name" +
-      "\030\002 \001(\t\"4\n\013MessageBody\022\024\n\014content_type\030\001 " +
-      "\001(\t\022\017\n\007content\030\002 \001(\t\"w\n\013MessageFrom\022,\n\004u" +
-      "ser\030\001 \001(\0132\036.jervis.o365_gateway.GraphUse" +
-      "r\022:\n\013application\030\002 \001(\0132%.jervis.o365_gat" +
-      "eway.GraphApplication\"\231\001\n\016MessagePreview" +
-      "\022\n\n\002id\030\001 \001(\t\022\031\n\021created_date_time\030\002 \001(\t\022" +
-      ".\n\004body\030\003 \001(\0132 .jervis.o365_gateway.Mess" +
-      "ageBody\0220\n\006sender\030\004 \001(\0132 .jervis.o365_ga" +
-      "teway.MessageFrom\"\315\001\n\013ChatMessage\022\n\n\002id\030" +
-      "\001 \001(\t\022\031\n\021created_date_time\030\002 \001(\t\022\037\n\027last" +
-      "_modified_date_time\030\003 \001(\t\022.\n\004body\030\004 \001(\0132" +
-      " .jervis.o365_gateway.MessageBody\0220\n\006sen" +
-      "der\030\005 \001(\0132 .jervis.o365_gateway.MessageF" +
-      "rom\022\024\n\014message_type\030\006 \001(\t\"\271\001\n\013ChatSummar" +
-      "y\022\n\n\002id\030\001 \001(\t\022\r\n\005topic\030\002 \001(\t\022\021\n\tchat_typ" +
-      "e\030\003 \001(\t\022\031\n\021created_date_time\030\004 \001(\t\022\036\n\026la" +
-      "st_updated_date_time\030\005 \001(\t\022A\n\024last_messa" +
-      "ge_preview\030\006 \001(\0132#.jervis.o365_gateway.M" +
-      "essagePreview\"^\n\020ListChatsRequest\022*\n\003ctx" +
+      "oto\"-\n\tGraphUser\022\n\n\002id\030\001 \001(\t\022\024\n\014display_" +
+      "name\030\002 \001(\t\"4\n\020GraphApplication\022\n\n\002id\030\001 \001" +
+      "(\t\022\024\n\014display_name\030\002 \001(\t\"4\n\013MessageBody\022" +
+      "\024\n\014content_type\030\001 \001(\t\022\017\n\007content\030\002 \001(\t\"w" +
+      "\n\013MessageFrom\022,\n\004user\030\001 \001(\0132\036.jervis.o36" +
+      "5_gateway.GraphUser\022:\n\013application\030\002 \001(\013" +
+      "2%.jervis.o365_gateway.GraphApplication\"" +
+      "\231\001\n\016MessagePreview\022\n\n\002id\030\001 \001(\t\022\031\n\021create" +
+      "d_date_time\030\002 \001(\t\022.\n\004body\030\003 \001(\0132 .jervis" +
+      ".o365_gateway.MessageBody\0220\n\006sender\030\004 \001(" +
+      "\0132 .jervis.o365_gateway.MessageFrom\"\315\001\n\013" +
+      "ChatMessage\022\n\n\002id\030\001 \001(\t\022\031\n\021created_date_" +
+      "time\030\002 \001(\t\022\037\n\027last_modified_date_time\030\003 " +
+      "\001(\t\022.\n\004body\030\004 \001(\0132 .jervis.o365_gateway." +
+      "MessageBody\0220\n\006sender\030\005 \001(\0132 .jervis.o36" +
+      "5_gateway.MessageFrom\022\024\n\014message_type\030\006 " +
+      "\001(\t\"\271\001\n\013ChatSummary\022\n\n\002id\030\001 \001(\t\022\r\n\005topic" +
+      "\030\002 \001(\t\022\021\n\tchat_type\030\003 \001(\t\022\031\n\021created_dat" +
+      "e_time\030\004 \001(\t\022\036\n\026last_updated_date_time\030\005" +
+      " \001(\t\022A\n\024last_message_preview\030\006 \001(\0132#.jer" +
+      "vis.o365_gateway.MessagePreview\"^\n\020ListC" +
+      "hatsRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis.common" +
+      ".RequestContext\022\021\n\tclient_id\030\002 \001(\t\022\013\n\003to" +
+      "p\030\003 \001(\005\"D\n\021ListChatsResponse\022/\n\005chats\030\001 " +
+      "\003(\0132 .jervis.o365_gateway.ChatSummary\"n\n" +
+      "\017ReadChatRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis.c" +
+      "ommon.RequestContext\022\021\n\tclient_id\030\002 \001(\t\022" +
+      "\017\n\007chat_id\030\003 \001(\t\022\013\n\003top\030\004 \001(\005\"N\n\030ListCha" +
+      "tMessagesResponse\0222\n\010messages\030\001 \003(\0132 .je" +
+      "rvis.o365_gateway.ChatMessage\"\217\001\n\026SendCh" +
+      "atMessageRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis.c" +
+      "ommon.RequestContext\022\021\n\tclient_id\030\002 \001(\t\022" +
+      "\017\n\007chat_id\030\003 \001(\t\022\017\n\007content\030\004 \001(\t\022\024\n\014con" +
+      "tent_type\030\005 \001(\t\"=\n\004Team\022\n\n\002id\030\001 \001(\t\022\024\n\014d" +
+      "isplay_name\030\002 \001(\t\022\023\n\013description\030\003 \001(\t\"Y" +
+      "\n\007Channel\022\n\n\002id\030\001 \001(\t\022\024\n\014display_name\030\002 " +
+      "\001(\t\022\023\n\013description\030\003 \001(\t\022\027\n\017membership_t" +
+      "ype\030\004 \001(\t\"Q\n\020ListTeamsRequest\022*\n\003ctx\030\001 \001" +
+      "(\0132\035.jervis.common.RequestContext\022\021\n\tcli" +
+      "ent_id\030\002 \001(\t\"=\n\021ListTeamsResponse\022(\n\005tea" +
+      "ms\030\001 \003(\0132\031.jervis.o365_gateway.Team\"e\n\023L" +
+      "istChannelsRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis" +
+      ".common.RequestContext\022\021\n\tclient_id\030\002 \001(" +
+      "\t\022\017\n\007team_id\030\003 \001(\t\"F\n\024ListChannelsRespon" +
+      "se\022.\n\010channels\030\001 \003(\0132\034.jervis.o365_gatew" +
+      "ay.Channel\"\205\001\n\022ReadChannelRequest\022*\n\003ctx" +
       "\030\001 \001(\0132\035.jervis.common.RequestContext\022\021\n" +
-      "\tclient_id\030\002 \001(\t\022\013\n\003top\030\003 \001(\005\"D\n\021ListCha" +
-      "tsResponse\022/\n\005chats\030\001 \003(\0132 .jervis.o365_" +
-      "gateway.ChatSummary\"n\n\017ReadChatRequest\022*" +
-      "\n\003ctx\030\001 \001(\0132\035.jervis.common.RequestConte" +
-      "xt\022\021\n\tclient_id\030\002 \001(\t\022\017\n\007chat_id\030\003 \001(\t\022\013" +
-      "\n\003top\030\004 \001(\005\"N\n\030ListChatMessagesResponse\022" +
-      "2\n\010messages\030\001 \003(\0132 .jervis.o365_gateway." +
-      "ChatMessage\"\217\001\n\026SendChatMessageRequest\022*" +
-      "\n\003ctx\030\001 \001(\0132\035.jervis.common.RequestConte" +
-      "xt\022\021\n\tclient_id\030\002 \001(\t\022\017\n\007chat_id\030\003 \001(\t\022\017" +
-      "\n\007content\030\004 \001(\t\022\024\n\014content_type\030\005 \001(\t\"=\n" +
-      "\004Team\022\n\n\002id\030\001 \001(\t\022\024\n\014display_name\030\002 \001(\t\022" +
-      "\023\n\013description\030\003 \001(\t\"Y\n\007Channel\022\n\n\002id\030\001 " +
-      "\001(\t\022\024\n\014display_name\030\002 \001(\t\022\023\n\013description" +
-      "\030\003 \001(\t\022\027\n\017membership_type\030\004 \001(\t\"Q\n\020ListT" +
-      "eamsRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis.common" +
-      ".RequestContext\022\021\n\tclient_id\030\002 \001(\t\"=\n\021Li" +
-      "stTeamsResponse\022(\n\005teams\030\001 \003(\0132\031.jervis." +
-      "o365_gateway.Team\"e\n\023ListChannelsRequest" +
-      "\022*\n\003ctx\030\001 \001(\0132\035.jervis.common.RequestCon" +
-      "text\022\021\n\tclient_id\030\002 \001(\t\022\017\n\007team_id\030\003 \001(\t" +
-      "\"F\n\024ListChannelsResponse\022.\n\010channels\030\001 \003" +
-      "(\0132\034.jervis.o365_gateway.Channel\"\205\001\n\022Rea" +
-      "dChannelRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis.co" +
-      "mmon.RequestContext\022\021\n\tclient_id\030\002 \001(\t\022\017" +
-      "\n\007team_id\030\003 \001(\t\022\022\n\nchannel_id\030\004 \001(\t\022\013\n\003t" +
-      "op\030\005 \001(\005\"Q\n\033ListChannelMessagesResponse\022" +
-      "2\n\010messages\030\001 \003(\0132 .jervis.o365_gateway." +
-      "ChatMessage\"\246\001\n\031SendChannelMessageReques" +
-      "t\022*\n\003ctx\030\001 \001(\0132\035.jervis.common.RequestCo" +
-      "ntext\022\021\n\tclient_id\030\002 \001(\t\022\017\n\007team_id\030\003 \001(" +
-      "\t\022\022\n\nchannel_id\030\004 \001(\t\022\017\n\007content\030\005 \001(\t\022\024" +
-      "\n\014content_type\030\006 \001(\t\"-\n\014EmailAddress\022\014\n\004" +
-      "name\030\001 \001(\t\022\017\n\007address\030\002 \001(\t\"E\n\tRecipient" +
-      "\0228\n\remail_address\030\001 \001(\0132!.jervis.o365_ga" +
-      "teway.EmailAddress\"1\n\010MailBody\022\024\n\014conten" +
-      "t_type\030\001 \001(\t\022\017\n\007content\030\002 \001(\t\"F\n\nMailSen" +
-      "der\0228\n\remail_address\030\001 \001(\0132!.jervis.o365" +
-      "_gateway.EmailAddress\"\251\003\n\013MailMessage\022\n\n" +
-      "\002id\030\001 \001(\t\022\017\n\007subject\030\002 \001(\t\022\024\n\014body_previ" +
-      "ew\030\003 \001(\t\022+\n\004body\030\004 \001(\0132\035.jervis.o365_gat" +
-      "eway.MailBody\022/\n\006sender\030\005 \001(\0132\037.jervis.o" +
-      "365_gateway.MailSender\0225\n\rto_recipients\030" +
-      "\006 \003(\0132\036.jervis.o365_gateway.Recipient\0225\n" +
-      "\rcc_recipients\030\007 \003(\0132\036.jervis.o365_gatew" +
-      "ay.Recipient\022\032\n\022received_date_time\030\010 \001(\t" +
-      "\022\026\n\016sent_date_time\030\t \001(\t\022\017\n\007is_read\030\n \001(" +
-      "\010\022\020\n\010is_draft\030\013 \001(\010\022\027\n\017has_attachments\030\014" +
-      " \001(\010\022\022\n\nimportance\030\r \001(\t\022\027\n\017conversation" +
-      "_id\030\016 \001(\t\"}\n\017ListMailRequest\022*\n\003ctx\030\001 \001(" +
-      "\0132\035.jervis.common.RequestContext\022\021\n\tclie" +
-      "nt_id\030\002 \001(\t\022\013\n\003top\030\003 \001(\005\022\016\n\006folder\030\004 \001(\t" +
-      "\022\016\n\006filter\030\005 \001(\t\"F\n\020ListMailResponse\0222\n\010" +
-      "messages\030\001 \003(\0132 .jervis.o365_gateway.Mai" +
-      "lMessage\"d\n\017ReadMailRequest\022*\n\003ctx\030\001 \001(\013" +
-      "2\035.jervis.common.RequestContext\022\021\n\tclien" +
-      "t_id\030\002 \001(\t\022\022\n\nmessage_id\030\003 \001(\t\"\233\002\n\022SendM" +
-      "ailRpcRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis.comm" +
-      "on.RequestContext\022\021\n\tclient_id\030\002 \001(\t\022\017\n\007" +
-      "subject\030\003 \001(\t\022+\n\004body\030\004 \001(\0132\035.jervis.o36" +
-      "5_gateway.MailBody\0225\n\rto_recipients\030\005 \003(" +
-      "\0132\036.jervis.o365_gateway.Recipient\0225\n\rcc_" +
-      "recipients\030\006 \003(\0132\036.jervis.o365_gateway.R" +
-      "ecipient\022\032\n\022save_to_sent_items\030\007 \001(\010\"\035\n\013" +
-      "SendMailAck\022\016\n\006result\030\001 \001(\t\"8\n\020DateTimeT" +
-      "imeZone\022\021\n\tdate_time\030\001 \001(\t\022\021\n\ttime_zone\030" +
-      "\002 \001(\t\" \n\010Location\022\024\n\014display_name\030\001 \001(\t\"" +
-      "d\n\010Attendee\0228\n\remail_address\030\001 \001(\0132!.jer" +
-      "vis.o365_gateway.EmailAddress\022\014\n\004type\030\002 " +
-      "\001(\t\022\020\n\010response\030\003 \001(\t\"\364\003\n\rCalendarEvent\022" +
-      "\n\n\002id\030\001 \001(\t\022\017\n\007subject\030\002 \001(\t\022+\n\004body\030\003 \001" +
-      "(\0132\035.jervis.o365_gateway.MailBody\0224\n\005sta" +
-      "rt\030\004 \001(\0132%.jervis.o365_gateway.DateTimeT" +
-      "imeZone\0222\n\003end\030\005 \001(\0132%.jervis.o365_gatew" +
-      "ay.DateTimeTimeZone\022/\n\010location\030\006 \001(\0132\035." +
-      "jervis.o365_gateway.Location\0224\n\torganize" +
-      "r\030\007 \001(\0132!.jervis.o365_gateway.EmailAddre" +
-      "ss\0220\n\tattendees\030\010 \003(\0132\035.jervis.o365_gate" +
-      "way.Attendee\022\022\n\nis_all_day\030\t \001(\010\022\024\n\014is_c" +
-      "ancelled\030\n \001(\010\022\031\n\021is_online_meeting\030\013 \001(" +
-      "\010\022\032\n\022online_meeting_url\030\014 \001(\t\022\017\n\007show_as" +
-      "\030\r \001(\t\022\020\n\010web_link\030\016 \001(\t\022\022\n\nodata_etag\030\017" +
-      " \001(\t\"\227\001\n\031ListCalendarEventsRequest\022*\n\003ct" +
-      "x\030\001 \001(\0132\035.jervis.common.RequestContext\022\021" +
-      "\n\tclient_id\030\002 \001(\t\022\013\n\003top\030\003 \001(\005\022\027\n\017start_" +
-      "date_time\030\004 \001(\t\022\025\n\rend_date_time\030\005 \001(\t\"P" +
-      "\n\032ListCalendarEventsResponse\0222\n\006events\030\001" +
-      " \003(\0132\".jervis.o365_gateway.CalendarEvent" +
-      "\"\201\003\n\032CreateCalendarEventRequest\022*\n\003ctx\030\001" +
+      "\tclient_id\030\002 \001(\t\022\017\n\007team_id\030\003 \001(\t\022\022\n\ncha" +
+      "nnel_id\030\004 \001(\t\022\013\n\003top\030\005 \001(\005\"Q\n\033ListChanne" +
+      "lMessagesResponse\0222\n\010messages\030\001 \003(\0132 .je" +
+      "rvis.o365_gateway.ChatMessage\"\246\001\n\031SendCh" +
+      "annelMessageRequest\022*\n\003ctx\030\001 \001(\0132\035.jervi" +
+      "s.common.RequestContext\022\021\n\tclient_id\030\002 \001" +
+      "(\t\022\017\n\007team_id\030\003 \001(\t\022\022\n\nchannel_id\030\004 \001(\t\022" +
+      "\017\n\007content\030\005 \001(\t\022\024\n\014content_type\030\006 \001(\t\"-" +
+      "\n\014EmailAddress\022\014\n\004name\030\001 \001(\t\022\017\n\007address\030" +
+      "\002 \001(\t\"E\n\tRecipient\0228\n\remail_address\030\001 \001(" +
+      "\0132!.jervis.o365_gateway.EmailAddress\"1\n\010" +
+      "MailBody\022\024\n\014content_type\030\001 \001(\t\022\017\n\007conten" +
+      "t\030\002 \001(\t\"F\n\nMailSender\0228\n\remail_address\030\001" +
+      " \001(\0132!.jervis.o365_gateway.EmailAddress\"" +
+      "\251\003\n\013MailMessage\022\n\n\002id\030\001 \001(\t\022\017\n\007subject\030\002" +
+      " \001(\t\022\024\n\014body_preview\030\003 \001(\t\022+\n\004body\030\004 \001(\013" +
+      "2\035.jervis.o365_gateway.MailBody\022/\n\006sende" +
+      "r\030\005 \001(\0132\037.jervis.o365_gateway.MailSender" +
+      "\0225\n\rto_recipients\030\006 \003(\0132\036.jervis.o365_ga" +
+      "teway.Recipient\0225\n\rcc_recipients\030\007 \003(\0132\036" +
+      ".jervis.o365_gateway.Recipient\022\032\n\022receiv" +
+      "ed_date_time\030\010 \001(\t\022\026\n\016sent_date_time\030\t \001" +
+      "(\t\022\017\n\007is_read\030\n \001(\010\022\020\n\010is_draft\030\013 \001(\010\022\027\n" +
+      "\017has_attachments\030\014 \001(\010\022\022\n\nimportance\030\r \001" +
+      "(\t\022\027\n\017conversation_id\030\016 \001(\t\"}\n\017ListMailR" +
+      "equest\022*\n\003ctx\030\001 \001(\0132\035.jervis.common.Requ" +
+      "estContext\022\021\n\tclient_id\030\002 \001(\t\022\013\n\003top\030\003 \001" +
+      "(\005\022\016\n\006folder\030\004 \001(\t\022\016\n\006filter\030\005 \001(\t\"F\n\020Li" +
+      "stMailResponse\0222\n\010messages\030\001 \003(\0132 .jervi" +
+      "s.o365_gateway.MailMessage\"d\n\017ReadMailRe" +
+      "quest\022*\n\003ctx\030\001 \001(\0132\035.jervis.common.Reque" +
+      "stContext\022\021\n\tclient_id\030\002 \001(\t\022\022\n\nmessage_" +
+      "id\030\003 \001(\t\"\233\002\n\022SendMailRpcRequest\022*\n\003ctx\030\001" +
       " \001(\0132\035.jervis.common.RequestContext\022\021\n\tc" +
       "lient_id\030\002 \001(\t\022\017\n\007subject\030\003 \001(\t\022+\n\004body\030" +
-      "\004 \001(\0132\035.jervis.o365_gateway.MailBody\0224\n\005" +
-      "start\030\005 \001(\0132%.jervis.o365_gateway.DateTi" +
-      "meTimeZone\0222\n\003end\030\006 \001(\0132%.jervis.o365_ga" +
-      "teway.DateTimeTimeZone\022/\n\010location\030\007 \001(\013" +
-      "2\035.jervis.o365_gateway.Location\0220\n\tatten" +
-      "dees\030\010 \003(\0132\035.jervis.o365_gateway.Attende" +
-      "e\022\031\n\021is_online_meeting\030\t \001(\010\"Q\n\010ChatInfo" +
-      "\022\021\n\tthread_id\030\001 \001(\t\022\022\n\nmessage_id\030\002 \001(\t\022" +
-      "\036\n\026reply_chain_message_id\030\003 \001(\t\"]\n\022Meeti" +
-      "ngParticipant\022,\n\004user\030\001 \001(\0132\036.jervis.o36" +
-      "5_gateway.GraphUser\022\014\n\004role\030\002 \001(\t\022\013\n\003upn" +
-      "\030\003 \001(\t\"\215\001\n\023MeetingParticipants\022:\n\torgani" +
-      "zer\030\001 \001(\0132\'.jervis.o365_gateway.MeetingP" +
-      "articipant\022:\n\tattendees\030\002 \003(\0132\'.jervis.o" +
-      "365_gateway.MeetingParticipant\"\344\001\n\rOnlin" +
-      "eMeeting\022\n\n\002id\030\001 \001(\t\022\024\n\014join_web_url\030\002 \001" +
-      "(\t\022\017\n\007subject\030\003 \001(\t\022\027\n\017start_date_time\030\004" +
-      " \001(\t\022\025\n\rend_date_time\030\005 \001(\t\0220\n\tchat_info" +
-      "\030\006 \001(\0132\035.jervis.o365_gateway.ChatInfo\022>\n" +
-      "\014participants\030\007 \001(\0132(.jervis.o365_gatewa" +
-      "y.MeetingParticipants\"\232\001\n\rCallRecording\022" +
-      "\n\n\002id\030\001 \001(\t\022\022\n\nmeeting_id\030\002 \001(\t\022\017\n\007call_" +
-      "id\030\003 \001(\t\022\031\n\021created_date_time\030\004 \001(\t\022\035\n\025r" +
-      "ecording_content_url\030\005 \001(\t\022\036\n\026content_co" +
-      "rrelation_id\030\006 \001(\t\"k\n\016CallTranscript\022\n\n\002" +
-      "id\030\001 \001(\t\022\022\n\nmeeting_id\030\002 \001(\t\022\031\n\021created_" +
-      "date_time\030\003 \001(\t\022\036\n\026transcript_content_ur" +
-      "l\030\004 \001(\t\"t\n\035OnlineMeetingByJoinUrlRequest" +
-      "\022*\n\003ctx\030\001 \001(\0132\035.jervis.common.RequestCon" +
-      "text\022\021\n\tclient_id\030\002 \001(\t\022\024\n\014join_web_url\030" +
-      "\003 \001(\t\"i\n\024OnlineMeetingRequest\022*\n\003ctx\030\001 \001" +
-      "(\0132\035.jervis.common.RequestContext\022\021\n\tcli" +
-      "ent_id\030\002 \001(\t\022\022\n\nmeeting_id\030\003 \001(\t\"P\n\026List" +
-      "RecordingsResponse\0226\n\nrecordings\030\001 \003(\0132\"" +
-      ".jervis.o365_gateway.CallRecording\"S\n\027Li" +
-      "stTranscriptsResponse\0228\n\013transcripts\030\001 \003" +
-      "(\0132#.jervis.o365_gateway.CallTranscript\"" +
-      "y\n\rTranscriptRef\022*\n\003ctx\030\001 \001(\0132\035.jervis.c" +
-      "ommon.RequestContext\022\021\n\tclient_id\030\002 \001(\t\022" +
-      "\022\n\nmeeting_id\030\003 \001(\t\022\025\n\rtranscript_id\030\004 \001" +
-      "(\t\"6\n\021TranscriptContent\022\013\n\003vtt\030\001 \001(\014\022\024\n\014" +
-      "content_type\030\002 \001(\t\"\035\n\006Hashes\022\023\n\013sha256_h" +
-      "ash\030\001 \001(\t\"J\n\010FileInfo\022\021\n\tmime_type\030\001 \001(\t" +
-      "\022+\n\006hashes\030\002 \001(\0132\033.jervis.o365_gateway.H" +
-      "ashes\"!\n\nFolderInfo\022\023\n\013child_count\030\001 \001(\005" +
-      "\";\n\rItemReference\022\020\n\010drive_id\030\001 \001(\t\022\n\n\002i" +
-      "d\030\002 \001(\t\022\014\n\004path\030\003 \001(\t\"\262\002\n\tDriveItem\022\n\n\002i" +
-      "d\030\001 \001(\t\022\014\n\004name\030\002 \001(\t\022\014\n\004size\030\003 \001(\003\022\031\n\021c" +
-      "reated_date_time\030\004 \001(\t\022\037\n\027last_modified_" +
-      "date_time\030\005 \001(\t\022\017\n\007web_url\030\006 \001(\t\022+\n\004file" +
-      "\030\007 \001(\0132\035.jervis.o365_gateway.FileInfo\022/\n" +
-      "\006folder\030\010 \001(\0132\037.jervis.o365_gateway.Fold" +
-      "erInfo\022\024\n\014download_url\030\t \001(\t\022<\n\020parent_r" +
-      "eference\030\n \001(\0132\".jervis.o365_gateway.Ite" +
-      "mReference\"q\n\025ListDriveItemsRequest\022*\n\003c" +
-      "tx\030\001 \001(\0132\035.jervis.common.RequestContext\022" +
-      "\021\n\tclient_id\030\002 \001(\t\022\014\n\004path\030\003 \001(\t\022\013\n\003top\030" +
-      "\004 \001(\005\"G\n\026ListDriveItemsResponse\022-\n\005items" +
-      "\030\001 \003(\0132\036.jervis.o365_gateway.DriveItem\"b" +
-      "\n\020DriveItemRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis" +
+      "\004 \001(\0132\035.jervis.o365_gateway.MailBody\0225\n\r" +
+      "to_recipients\030\005 \003(\0132\036.jervis.o365_gatewa" +
+      "y.Recipient\0225\n\rcc_recipients\030\006 \003(\0132\036.jer" +
+      "vis.o365_gateway.Recipient\022\032\n\022save_to_se" +
+      "nt_items\030\007 \001(\010\"\035\n\013SendMailAck\022\016\n\006result\030" +
+      "\001 \001(\t\"8\n\020DateTimeTimeZone\022\021\n\tdate_time\030\001" +
+      " \001(\t\022\021\n\ttime_zone\030\002 \001(\t\" \n\010Location\022\024\n\014d" +
+      "isplay_name\030\001 \001(\t\"d\n\010Attendee\0228\n\remail_a" +
+      "ddress\030\001 \001(\0132!.jervis.o365_gateway.Email" +
+      "Address\022\014\n\004type\030\002 \001(\t\022\020\n\010response\030\003 \001(\t\"" +
+      "\364\003\n\rCalendarEvent\022\n\n\002id\030\001 \001(\t\022\017\n\007subject" +
+      "\030\002 \001(\t\022+\n\004body\030\003 \001(\0132\035.jervis.o365_gatew" +
+      "ay.MailBody\0224\n\005start\030\004 \001(\0132%.jervis.o365" +
+      "_gateway.DateTimeTimeZone\0222\n\003end\030\005 \001(\0132%" +
+      ".jervis.o365_gateway.DateTimeTimeZone\022/\n" +
+      "\010location\030\006 \001(\0132\035.jervis.o365_gateway.Lo" +
+      "cation\0224\n\torganizer\030\007 \001(\0132!.jervis.o365_" +
+      "gateway.EmailAddress\0220\n\tattendees\030\010 \003(\0132" +
+      "\035.jervis.o365_gateway.Attendee\022\022\n\nis_all" +
+      "_day\030\t \001(\010\022\024\n\014is_cancelled\030\n \001(\010\022\031\n\021is_o" +
+      "nline_meeting\030\013 \001(\010\022\032\n\022online_meeting_ur" +
+      "l\030\014 \001(\t\022\017\n\007show_as\030\r \001(\t\022\020\n\010web_link\030\016 \001" +
+      "(\t\022\022\n\nodata_etag\030\017 \001(\t\"\227\001\n\031ListCalendarE" +
+      "ventsRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis.commo" +
+      "n.RequestContext\022\021\n\tclient_id\030\002 \001(\t\022\013\n\003t" +
+      "op\030\003 \001(\005\022\027\n\017start_date_time\030\004 \001(\t\022\025\n\rend" +
+      "_date_time\030\005 \001(\t\"P\n\032ListCalendarEventsRe" +
+      "sponse\0222\n\006events\030\001 \003(\0132\".jervis.o365_gat" +
+      "eway.CalendarEvent\"\201\003\n\032CreateCalendarEve" +
+      "ntRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis.common.R" +
+      "equestContext\022\021\n\tclient_id\030\002 \001(\t\022\017\n\007subj" +
+      "ect\030\003 \001(\t\022+\n\004body\030\004 \001(\0132\035.jervis.o365_ga" +
+      "teway.MailBody\0224\n\005start\030\005 \001(\0132%.jervis.o" +
+      "365_gateway.DateTimeTimeZone\0222\n\003end\030\006 \001(" +
+      "\0132%.jervis.o365_gateway.DateTimeTimeZone" +
+      "\022/\n\010location\030\007 \001(\0132\035.jervis.o365_gateway" +
+      ".Location\0220\n\tattendees\030\010 \003(\0132\035.jervis.o3" +
+      "65_gateway.Attendee\022\031\n\021is_online_meeting" +
+      "\030\t \001(\010\"Q\n\010ChatInfo\022\021\n\tthread_id\030\001 \001(\t\022\022\n" +
+      "\nmessage_id\030\002 \001(\t\022\036\n\026reply_chain_message" +
+      "_id\030\003 \001(\t\"]\n\022MeetingParticipant\022,\n\004user\030" +
+      "\001 \001(\0132\036.jervis.o365_gateway.GraphUser\022\014\n" +
+      "\004role\030\002 \001(\t\022\013\n\003upn\030\003 \001(\t\"\215\001\n\023MeetingPart" +
+      "icipants\022:\n\torganizer\030\001 \001(\0132\'.jervis.o36" +
+      "5_gateway.MeetingParticipant\022:\n\tattendee" +
+      "s\030\002 \003(\0132\'.jervis.o365_gateway.MeetingPar" +
+      "ticipant\"\344\001\n\rOnlineMeeting\022\n\n\002id\030\001 \001(\t\022\024" +
+      "\n\014join_web_url\030\002 \001(\t\022\017\n\007subject\030\003 \001(\t\022\027\n" +
+      "\017start_date_time\030\004 \001(\t\022\025\n\rend_date_time\030" +
+      "\005 \001(\t\0220\n\tchat_info\030\006 \001(\0132\035.jervis.o365_g" +
+      "ateway.ChatInfo\022>\n\014participants\030\007 \001(\0132(." +
+      "jervis.o365_gateway.MeetingParticipants\"" +
+      "\232\001\n\rCallRecording\022\n\n\002id\030\001 \001(\t\022\022\n\nmeeting" +
+      "_id\030\002 \001(\t\022\017\n\007call_id\030\003 \001(\t\022\031\n\021created_da" +
+      "te_time\030\004 \001(\t\022\035\n\025recording_content_url\030\005" +
+      " \001(\t\022\036\n\026content_correlation_id\030\006 \001(\t\"k\n\016" +
+      "CallTranscript\022\n\n\002id\030\001 \001(\t\022\022\n\nmeeting_id" +
+      "\030\002 \001(\t\022\031\n\021created_date_time\030\003 \001(\t\022\036\n\026tra" +
+      "nscript_content_url\030\004 \001(\t\"t\n\035OnlineMeeti" +
+      "ngByJoinUrlRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis" +
       ".common.RequestContext\022\021\n\tclient_id\030\002 \001(" +
-      "\t\022\017\n\007item_id\030\003 \001(\t\"o\n\022SearchDriveRequest" +
-      "\022*\n\003ctx\030\001 \001(\0132\035.jervis.common.RequestCon" +
-      "text\022\021\n\tclient_id\030\002 \001(\t\022\r\n\005query\030\003 \001(\t\022\013" +
-      "\n\003top\030\004 \001(\005\"U\n\024SessionStatusRequest\022*\n\003c" +
-      "tx\030\001 \001(\0132\035.jervis.common.RequestContext\022" +
-      "\021\n\tclient_id\030\002 \001(\t\"w\n\rSessionStatus\022\021\n\tc" +
-      "lient_id\030\001 \001(\t\022\r\n\005state\030\002 \001(\t\022\025\n\rlast_ac" +
-      "tivity\030\003 \001(\t\022\032\n\022last_token_extract\030\004 \001(\t" +
-      "\022\021\n\tnovnc_url\030\005 \001(\t2\202\022\n\022O365GatewayServi" +
-      "ce\022N\n\007Request\022 .jervis.o365_gateway.O365" +
-      "Request\032!.jervis.o365_gateway.O365Respon" +
-      "se\022X\n\014RequestBytes\022 .jervis.o365_gateway" +
-      ".O365Request\032&.jervis.o365_gateway.O365B" +
-      "ytesResponse\022Z\n\tListChats\022%.jervis.o365_" +
-      "gateway.ListChatsRequest\032&.jervis.o365_g" +
-      "ateway.ListChatsResponse\022_\n\010ReadChat\022$.j" +
-      "ervis.o365_gateway.ReadChatRequest\032-.jer" +
-      "vis.o365_gateway.ListChatMessagesRespons" +
-      "e\022`\n\017SendChatMessage\022+.jervis.o365_gatew" +
-      "ay.SendChatMessageRequest\032 .jervis.o365_" +
-      "gateway.ChatMessage\022Z\n\tListTeams\022%.jervi" +
-      "s.o365_gateway.ListTeamsRequest\032&.jervis" +
-      ".o365_gateway.ListTeamsResponse\022c\n\014ListC" +
-      "hannels\022(.jervis.o365_gateway.ListChanne" +
-      "lsRequest\032).jervis.o365_gateway.ListChan" +
-      "nelsResponse\022h\n\013ReadChannel\022\'.jervis.o36" +
-      "5_gateway.ReadChannelRequest\0320.jervis.o3" +
-      "65_gateway.ListChannelMessagesResponse\022f" +
-      "\n\022SendChannelMessage\022..jervis.o365_gatew" +
-      "ay.SendChannelMessageRequest\032 .jervis.o3" +
-      "65_gateway.ChatMessage\022W\n\010ListMail\022$.jer" +
-      "vis.o365_gateway.ListMailRequest\032%.jervi" +
-      "s.o365_gateway.ListMailResponse\022R\n\010ReadM" +
-      "ail\022$.jervis.o365_gateway.ReadMailReques" +
-      "t\032 .jervis.o365_gateway.MailMessage\022U\n\010S" +
-      "endMail\022\'.jervis.o365_gateway.SendMailRp" +
-      "cRequest\032 .jervis.o365_gateway.SendMailA" +
-      "ck\022u\n\022ListCalendarEvents\022..jervis.o365_g" +
-      "ateway.ListCalendarEventsRequest\032/.jervi" +
-      "s.o365_gateway.ListCalendarEventsRespons" +
-      "e\022j\n\023CreateCalendarEvent\022/.jervis.o365_g" +
-      "ateway.CreateCalendarEventRequest\032\".jerv" +
-      "is.o365_gateway.CalendarEvent\022s\n\031GetOnli" +
-      "neMeetingByJoinUrl\0222.jervis.o365_gateway" +
-      ".OnlineMeetingByJoinUrlRequest\032\".jervis." +
-      "o365_gateway.OnlineMeeting\022a\n\020GetOnlineM" +
-      "eeting\022).jervis.o365_gateway.OnlineMeeti" +
-      "ngRequest\032\".jervis.o365_gateway.OnlineMe" +
-      "eting\022o\n\025ListMeetingRecordings\022).jervis." +
-      "o365_gateway.OnlineMeetingRequest\032+.jerv" +
-      "is.o365_gateway.ListRecordingsResponse\022q" +
-      "\n\026ListMeetingTranscripts\022).jervis.o365_g" +
-      "ateway.OnlineMeetingRequest\032,.jervis.o36" +
-      "5_gateway.ListTranscriptsResponse\022c\n\025Dow" +
-      "nloadTranscriptVtt\022\".jervis.o365_gateway" +
-      ".TranscriptRef\032&.jervis.o365_gateway.Tra" +
-      "nscriptContent\022i\n\016ListDriveItems\022*.jervi" +
-      "s.o365_gateway.ListDriveItemsRequest\032+.j" +
-      "ervis.o365_gateway.ListDriveItemsRespons" +
-      "e\022U\n\014GetDriveItem\022%.jervis.o365_gateway." +
-      "DriveItemRequest\032\036.jervis.o365_gateway.D" +
-      "riveItem\022c\n\013SearchDrive\022\'.jervis.o365_ga" +
-      "teway.SearchDriveRequest\032+.jervis.o365_g" +
-      "ateway.ListDriveItemsResponse\022a\n\020GetSess" +
-      "ionStatus\022).jervis.o365_gateway.SessionS" +
-      "tatusRequest\032\".jervis.o365_gateway.Sessi" +
-      "onStatusB7\n!com.jervis.contracts.o365_ga" +
-      "tewayB\020O365GatewayProtoP\001b\006proto3"
+      "\t\022\024\n\014join_web_url\030\003 \001(\t\"i\n\024OnlineMeeting" +
+      "Request\022*\n\003ctx\030\001 \001(\0132\035.jervis.common.Req" +
+      "uestContext\022\021\n\tclient_id\030\002 \001(\t\022\022\n\nmeetin" +
+      "g_id\030\003 \001(\t\"P\n\026ListRecordingsResponse\0226\n\n" +
+      "recordings\030\001 \003(\0132\".jervis.o365_gateway.C" +
+      "allRecording\"S\n\027ListTranscriptsResponse\022" +
+      "8\n\013transcripts\030\001 \003(\0132#.jervis.o365_gatew" +
+      "ay.CallTranscript\"y\n\rTranscriptRef\022*\n\003ct" +
+      "x\030\001 \001(\0132\035.jervis.common.RequestContext\022\021" +
+      "\n\tclient_id\030\002 \001(\t\022\022\n\nmeeting_id\030\003 \001(\t\022\025\n" +
+      "\rtranscript_id\030\004 \001(\t\"6\n\021TranscriptConten" +
+      "t\022\013\n\003vtt\030\001 \001(\014\022\024\n\014content_type\030\002 \001(\t\"\035\n\006" +
+      "Hashes\022\023\n\013sha256_hash\030\001 \001(\t\"J\n\010FileInfo\022" +
+      "\021\n\tmime_type\030\001 \001(\t\022+\n\006hashes\030\002 \001(\0132\033.jer" +
+      "vis.o365_gateway.Hashes\"!\n\nFolderInfo\022\023\n" +
+      "\013child_count\030\001 \001(\005\";\n\rItemReference\022\020\n\010d" +
+      "rive_id\030\001 \001(\t\022\n\n\002id\030\002 \001(\t\022\014\n\004path\030\003 \001(\t\"" +
+      "\262\002\n\tDriveItem\022\n\n\002id\030\001 \001(\t\022\014\n\004name\030\002 \001(\t\022" +
+      "\014\n\004size\030\003 \001(\003\022\031\n\021created_date_time\030\004 \001(\t" +
+      "\022\037\n\027last_modified_date_time\030\005 \001(\t\022\017\n\007web" +
+      "_url\030\006 \001(\t\022+\n\004file\030\007 \001(\0132\035.jervis.o365_g" +
+      "ateway.FileInfo\022/\n\006folder\030\010 \001(\0132\037.jervis" +
+      ".o365_gateway.FolderInfo\022\024\n\014download_url" +
+      "\030\t \001(\t\022<\n\020parent_reference\030\n \001(\0132\".jervi" +
+      "s.o365_gateway.ItemReference\"q\n\025ListDriv" +
+      "eItemsRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis.comm" +
+      "on.RequestContext\022\021\n\tclient_id\030\002 \001(\t\022\014\n\004" +
+      "path\030\003 \001(\t\022\013\n\003top\030\004 \001(\005\"G\n\026ListDriveItem" +
+      "sResponse\022-\n\005items\030\001 \003(\0132\036.jervis.o365_g" +
+      "ateway.DriveItem\"b\n\020DriveItemRequest\022*\n\003" +
+      "ctx\030\001 \001(\0132\035.jervis.common.RequestContext" +
+      "\022\021\n\tclient_id\030\002 \001(\t\022\017\n\007item_id\030\003 \001(\t\"o\n\022" +
+      "SearchDriveRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis" +
+      ".common.RequestContext\022\021\n\tclient_id\030\002 \001(" +
+      "\t\022\r\n\005query\030\003 \001(\t\022\013\n\003top\030\004 \001(\005\"U\n\024Session" +
+      "StatusRequest\022*\n\003ctx\030\001 \001(\0132\035.jervis.comm" +
+      "on.RequestContext\022\021\n\tclient_id\030\002 \001(\t\"w\n\r" +
+      "SessionStatus\022\021\n\tclient_id\030\001 \001(\t\022\r\n\005stat" +
+      "e\030\002 \001(\t\022\025\n\rlast_activity\030\003 \001(\t\022\032\n\022last_t" +
+      "oken_extract\030\004 \001(\t\022\021\n\tnovnc_url\030\005 \001(\t2\330\020" +
+      "\n\022O365GatewayService\022Z\n\tListChats\022%.jerv" +
+      "is.o365_gateway.ListChatsRequest\032&.jervi" +
+      "s.o365_gateway.ListChatsResponse\022_\n\010Read" +
+      "Chat\022$.jervis.o365_gateway.ReadChatReque" +
+      "st\032-.jervis.o365_gateway.ListChatMessage" +
+      "sResponse\022`\n\017SendChatMessage\022+.jervis.o3" +
+      "65_gateway.SendChatMessageRequest\032 .jerv" +
+      "is.o365_gateway.ChatMessage\022Z\n\tListTeams" +
+      "\022%.jervis.o365_gateway.ListTeamsRequest\032" +
+      "&.jervis.o365_gateway.ListTeamsResponse\022" +
+      "c\n\014ListChannels\022(.jervis.o365_gateway.Li" +
+      "stChannelsRequest\032).jervis.o365_gateway." +
+      "ListChannelsResponse\022h\n\013ReadChannel\022\'.je" +
+      "rvis.o365_gateway.ReadChannelRequest\0320.j" +
+      "ervis.o365_gateway.ListChannelMessagesRe" +
+      "sponse\022f\n\022SendChannelMessage\022..jervis.o3" +
+      "65_gateway.SendChannelMessageRequest\032 .j" +
+      "ervis.o365_gateway.ChatMessage\022W\n\010ListMa" +
+      "il\022$.jervis.o365_gateway.ListMailRequest" +
+      "\032%.jervis.o365_gateway.ListMailResponse\022" +
+      "R\n\010ReadMail\022$.jervis.o365_gateway.ReadMa" +
+      "ilRequest\032 .jervis.o365_gateway.MailMess" +
+      "age\022U\n\010SendMail\022\'.jervis.o365_gateway.Se" +
+      "ndMailRpcRequest\032 .jervis.o365_gateway.S" +
+      "endMailAck\022u\n\022ListCalendarEvents\022..jervi" +
+      "s.o365_gateway.ListCalendarEventsRequest" +
+      "\032/.jervis.o365_gateway.ListCalendarEvent" +
+      "sResponse\022j\n\023CreateCalendarEvent\022/.jervi" +
+      "s.o365_gateway.CreateCalendarEventReques" +
+      "t\032\".jervis.o365_gateway.CalendarEvent\022s\n" +
+      "\031GetOnlineMeetingByJoinUrl\0222.jervis.o365" +
+      "_gateway.OnlineMeetingByJoinUrlRequest\032\"" +
+      ".jervis.o365_gateway.OnlineMeeting\022a\n\020Ge" +
+      "tOnlineMeeting\022).jervis.o365_gateway.Onl" +
+      "ineMeetingRequest\032\".jervis.o365_gateway." +
+      "OnlineMeeting\022o\n\025ListMeetingRecordings\022)" +
+      ".jervis.o365_gateway.OnlineMeetingReques" +
+      "t\032+.jervis.o365_gateway.ListRecordingsRe" +
+      "sponse\022q\n\026ListMeetingTranscripts\022).jervi" +
+      "s.o365_gateway.OnlineMeetingRequest\032,.je" +
+      "rvis.o365_gateway.ListTranscriptsRespons" +
+      "e\022c\n\025DownloadTranscriptVtt\022\".jervis.o365" +
+      "_gateway.TranscriptRef\032&.jervis.o365_gat" +
+      "eway.TranscriptContent\022i\n\016ListDriveItems" +
+      "\022*.jervis.o365_gateway.ListDriveItemsReq" +
+      "uest\032+.jervis.o365_gateway.ListDriveItem" +
+      "sResponse\022U\n\014GetDriveItem\022%.jervis.o365_" +
+      "gateway.DriveItemRequest\032\036.jervis.o365_g" +
+      "ateway.DriveItem\022c\n\013SearchDrive\022\'.jervis" +
+      ".o365_gateway.SearchDriveRequest\032+.jervi" +
+      "s.o365_gateway.ListDriveItemsResponse\022a\n" +
+      "\020GetSessionStatus\022).jervis.o365_gateway." +
+      "SessionStatusRequest\032\".jervis.o365_gatew" +
+      "ay.SessionStatusB7\n!com.jervis.contracts" +
+      ".o365_gatewayB\020O365GatewayProtoP\001b\006proto" +
+      "3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
         new com.google.protobuf.Descriptors.FileDescriptor[] {
           com.jervis.contracts.common.TypesProto.getDescriptor(),
         });
-    internal_static_jervis_o365_gateway_O365Request_descriptor =
-      getDescriptor().getMessageTypes().get(0);
-    internal_static_jervis_o365_gateway_O365Request_fieldAccessorTable = new
-      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-        internal_static_jervis_o365_gateway_O365Request_descriptor,
-        new java.lang.String[] { "Ctx", "Method", "Path", "Query", "BodyJson", "ContentType", });
-    internal_static_jervis_o365_gateway_O365Request_QueryEntry_descriptor =
-      internal_static_jervis_o365_gateway_O365Request_descriptor.getNestedTypes().get(0);
-    internal_static_jervis_o365_gateway_O365Request_QueryEntry_fieldAccessorTable = new
-      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-        internal_static_jervis_o365_gateway_O365Request_QueryEntry_descriptor,
-        new java.lang.String[] { "Key", "Value", });
-    internal_static_jervis_o365_gateway_O365Response_descriptor =
-      getDescriptor().getMessageTypes().get(1);
-    internal_static_jervis_o365_gateway_O365Response_fieldAccessorTable = new
-      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-        internal_static_jervis_o365_gateway_O365Response_descriptor,
-        new java.lang.String[] { "StatusCode", "BodyJson", "Headers", });
-    internal_static_jervis_o365_gateway_O365Response_HeadersEntry_descriptor =
-      internal_static_jervis_o365_gateway_O365Response_descriptor.getNestedTypes().get(0);
-    internal_static_jervis_o365_gateway_O365Response_HeadersEntry_fieldAccessorTable = new
-      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-        internal_static_jervis_o365_gateway_O365Response_HeadersEntry_descriptor,
-        new java.lang.String[] { "Key", "Value", });
-    internal_static_jervis_o365_gateway_O365BytesResponse_descriptor =
-      getDescriptor().getMessageTypes().get(2);
-    internal_static_jervis_o365_gateway_O365BytesResponse_fieldAccessorTable = new
-      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-        internal_static_jervis_o365_gateway_O365BytesResponse_descriptor,
-        new java.lang.String[] { "StatusCode", "Body", "ContentType", "Filename", "Headers", });
-    internal_static_jervis_o365_gateway_O365BytesResponse_HeadersEntry_descriptor =
-      internal_static_jervis_o365_gateway_O365BytesResponse_descriptor.getNestedTypes().get(0);
-    internal_static_jervis_o365_gateway_O365BytesResponse_HeadersEntry_fieldAccessorTable = new
-      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-        internal_static_jervis_o365_gateway_O365BytesResponse_HeadersEntry_descriptor,
-        new java.lang.String[] { "Key", "Value", });
     internal_static_jervis_o365_gateway_GraphUser_descriptor =
-      getDescriptor().getMessageTypes().get(3);
+      getDescriptor().getMessageTypes().get(0);
     internal_static_jervis_o365_gateway_GraphUser_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_GraphUser_descriptor,
         new java.lang.String[] { "Id", "DisplayName", });
     internal_static_jervis_o365_gateway_GraphApplication_descriptor =
-      getDescriptor().getMessageTypes().get(4);
+      getDescriptor().getMessageTypes().get(1);
     internal_static_jervis_o365_gateway_GraphApplication_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_GraphApplication_descriptor,
         new java.lang.String[] { "Id", "DisplayName", });
     internal_static_jervis_o365_gateway_MessageBody_descriptor =
-      getDescriptor().getMessageTypes().get(5);
+      getDescriptor().getMessageTypes().get(2);
     internal_static_jervis_o365_gateway_MessageBody_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_MessageBody_descriptor,
         new java.lang.String[] { "ContentType", "Content", });
     internal_static_jervis_o365_gateway_MessageFrom_descriptor =
-      getDescriptor().getMessageTypes().get(6);
+      getDescriptor().getMessageTypes().get(3);
     internal_static_jervis_o365_gateway_MessageFrom_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_MessageFrom_descriptor,
         new java.lang.String[] { "User", "Application", });
     internal_static_jervis_o365_gateway_MessagePreview_descriptor =
-      getDescriptor().getMessageTypes().get(7);
+      getDescriptor().getMessageTypes().get(4);
     internal_static_jervis_o365_gateway_MessagePreview_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_MessagePreview_descriptor,
         new java.lang.String[] { "Id", "CreatedDateTime", "Body", "Sender", });
     internal_static_jervis_o365_gateway_ChatMessage_descriptor =
-      getDescriptor().getMessageTypes().get(8);
+      getDescriptor().getMessageTypes().get(5);
     internal_static_jervis_o365_gateway_ChatMessage_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_ChatMessage_descriptor,
         new java.lang.String[] { "Id", "CreatedDateTime", "LastModifiedDateTime", "Body", "Sender", "MessageType", });
     internal_static_jervis_o365_gateway_ChatSummary_descriptor =
-      getDescriptor().getMessageTypes().get(9);
+      getDescriptor().getMessageTypes().get(6);
     internal_static_jervis_o365_gateway_ChatSummary_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_ChatSummary_descriptor,
         new java.lang.String[] { "Id", "Topic", "ChatType", "CreatedDateTime", "LastUpdatedDateTime", "LastMessagePreview", });
     internal_static_jervis_o365_gateway_ListChatsRequest_descriptor =
-      getDescriptor().getMessageTypes().get(10);
+      getDescriptor().getMessageTypes().get(7);
     internal_static_jervis_o365_gateway_ListChatsRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_ListChatsRequest_descriptor,
         new java.lang.String[] { "Ctx", "ClientId", "Top", });
     internal_static_jervis_o365_gateway_ListChatsResponse_descriptor =
-      getDescriptor().getMessageTypes().get(11);
+      getDescriptor().getMessageTypes().get(8);
     internal_static_jervis_o365_gateway_ListChatsResponse_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_ListChatsResponse_descriptor,
         new java.lang.String[] { "Chats", });
     internal_static_jervis_o365_gateway_ReadChatRequest_descriptor =
-      getDescriptor().getMessageTypes().get(12);
+      getDescriptor().getMessageTypes().get(9);
     internal_static_jervis_o365_gateway_ReadChatRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_ReadChatRequest_descriptor,
         new java.lang.String[] { "Ctx", "ClientId", "ChatId", "Top", });
     internal_static_jervis_o365_gateway_ListChatMessagesResponse_descriptor =
-      getDescriptor().getMessageTypes().get(13);
+      getDescriptor().getMessageTypes().get(10);
     internal_static_jervis_o365_gateway_ListChatMessagesResponse_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_ListChatMessagesResponse_descriptor,
         new java.lang.String[] { "Messages", });
     internal_static_jervis_o365_gateway_SendChatMessageRequest_descriptor =
-      getDescriptor().getMessageTypes().get(14);
+      getDescriptor().getMessageTypes().get(11);
     internal_static_jervis_o365_gateway_SendChatMessageRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_SendChatMessageRequest_descriptor,
         new java.lang.String[] { "Ctx", "ClientId", "ChatId", "Content", "ContentType", });
     internal_static_jervis_o365_gateway_Team_descriptor =
-      getDescriptor().getMessageTypes().get(15);
+      getDescriptor().getMessageTypes().get(12);
     internal_static_jervis_o365_gateway_Team_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_Team_descriptor,
         new java.lang.String[] { "Id", "DisplayName", "Description", });
     internal_static_jervis_o365_gateway_Channel_descriptor =
-      getDescriptor().getMessageTypes().get(16);
+      getDescriptor().getMessageTypes().get(13);
     internal_static_jervis_o365_gateway_Channel_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_Channel_descriptor,
         new java.lang.String[] { "Id", "DisplayName", "Description", "MembershipType", });
     internal_static_jervis_o365_gateway_ListTeamsRequest_descriptor =
-      getDescriptor().getMessageTypes().get(17);
+      getDescriptor().getMessageTypes().get(14);
     internal_static_jervis_o365_gateway_ListTeamsRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_ListTeamsRequest_descriptor,
         new java.lang.String[] { "Ctx", "ClientId", });
     internal_static_jervis_o365_gateway_ListTeamsResponse_descriptor =
-      getDescriptor().getMessageTypes().get(18);
+      getDescriptor().getMessageTypes().get(15);
     internal_static_jervis_o365_gateway_ListTeamsResponse_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_ListTeamsResponse_descriptor,
         new java.lang.String[] { "Teams", });
     internal_static_jervis_o365_gateway_ListChannelsRequest_descriptor =
-      getDescriptor().getMessageTypes().get(19);
+      getDescriptor().getMessageTypes().get(16);
     internal_static_jervis_o365_gateway_ListChannelsRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_ListChannelsRequest_descriptor,
         new java.lang.String[] { "Ctx", "ClientId", "TeamId", });
     internal_static_jervis_o365_gateway_ListChannelsResponse_descriptor =
-      getDescriptor().getMessageTypes().get(20);
+      getDescriptor().getMessageTypes().get(17);
     internal_static_jervis_o365_gateway_ListChannelsResponse_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_ListChannelsResponse_descriptor,
         new java.lang.String[] { "Channels", });
     internal_static_jervis_o365_gateway_ReadChannelRequest_descriptor =
-      getDescriptor().getMessageTypes().get(21);
+      getDescriptor().getMessageTypes().get(18);
     internal_static_jervis_o365_gateway_ReadChannelRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_ReadChannelRequest_descriptor,
         new java.lang.String[] { "Ctx", "ClientId", "TeamId", "ChannelId", "Top", });
     internal_static_jervis_o365_gateway_ListChannelMessagesResponse_descriptor =
-      getDescriptor().getMessageTypes().get(22);
+      getDescriptor().getMessageTypes().get(19);
     internal_static_jervis_o365_gateway_ListChannelMessagesResponse_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_ListChannelMessagesResponse_descriptor,
         new java.lang.String[] { "Messages", });
     internal_static_jervis_o365_gateway_SendChannelMessageRequest_descriptor =
-      getDescriptor().getMessageTypes().get(23);
+      getDescriptor().getMessageTypes().get(20);
     internal_static_jervis_o365_gateway_SendChannelMessageRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_SendChannelMessageRequest_descriptor,
         new java.lang.String[] { "Ctx", "ClientId", "TeamId", "ChannelId", "Content", "ContentType", });
     internal_static_jervis_o365_gateway_EmailAddress_descriptor =
-      getDescriptor().getMessageTypes().get(24);
+      getDescriptor().getMessageTypes().get(21);
     internal_static_jervis_o365_gateway_EmailAddress_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_EmailAddress_descriptor,
         new java.lang.String[] { "Name", "Address", });
     internal_static_jervis_o365_gateway_Recipient_descriptor =
-      getDescriptor().getMessageTypes().get(25);
+      getDescriptor().getMessageTypes().get(22);
     internal_static_jervis_o365_gateway_Recipient_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_Recipient_descriptor,
         new java.lang.String[] { "EmailAddress", });
     internal_static_jervis_o365_gateway_MailBody_descriptor =
-      getDescriptor().getMessageTypes().get(26);
+      getDescriptor().getMessageTypes().get(23);
     internal_static_jervis_o365_gateway_MailBody_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_MailBody_descriptor,
         new java.lang.String[] { "ContentType", "Content", });
     internal_static_jervis_o365_gateway_MailSender_descriptor =
-      getDescriptor().getMessageTypes().get(27);
+      getDescriptor().getMessageTypes().get(24);
     internal_static_jervis_o365_gateway_MailSender_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_MailSender_descriptor,
         new java.lang.String[] { "EmailAddress", });
     internal_static_jervis_o365_gateway_MailMessage_descriptor =
-      getDescriptor().getMessageTypes().get(28);
+      getDescriptor().getMessageTypes().get(25);
     internal_static_jervis_o365_gateway_MailMessage_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_MailMessage_descriptor,
         new java.lang.String[] { "Id", "Subject", "BodyPreview", "Body", "Sender", "ToRecipients", "CcRecipients", "ReceivedDateTime", "SentDateTime", "IsRead", "IsDraft", "HasAttachments", "Importance", "ConversationId", });
     internal_static_jervis_o365_gateway_ListMailRequest_descriptor =
-      getDescriptor().getMessageTypes().get(29);
+      getDescriptor().getMessageTypes().get(26);
     internal_static_jervis_o365_gateway_ListMailRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_ListMailRequest_descriptor,
         new java.lang.String[] { "Ctx", "ClientId", "Top", "Folder", "Filter", });
     internal_static_jervis_o365_gateway_ListMailResponse_descriptor =
-      getDescriptor().getMessageTypes().get(30);
+      getDescriptor().getMessageTypes().get(27);
     internal_static_jervis_o365_gateway_ListMailResponse_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_ListMailResponse_descriptor,
         new java.lang.String[] { "Messages", });
     internal_static_jervis_o365_gateway_ReadMailRequest_descriptor =
-      getDescriptor().getMessageTypes().get(31);
+      getDescriptor().getMessageTypes().get(28);
     internal_static_jervis_o365_gateway_ReadMailRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_ReadMailRequest_descriptor,
         new java.lang.String[] { "Ctx", "ClientId", "MessageId", });
     internal_static_jervis_o365_gateway_SendMailRpcRequest_descriptor =
-      getDescriptor().getMessageTypes().get(32);
+      getDescriptor().getMessageTypes().get(29);
     internal_static_jervis_o365_gateway_SendMailRpcRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_SendMailRpcRequest_descriptor,
         new java.lang.String[] { "Ctx", "ClientId", "Subject", "Body", "ToRecipients", "CcRecipients", "SaveToSentItems", });
     internal_static_jervis_o365_gateway_SendMailAck_descriptor =
-      getDescriptor().getMessageTypes().get(33);
+      getDescriptor().getMessageTypes().get(30);
     internal_static_jervis_o365_gateway_SendMailAck_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_SendMailAck_descriptor,
         new java.lang.String[] { "Result", });
     internal_static_jervis_o365_gateway_DateTimeTimeZone_descriptor =
-      getDescriptor().getMessageTypes().get(34);
+      getDescriptor().getMessageTypes().get(31);
     internal_static_jervis_o365_gateway_DateTimeTimeZone_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_DateTimeTimeZone_descriptor,
         new java.lang.String[] { "DateTime", "TimeZone", });
     internal_static_jervis_o365_gateway_Location_descriptor =
-      getDescriptor().getMessageTypes().get(35);
+      getDescriptor().getMessageTypes().get(32);
     internal_static_jervis_o365_gateway_Location_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_Location_descriptor,
         new java.lang.String[] { "DisplayName", });
     internal_static_jervis_o365_gateway_Attendee_descriptor =
-      getDescriptor().getMessageTypes().get(36);
+      getDescriptor().getMessageTypes().get(33);
     internal_static_jervis_o365_gateway_Attendee_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_Attendee_descriptor,
         new java.lang.String[] { "EmailAddress", "Type", "Response", });
     internal_static_jervis_o365_gateway_CalendarEvent_descriptor =
-      getDescriptor().getMessageTypes().get(37);
+      getDescriptor().getMessageTypes().get(34);
     internal_static_jervis_o365_gateway_CalendarEvent_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_CalendarEvent_descriptor,
         new java.lang.String[] { "Id", "Subject", "Body", "Start", "End", "Location", "Organizer", "Attendees", "IsAllDay", "IsCancelled", "IsOnlineMeeting", "OnlineMeetingUrl", "ShowAs", "WebLink", "OdataEtag", });
     internal_static_jervis_o365_gateway_ListCalendarEventsRequest_descriptor =
-      getDescriptor().getMessageTypes().get(38);
+      getDescriptor().getMessageTypes().get(35);
     internal_static_jervis_o365_gateway_ListCalendarEventsRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_ListCalendarEventsRequest_descriptor,
         new java.lang.String[] { "Ctx", "ClientId", "Top", "StartDateTime", "EndDateTime", });
     internal_static_jervis_o365_gateway_ListCalendarEventsResponse_descriptor =
-      getDescriptor().getMessageTypes().get(39);
+      getDescriptor().getMessageTypes().get(36);
     internal_static_jervis_o365_gateway_ListCalendarEventsResponse_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_ListCalendarEventsResponse_descriptor,
         new java.lang.String[] { "Events", });
     internal_static_jervis_o365_gateway_CreateCalendarEventRequest_descriptor =
-      getDescriptor().getMessageTypes().get(40);
+      getDescriptor().getMessageTypes().get(37);
     internal_static_jervis_o365_gateway_CreateCalendarEventRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_CreateCalendarEventRequest_descriptor,
         new java.lang.String[] { "Ctx", "ClientId", "Subject", "Body", "Start", "End", "Location", "Attendees", "IsOnlineMeeting", });
     internal_static_jervis_o365_gateway_ChatInfo_descriptor =
-      getDescriptor().getMessageTypes().get(41);
+      getDescriptor().getMessageTypes().get(38);
     internal_static_jervis_o365_gateway_ChatInfo_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_ChatInfo_descriptor,
         new java.lang.String[] { "ThreadId", "MessageId", "ReplyChainMessageId", });
     internal_static_jervis_o365_gateway_MeetingParticipant_descriptor =
-      getDescriptor().getMessageTypes().get(42);
+      getDescriptor().getMessageTypes().get(39);
     internal_static_jervis_o365_gateway_MeetingParticipant_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_MeetingParticipant_descriptor,
         new java.lang.String[] { "User", "Role", "Upn", });
     internal_static_jervis_o365_gateway_MeetingParticipants_descriptor =
-      getDescriptor().getMessageTypes().get(43);
+      getDescriptor().getMessageTypes().get(40);
     internal_static_jervis_o365_gateway_MeetingParticipants_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_MeetingParticipants_descriptor,
         new java.lang.String[] { "Organizer", "Attendees", });
     internal_static_jervis_o365_gateway_OnlineMeeting_descriptor =
-      getDescriptor().getMessageTypes().get(44);
+      getDescriptor().getMessageTypes().get(41);
     internal_static_jervis_o365_gateway_OnlineMeeting_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_OnlineMeeting_descriptor,
         new java.lang.String[] { "Id", "JoinWebUrl", "Subject", "StartDateTime", "EndDateTime", "ChatInfo", "Participants", });
     internal_static_jervis_o365_gateway_CallRecording_descriptor =
-      getDescriptor().getMessageTypes().get(45);
+      getDescriptor().getMessageTypes().get(42);
     internal_static_jervis_o365_gateway_CallRecording_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_CallRecording_descriptor,
         new java.lang.String[] { "Id", "MeetingId", "CallId", "CreatedDateTime", "RecordingContentUrl", "ContentCorrelationId", });
     internal_static_jervis_o365_gateway_CallTranscript_descriptor =
-      getDescriptor().getMessageTypes().get(46);
+      getDescriptor().getMessageTypes().get(43);
     internal_static_jervis_o365_gateway_CallTranscript_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_CallTranscript_descriptor,
         new java.lang.String[] { "Id", "MeetingId", "CreatedDateTime", "TranscriptContentUrl", });
     internal_static_jervis_o365_gateway_OnlineMeetingByJoinUrlRequest_descriptor =
-      getDescriptor().getMessageTypes().get(47);
+      getDescriptor().getMessageTypes().get(44);
     internal_static_jervis_o365_gateway_OnlineMeetingByJoinUrlRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_OnlineMeetingByJoinUrlRequest_descriptor,
         new java.lang.String[] { "Ctx", "ClientId", "JoinWebUrl", });
     internal_static_jervis_o365_gateway_OnlineMeetingRequest_descriptor =
-      getDescriptor().getMessageTypes().get(48);
+      getDescriptor().getMessageTypes().get(45);
     internal_static_jervis_o365_gateway_OnlineMeetingRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_OnlineMeetingRequest_descriptor,
         new java.lang.String[] { "Ctx", "ClientId", "MeetingId", });
     internal_static_jervis_o365_gateway_ListRecordingsResponse_descriptor =
-      getDescriptor().getMessageTypes().get(49);
+      getDescriptor().getMessageTypes().get(46);
     internal_static_jervis_o365_gateway_ListRecordingsResponse_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_ListRecordingsResponse_descriptor,
         new java.lang.String[] { "Recordings", });
     internal_static_jervis_o365_gateway_ListTranscriptsResponse_descriptor =
-      getDescriptor().getMessageTypes().get(50);
+      getDescriptor().getMessageTypes().get(47);
     internal_static_jervis_o365_gateway_ListTranscriptsResponse_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_ListTranscriptsResponse_descriptor,
         new java.lang.String[] { "Transcripts", });
     internal_static_jervis_o365_gateway_TranscriptRef_descriptor =
-      getDescriptor().getMessageTypes().get(51);
+      getDescriptor().getMessageTypes().get(48);
     internal_static_jervis_o365_gateway_TranscriptRef_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_TranscriptRef_descriptor,
         new java.lang.String[] { "Ctx", "ClientId", "MeetingId", "TranscriptId", });
     internal_static_jervis_o365_gateway_TranscriptContent_descriptor =
-      getDescriptor().getMessageTypes().get(52);
+      getDescriptor().getMessageTypes().get(49);
     internal_static_jervis_o365_gateway_TranscriptContent_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_TranscriptContent_descriptor,
         new java.lang.String[] { "Vtt", "ContentType", });
     internal_static_jervis_o365_gateway_Hashes_descriptor =
-      getDescriptor().getMessageTypes().get(53);
+      getDescriptor().getMessageTypes().get(50);
     internal_static_jervis_o365_gateway_Hashes_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_Hashes_descriptor,
         new java.lang.String[] { "Sha256Hash", });
     internal_static_jervis_o365_gateway_FileInfo_descriptor =
-      getDescriptor().getMessageTypes().get(54);
+      getDescriptor().getMessageTypes().get(51);
     internal_static_jervis_o365_gateway_FileInfo_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_FileInfo_descriptor,
         new java.lang.String[] { "MimeType", "Hashes", });
     internal_static_jervis_o365_gateway_FolderInfo_descriptor =
-      getDescriptor().getMessageTypes().get(55);
+      getDescriptor().getMessageTypes().get(52);
     internal_static_jervis_o365_gateway_FolderInfo_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_FolderInfo_descriptor,
         new java.lang.String[] { "ChildCount", });
     internal_static_jervis_o365_gateway_ItemReference_descriptor =
-      getDescriptor().getMessageTypes().get(56);
+      getDescriptor().getMessageTypes().get(53);
     internal_static_jervis_o365_gateway_ItemReference_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_ItemReference_descriptor,
         new java.lang.String[] { "DriveId", "Id", "Path", });
     internal_static_jervis_o365_gateway_DriveItem_descriptor =
-      getDescriptor().getMessageTypes().get(57);
+      getDescriptor().getMessageTypes().get(54);
     internal_static_jervis_o365_gateway_DriveItem_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_DriveItem_descriptor,
         new java.lang.String[] { "Id", "Name", "Size", "CreatedDateTime", "LastModifiedDateTime", "WebUrl", "File", "Folder", "DownloadUrl", "ParentReference", });
     internal_static_jervis_o365_gateway_ListDriveItemsRequest_descriptor =
-      getDescriptor().getMessageTypes().get(58);
+      getDescriptor().getMessageTypes().get(55);
     internal_static_jervis_o365_gateway_ListDriveItemsRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_ListDriveItemsRequest_descriptor,
         new java.lang.String[] { "Ctx", "ClientId", "Path", "Top", });
     internal_static_jervis_o365_gateway_ListDriveItemsResponse_descriptor =
-      getDescriptor().getMessageTypes().get(59);
+      getDescriptor().getMessageTypes().get(56);
     internal_static_jervis_o365_gateway_ListDriveItemsResponse_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_ListDriveItemsResponse_descriptor,
         new java.lang.String[] { "Items", });
     internal_static_jervis_o365_gateway_DriveItemRequest_descriptor =
-      getDescriptor().getMessageTypes().get(60);
+      getDescriptor().getMessageTypes().get(57);
     internal_static_jervis_o365_gateway_DriveItemRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_DriveItemRequest_descriptor,
         new java.lang.String[] { "Ctx", "ClientId", "ItemId", });
     internal_static_jervis_o365_gateway_SearchDriveRequest_descriptor =
-      getDescriptor().getMessageTypes().get(61);
+      getDescriptor().getMessageTypes().get(58);
     internal_static_jervis_o365_gateway_SearchDriveRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_SearchDriveRequest_descriptor,
         new java.lang.String[] { "Ctx", "ClientId", "Query", "Top", });
     internal_static_jervis_o365_gateway_SessionStatusRequest_descriptor =
-      getDescriptor().getMessageTypes().get(62);
+      getDescriptor().getMessageTypes().get(59);
     internal_static_jervis_o365_gateway_SessionStatusRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_SessionStatusRequest_descriptor,
         new java.lang.String[] { "Ctx", "ClientId", });
     internal_static_jervis_o365_gateway_SessionStatus_descriptor =
-      getDescriptor().getMessageTypes().get(63);
+      getDescriptor().getMessageTypes().get(60);
     internal_static_jervis_o365_gateway_SessionStatus_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_SessionStatus_descriptor,

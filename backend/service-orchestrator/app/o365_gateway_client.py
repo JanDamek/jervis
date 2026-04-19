@@ -1,14 +1,12 @@
 """gRPC client for jervis-o365-gateway.
 
-Passthrough shape — one `request` call maps (method, path, query, body)
-onto the `O365GatewayService.Request` RPC. Body responses come back as
-raw JSON strings that tools parse the same way they used to parse the
-HTTP response body.
+All helpers are strongly typed against O365GatewayService. No JSON
+passthrough remains — each function dials one RPC and returns the
+proto message directly so callers work on typed fields.
 """
 
 from __future__ import annotations
 
-import json as _json
 import logging
 from typing import Optional
 
@@ -60,55 +58,7 @@ class O365GatewayError(Exception):
         super().__init__(f"O365 gateway returned {status_code}: {body[:200]}")
 
 
-async def o365_request(
-    method: str,
-    path: str,
-    query: Optional[dict] = None,
-    body: Optional[dict] = None,
-    timeout: float = 30.0,
-) -> dict | list:
-    """Call the O365 gateway and return the parsed JSON body.
-
-    `path` is relative to the old `/api/o365/` root (e.g.
-    `chats/{clientId}`). Raises O365GatewayError on non-2xx responses.
-    """
-    stub = _get_stub()
-    req = gateway_pb2.O365Request(
-        ctx=_ctx(),
-        method=(method or "GET").upper(),
-        path=path.lstrip("/"),
-        query={str(k): str(v) for k, v in (query or {}).items() if v is not None},
-        body_json=_json.dumps(body) if body is not None else "",
-    )
-    resp = await stub.Request(req, timeout=timeout)
-    if resp.status_code >= 400:
-        raise O365GatewayError(resp.status_code, resp.body_json)
-    if not resp.body_json:
-        return {}
-    try:
-        return _json.loads(resp.body_json)
-    except Exception:
-        return {"raw": resp.body_json}
-
-
-async def o365_request_bytes(
-    path: str,
-    query: Optional[dict] = None,
-    timeout: float = 60.0,
-) -> tuple[int, bytes, str]:
-    """Binary passthrough — used for transcript VTT / drive content."""
-    stub = _get_stub()
-    req = gateway_pb2.O365Request(
-        ctx=_ctx(),
-        method="GET",
-        path=path.lstrip("/"),
-        query={str(k): str(v) for k, v in (query or {}).items() if v is not None},
-    )
-    resp = await stub.RequestBytes(req, timeout=timeout)
-    return resp.status_code, bytes(resp.body), resp.content_type
-
-
-# === V5a — Teams chats typed ================================================
+# === Teams chats ============================================================
 
 async def list_chats(
     client_id: str, top: int = 20, timeout: float = 30.0,

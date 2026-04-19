@@ -9,9 +9,9 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
  * Mail, Calendar, Online meetings, Drive, session). Graph-specific DTOs
  * are shared across RPC groups so the same `ChatMessage` is returned for
  * Teams chats and channel reads.
- * Typed RPCs land incrementally (slice V5a -&gt; Teams chats, V5b -&gt; channels,
- * etc.). The legacy Request / RequestBytes passthrough stays until every
- * group is typed; it is dropped in V5h.
+ * All RPCs are strongly typed — no JSON passthrough. Each RPC maps 1:1
+ * to a Microsoft Graph resource and carries only the fields Jervis
+ * consumers actually read.
  * </pre>
  */
 @javax.annotation.Generated(
@@ -25,68 +25,6 @@ public final class O365GatewayServiceGrpc {
   public static final java.lang.String SERVICE_NAME = "jervis.o365_gateway.O365GatewayService";
 
   // Static method descriptors that strictly reflect the proto.
-  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.O365Request,
-      com.jervis.contracts.o365_gateway.O365Response> getRequestMethod;
-
-  @io.grpc.stub.annotations.RpcMethod(
-      fullMethodName = SERVICE_NAME + '/' + "Request",
-      requestType = com.jervis.contracts.o365_gateway.O365Request.class,
-      responseType = com.jervis.contracts.o365_gateway.O365Response.class,
-      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.O365Request,
-      com.jervis.contracts.o365_gateway.O365Response> getRequestMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.O365Request, com.jervis.contracts.o365_gateway.O365Response> getRequestMethod;
-    if ((getRequestMethod = O365GatewayServiceGrpc.getRequestMethod) == null) {
-      synchronized (O365GatewayServiceGrpc.class) {
-        if ((getRequestMethod = O365GatewayServiceGrpc.getRequestMethod) == null) {
-          O365GatewayServiceGrpc.getRequestMethod = getRequestMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_gateway.O365Request, com.jervis.contracts.o365_gateway.O365Response>newBuilder()
-              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
-              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "Request"))
-              .setSampledToLocalTracing(true)
-              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.o365_gateway.O365Request.getDefaultInstance()))
-              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.o365_gateway.O365Response.getDefaultInstance()))
-              .setSchemaDescriptor(new O365GatewayServiceMethodDescriptorSupplier("Request"))
-              .build();
-        }
-      }
-    }
-    return getRequestMethod;
-  }
-
-  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.O365Request,
-      com.jervis.contracts.o365_gateway.O365BytesResponse> getRequestBytesMethod;
-
-  @io.grpc.stub.annotations.RpcMethod(
-      fullMethodName = SERVICE_NAME + '/' + "RequestBytes",
-      requestType = com.jervis.contracts.o365_gateway.O365Request.class,
-      responseType = com.jervis.contracts.o365_gateway.O365BytesResponse.class,
-      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.O365Request,
-      com.jervis.contracts.o365_gateway.O365BytesResponse> getRequestBytesMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.O365Request, com.jervis.contracts.o365_gateway.O365BytesResponse> getRequestBytesMethod;
-    if ((getRequestBytesMethod = O365GatewayServiceGrpc.getRequestBytesMethod) == null) {
-      synchronized (O365GatewayServiceGrpc.class) {
-        if ((getRequestBytesMethod = O365GatewayServiceGrpc.getRequestBytesMethod) == null) {
-          O365GatewayServiceGrpc.getRequestBytesMethod = getRequestBytesMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_gateway.O365Request, com.jervis.contracts.o365_gateway.O365BytesResponse>newBuilder()
-              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
-              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "RequestBytes"))
-              .setSampledToLocalTracing(true)
-              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.o365_gateway.O365Request.getDefaultInstance()))
-              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.o365_gateway.O365BytesResponse.getDefaultInstance()))
-              .setSchemaDescriptor(new O365GatewayServiceMethodDescriptorSupplier("RequestBytes"))
-              .build();
-        }
-      }
-    }
-    return getRequestBytesMethod;
-  }
-
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.ListChatsRequest,
       com.jervis.contracts.o365_gateway.ListChatsResponse> getListChatsMethod;
 
@@ -789,33 +727,16 @@ public final class O365GatewayServiceGrpc {
    * Mail, Calendar, Online meetings, Drive, session). Graph-specific DTOs
    * are shared across RPC groups so the same `ChatMessage` is returned for
    * Teams chats and channel reads.
-   * Typed RPCs land incrementally (slice V5a -&gt; Teams chats, V5b -&gt; channels,
-   * etc.). The legacy Request / RequestBytes passthrough stays until every
-   * group is typed; it is dropped in V5h.
+   * All RPCs are strongly typed — no JSON passthrough. Each RPC maps 1:1
+   * to a Microsoft Graph resource and carries only the fields Jervis
+   * consumers actually read.
    * </pre>
    */
   public interface AsyncService {
 
     /**
      * <pre>
-     * === Legacy passthrough (drop at V5h) =====================================
-     * </pre>
-     */
-    default void request(com.jervis.contracts.o365_gateway.O365Request request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.O365Response> responseObserver) {
-      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getRequestMethod(), responseObserver);
-    }
-
-    /**
-     */
-    default void requestBytes(com.jervis.contracts.o365_gateway.O365Request request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.O365BytesResponse> responseObserver) {
-      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getRequestBytesMethod(), responseObserver);
-    }
-
-    /**
-     * <pre>
-     * === V5a - Teams chats ====================================================
+     * === Teams chats ==========================================================
      * </pre>
      */
     default void listChats(com.jervis.contracts.o365_gateway.ListChatsRequest request,
@@ -839,7 +760,7 @@ public final class O365GatewayServiceGrpc {
 
     /**
      * <pre>
-     * === V5b - Teams teams / channels =========================================
+     * === Teams teams / channels ===============================================
      * </pre>
      */
     default void listTeams(com.jervis.contracts.o365_gateway.ListTeamsRequest request,
@@ -870,7 +791,7 @@ public final class O365GatewayServiceGrpc {
 
     /**
      * <pre>
-     * === V5c - Mail (Outlook) =================================================
+     * === Mail (Outlook) =======================================================
      * </pre>
      */
     default void listMail(com.jervis.contracts.o365_gateway.ListMailRequest request,
@@ -894,7 +815,7 @@ public final class O365GatewayServiceGrpc {
 
     /**
      * <pre>
-     * === V5d - Calendar =======================================================
+     * === Calendar =============================================================
      * </pre>
      */
     default void listCalendarEvents(com.jervis.contracts.o365_gateway.ListCalendarEventsRequest request,
@@ -911,7 +832,7 @@ public final class O365GatewayServiceGrpc {
 
     /**
      * <pre>
-     * === V5e - Online meetings ================================================
+     * === Online meetings ======================================================
      * Part of the O365 umbrella: online meetings are a resource inside O365,
      * not a separate service. All five RPCs live here so consumers dial one
      * channel for everything meeting-related.
@@ -952,7 +873,7 @@ public final class O365GatewayServiceGrpc {
 
     /**
      * <pre>
-     * === V5f - Drive (OneDrive / SharePoint) ==================================
+     * === Drive (OneDrive / SharePoint) ========================================
      * </pre>
      */
     default void listDriveItems(com.jervis.contracts.o365_gateway.ListDriveItemsRequest request,
@@ -976,7 +897,7 @@ public final class O365GatewayServiceGrpc {
 
     /**
      * <pre>
-     * === V5g - Session status =================================================
+     * === Session status =======================================================
      * </pre>
      */
     default void getSessionStatus(com.jervis.contracts.o365_gateway.SessionStatusRequest request,
@@ -993,9 +914,9 @@ public final class O365GatewayServiceGrpc {
    * Mail, Calendar, Online meetings, Drive, session). Graph-specific DTOs
    * are shared across RPC groups so the same `ChatMessage` is returned for
    * Teams chats and channel reads.
-   * Typed RPCs land incrementally (slice V5a -&gt; Teams chats, V5b -&gt; channels,
-   * etc.). The legacy Request / RequestBytes passthrough stays until every
-   * group is typed; it is dropped in V5h.
+   * All RPCs are strongly typed — no JSON passthrough. Each RPC maps 1:1
+   * to a Microsoft Graph resource and carries only the fields Jervis
+   * consumers actually read.
    * </pre>
    */
   public static abstract class O365GatewayServiceImplBase
@@ -1014,9 +935,9 @@ public final class O365GatewayServiceGrpc {
    * Mail, Calendar, Online meetings, Drive, session). Graph-specific DTOs
    * are shared across RPC groups so the same `ChatMessage` is returned for
    * Teams chats and channel reads.
-   * Typed RPCs land incrementally (slice V5a -&gt; Teams chats, V5b -&gt; channels,
-   * etc.). The legacy Request / RequestBytes passthrough stays until every
-   * group is typed; it is dropped in V5h.
+   * All RPCs are strongly typed — no JSON passthrough. Each RPC maps 1:1
+   * to a Microsoft Graph resource and carries only the fields Jervis
+   * consumers actually read.
    * </pre>
    */
   public static final class O365GatewayServiceStub
@@ -1034,26 +955,7 @@ public final class O365GatewayServiceGrpc {
 
     /**
      * <pre>
-     * === Legacy passthrough (drop at V5h) =====================================
-     * </pre>
-     */
-    public void request(com.jervis.contracts.o365_gateway.O365Request request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.O365Response> responseObserver) {
-      io.grpc.stub.ClientCalls.asyncUnaryCall(
-          getChannel().newCall(getRequestMethod(), getCallOptions()), request, responseObserver);
-    }
-
-    /**
-     */
-    public void requestBytes(com.jervis.contracts.o365_gateway.O365Request request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.O365BytesResponse> responseObserver) {
-      io.grpc.stub.ClientCalls.asyncUnaryCall(
-          getChannel().newCall(getRequestBytesMethod(), getCallOptions()), request, responseObserver);
-    }
-
-    /**
-     * <pre>
-     * === V5a - Teams chats ====================================================
+     * === Teams chats ==========================================================
      * </pre>
      */
     public void listChats(com.jervis.contracts.o365_gateway.ListChatsRequest request,
@@ -1080,7 +982,7 @@ public final class O365GatewayServiceGrpc {
 
     /**
      * <pre>
-     * === V5b - Teams teams / channels =========================================
+     * === Teams teams / channels ===============================================
      * </pre>
      */
     public void listTeams(com.jervis.contracts.o365_gateway.ListTeamsRequest request,
@@ -1115,7 +1017,7 @@ public final class O365GatewayServiceGrpc {
 
     /**
      * <pre>
-     * === V5c - Mail (Outlook) =================================================
+     * === Mail (Outlook) =======================================================
      * </pre>
      */
     public void listMail(com.jervis.contracts.o365_gateway.ListMailRequest request,
@@ -1142,7 +1044,7 @@ public final class O365GatewayServiceGrpc {
 
     /**
      * <pre>
-     * === V5d - Calendar =======================================================
+     * === Calendar =============================================================
      * </pre>
      */
     public void listCalendarEvents(com.jervis.contracts.o365_gateway.ListCalendarEventsRequest request,
@@ -1161,7 +1063,7 @@ public final class O365GatewayServiceGrpc {
 
     /**
      * <pre>
-     * === V5e - Online meetings ================================================
+     * === Online meetings ======================================================
      * Part of the O365 umbrella: online meetings are a resource inside O365,
      * not a separate service. All five RPCs live here so consumers dial one
      * channel for everything meeting-related.
@@ -1207,7 +1109,7 @@ public final class O365GatewayServiceGrpc {
 
     /**
      * <pre>
-     * === V5f - Drive (OneDrive / SharePoint) ==================================
+     * === Drive (OneDrive / SharePoint) ========================================
      * </pre>
      */
     public void listDriveItems(com.jervis.contracts.o365_gateway.ListDriveItemsRequest request,
@@ -1234,7 +1136,7 @@ public final class O365GatewayServiceGrpc {
 
     /**
      * <pre>
-     * === V5g - Session status =================================================
+     * === Session status =======================================================
      * </pre>
      */
     public void getSessionStatus(com.jervis.contracts.o365_gateway.SessionStatusRequest request,
@@ -1252,9 +1154,9 @@ public final class O365GatewayServiceGrpc {
    * Mail, Calendar, Online meetings, Drive, session). Graph-specific DTOs
    * are shared across RPC groups so the same `ChatMessage` is returned for
    * Teams chats and channel reads.
-   * Typed RPCs land incrementally (slice V5a -&gt; Teams chats, V5b -&gt; channels,
-   * etc.). The legacy Request / RequestBytes passthrough stays until every
-   * group is typed; it is dropped in V5h.
+   * All RPCs are strongly typed — no JSON passthrough. Each RPC maps 1:1
+   * to a Microsoft Graph resource and carries only the fields Jervis
+   * consumers actually read.
    * </pre>
    */
   public static final class O365GatewayServiceBlockingStub
@@ -1272,24 +1174,7 @@ public final class O365GatewayServiceGrpc {
 
     /**
      * <pre>
-     * === Legacy passthrough (drop at V5h) =====================================
-     * </pre>
-     */
-    public com.jervis.contracts.o365_gateway.O365Response request(com.jervis.contracts.o365_gateway.O365Request request) {
-      return io.grpc.stub.ClientCalls.blockingUnaryCall(
-          getChannel(), getRequestMethod(), getCallOptions(), request);
-    }
-
-    /**
-     */
-    public com.jervis.contracts.o365_gateway.O365BytesResponse requestBytes(com.jervis.contracts.o365_gateway.O365Request request) {
-      return io.grpc.stub.ClientCalls.blockingUnaryCall(
-          getChannel(), getRequestBytesMethod(), getCallOptions(), request);
-    }
-
-    /**
-     * <pre>
-     * === V5a - Teams chats ====================================================
+     * === Teams chats ==========================================================
      * </pre>
      */
     public com.jervis.contracts.o365_gateway.ListChatsResponse listChats(com.jervis.contracts.o365_gateway.ListChatsRequest request) {
@@ -1313,7 +1198,7 @@ public final class O365GatewayServiceGrpc {
 
     /**
      * <pre>
-     * === V5b - Teams teams / channels =========================================
+     * === Teams teams / channels ===============================================
      * </pre>
      */
     public com.jervis.contracts.o365_gateway.ListTeamsResponse listTeams(com.jervis.contracts.o365_gateway.ListTeamsRequest request) {
@@ -1344,7 +1229,7 @@ public final class O365GatewayServiceGrpc {
 
     /**
      * <pre>
-     * === V5c - Mail (Outlook) =================================================
+     * === Mail (Outlook) =======================================================
      * </pre>
      */
     public com.jervis.contracts.o365_gateway.ListMailResponse listMail(com.jervis.contracts.o365_gateway.ListMailRequest request) {
@@ -1368,7 +1253,7 @@ public final class O365GatewayServiceGrpc {
 
     /**
      * <pre>
-     * === V5d - Calendar =======================================================
+     * === Calendar =============================================================
      * </pre>
      */
     public com.jervis.contracts.o365_gateway.ListCalendarEventsResponse listCalendarEvents(com.jervis.contracts.o365_gateway.ListCalendarEventsRequest request) {
@@ -1385,7 +1270,7 @@ public final class O365GatewayServiceGrpc {
 
     /**
      * <pre>
-     * === V5e - Online meetings ================================================
+     * === Online meetings ======================================================
      * Part of the O365 umbrella: online meetings are a resource inside O365,
      * not a separate service. All five RPCs live here so consumers dial one
      * channel for everything meeting-related.
@@ -1426,7 +1311,7 @@ public final class O365GatewayServiceGrpc {
 
     /**
      * <pre>
-     * === V5f - Drive (OneDrive / SharePoint) ==================================
+     * === Drive (OneDrive / SharePoint) ========================================
      * </pre>
      */
     public com.jervis.contracts.o365_gateway.ListDriveItemsResponse listDriveItems(com.jervis.contracts.o365_gateway.ListDriveItemsRequest request) {
@@ -1450,7 +1335,7 @@ public final class O365GatewayServiceGrpc {
 
     /**
      * <pre>
-     * === V5g - Session status =================================================
+     * === Session status =======================================================
      * </pre>
      */
     public com.jervis.contracts.o365_gateway.SessionStatus getSessionStatus(com.jervis.contracts.o365_gateway.SessionStatusRequest request) {
@@ -1467,9 +1352,9 @@ public final class O365GatewayServiceGrpc {
    * Mail, Calendar, Online meetings, Drive, session). Graph-specific DTOs
    * are shared across RPC groups so the same `ChatMessage` is returned for
    * Teams chats and channel reads.
-   * Typed RPCs land incrementally (slice V5a -&gt; Teams chats, V5b -&gt; channels,
-   * etc.). The legacy Request / RequestBytes passthrough stays until every
-   * group is typed; it is dropped in V5h.
+   * All RPCs are strongly typed — no JSON passthrough. Each RPC maps 1:1
+   * to a Microsoft Graph resource and carries only the fields Jervis
+   * consumers actually read.
    * </pre>
    */
   public static final class O365GatewayServiceFutureStub
@@ -1487,26 +1372,7 @@ public final class O365GatewayServiceGrpc {
 
     /**
      * <pre>
-     * === Legacy passthrough (drop at V5h) =====================================
-     * </pre>
-     */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_gateway.O365Response> request(
-        com.jervis.contracts.o365_gateway.O365Request request) {
-      return io.grpc.stub.ClientCalls.futureUnaryCall(
-          getChannel().newCall(getRequestMethod(), getCallOptions()), request);
-    }
-
-    /**
-     */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_gateway.O365BytesResponse> requestBytes(
-        com.jervis.contracts.o365_gateway.O365Request request) {
-      return io.grpc.stub.ClientCalls.futureUnaryCall(
-          getChannel().newCall(getRequestBytesMethod(), getCallOptions()), request);
-    }
-
-    /**
-     * <pre>
-     * === V5a - Teams chats ====================================================
+     * === Teams chats ==========================================================
      * </pre>
      */
     public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_gateway.ListChatsResponse> listChats(
@@ -1533,7 +1399,7 @@ public final class O365GatewayServiceGrpc {
 
     /**
      * <pre>
-     * === V5b - Teams teams / channels =========================================
+     * === Teams teams / channels ===============================================
      * </pre>
      */
     public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_gateway.ListTeamsResponse> listTeams(
@@ -1568,7 +1434,7 @@ public final class O365GatewayServiceGrpc {
 
     /**
      * <pre>
-     * === V5c - Mail (Outlook) =================================================
+     * === Mail (Outlook) =======================================================
      * </pre>
      */
     public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_gateway.ListMailResponse> listMail(
@@ -1595,7 +1461,7 @@ public final class O365GatewayServiceGrpc {
 
     /**
      * <pre>
-     * === V5d - Calendar =======================================================
+     * === Calendar =============================================================
      * </pre>
      */
     public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_gateway.ListCalendarEventsResponse> listCalendarEvents(
@@ -1614,7 +1480,7 @@ public final class O365GatewayServiceGrpc {
 
     /**
      * <pre>
-     * === V5e - Online meetings ================================================
+     * === Online meetings ======================================================
      * Part of the O365 umbrella: online meetings are a resource inside O365,
      * not a separate service. All five RPCs live here so consumers dial one
      * channel for everything meeting-related.
@@ -1660,7 +1526,7 @@ public final class O365GatewayServiceGrpc {
 
     /**
      * <pre>
-     * === V5f - Drive (OneDrive / SharePoint) ==================================
+     * === Drive (OneDrive / SharePoint) ========================================
      * </pre>
      */
     public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_gateway.ListDriveItemsResponse> listDriveItems(
@@ -1687,7 +1553,7 @@ public final class O365GatewayServiceGrpc {
 
     /**
      * <pre>
-     * === V5g - Session status =================================================
+     * === Session status =======================================================
      * </pre>
      */
     public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_gateway.SessionStatus> getSessionStatus(
@@ -1697,29 +1563,27 @@ public final class O365GatewayServiceGrpc {
     }
   }
 
-  private static final int METHODID_REQUEST = 0;
-  private static final int METHODID_REQUEST_BYTES = 1;
-  private static final int METHODID_LIST_CHATS = 2;
-  private static final int METHODID_READ_CHAT = 3;
-  private static final int METHODID_SEND_CHAT_MESSAGE = 4;
-  private static final int METHODID_LIST_TEAMS = 5;
-  private static final int METHODID_LIST_CHANNELS = 6;
-  private static final int METHODID_READ_CHANNEL = 7;
-  private static final int METHODID_SEND_CHANNEL_MESSAGE = 8;
-  private static final int METHODID_LIST_MAIL = 9;
-  private static final int METHODID_READ_MAIL = 10;
-  private static final int METHODID_SEND_MAIL = 11;
-  private static final int METHODID_LIST_CALENDAR_EVENTS = 12;
-  private static final int METHODID_CREATE_CALENDAR_EVENT = 13;
-  private static final int METHODID_GET_ONLINE_MEETING_BY_JOIN_URL = 14;
-  private static final int METHODID_GET_ONLINE_MEETING = 15;
-  private static final int METHODID_LIST_MEETING_RECORDINGS = 16;
-  private static final int METHODID_LIST_MEETING_TRANSCRIPTS = 17;
-  private static final int METHODID_DOWNLOAD_TRANSCRIPT_VTT = 18;
-  private static final int METHODID_LIST_DRIVE_ITEMS = 19;
-  private static final int METHODID_GET_DRIVE_ITEM = 20;
-  private static final int METHODID_SEARCH_DRIVE = 21;
-  private static final int METHODID_GET_SESSION_STATUS = 22;
+  private static final int METHODID_LIST_CHATS = 0;
+  private static final int METHODID_READ_CHAT = 1;
+  private static final int METHODID_SEND_CHAT_MESSAGE = 2;
+  private static final int METHODID_LIST_TEAMS = 3;
+  private static final int METHODID_LIST_CHANNELS = 4;
+  private static final int METHODID_READ_CHANNEL = 5;
+  private static final int METHODID_SEND_CHANNEL_MESSAGE = 6;
+  private static final int METHODID_LIST_MAIL = 7;
+  private static final int METHODID_READ_MAIL = 8;
+  private static final int METHODID_SEND_MAIL = 9;
+  private static final int METHODID_LIST_CALENDAR_EVENTS = 10;
+  private static final int METHODID_CREATE_CALENDAR_EVENT = 11;
+  private static final int METHODID_GET_ONLINE_MEETING_BY_JOIN_URL = 12;
+  private static final int METHODID_GET_ONLINE_MEETING = 13;
+  private static final int METHODID_LIST_MEETING_RECORDINGS = 14;
+  private static final int METHODID_LIST_MEETING_TRANSCRIPTS = 15;
+  private static final int METHODID_DOWNLOAD_TRANSCRIPT_VTT = 16;
+  private static final int METHODID_LIST_DRIVE_ITEMS = 17;
+  private static final int METHODID_GET_DRIVE_ITEM = 18;
+  private static final int METHODID_SEARCH_DRIVE = 19;
+  private static final int METHODID_GET_SESSION_STATUS = 20;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -1738,14 +1602,6 @@ public final class O365GatewayServiceGrpc {
     @java.lang.SuppressWarnings("unchecked")
     public void invoke(Req request, io.grpc.stub.StreamObserver<Resp> responseObserver) {
       switch (methodId) {
-        case METHODID_REQUEST:
-          serviceImpl.request((com.jervis.contracts.o365_gateway.O365Request) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.O365Response>) responseObserver);
-          break;
-        case METHODID_REQUEST_BYTES:
-          serviceImpl.requestBytes((com.jervis.contracts.o365_gateway.O365Request) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.O365BytesResponse>) responseObserver);
-          break;
         case METHODID_LIST_CHATS:
           serviceImpl.listChats((com.jervis.contracts.o365_gateway.ListChatsRequest) request,
               (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ListChatsResponse>) responseObserver);
@@ -1848,20 +1704,6 @@ public final class O365GatewayServiceGrpc {
 
   public static final io.grpc.ServerServiceDefinition bindService(AsyncService service) {
     return io.grpc.ServerServiceDefinition.builder(getServiceDescriptor())
-        .addMethod(
-          getRequestMethod(),
-          io.grpc.stub.ServerCalls.asyncUnaryCall(
-            new MethodHandlers<
-              com.jervis.contracts.o365_gateway.O365Request,
-              com.jervis.contracts.o365_gateway.O365Response>(
-                service, METHODID_REQUEST)))
-        .addMethod(
-          getRequestBytesMethod(),
-          io.grpc.stub.ServerCalls.asyncUnaryCall(
-            new MethodHandlers<
-              com.jervis.contracts.o365_gateway.O365Request,
-              com.jervis.contracts.o365_gateway.O365BytesResponse>(
-                service, METHODID_REQUEST_BYTES)))
         .addMethod(
           getListChatsMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
@@ -2057,8 +1899,6 @@ public final class O365GatewayServiceGrpc {
         if (result == null) {
           serviceDescriptor = result = io.grpc.ServiceDescriptor.newBuilder(SERVICE_NAME)
               .setSchemaDescriptor(new O365GatewayServiceFileDescriptorSupplier())
-              .addMethod(getRequestMethod())
-              .addMethod(getRequestBytesMethod())
               .addMethod(getListChatsMethod())
               .addMethod(getReadChatMethod())
               .addMethod(getSendChatMessageMethod())

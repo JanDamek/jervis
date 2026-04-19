@@ -1,12 +1,12 @@
 """gRPC client for jervis-o365-gateway (MCP service).
 
-Mirrors the orchestrator's o365_gateway_client — one insecure_channel to
-`<o365-gateway>:5501`, lazy stub, passthrough `request` helper.
+Mirrors the orchestrator client — typed helpers against O365GatewayService,
+no JSON passthrough. One insecure_channel to `<o365-gateway>:5501`, lazy
+stub, one helper per RPC group.
 """
 
 from __future__ import annotations
 
-import json as _json
 import logging
 from typing import Optional
 
@@ -55,33 +55,7 @@ class O365GatewayError(Exception):
         super().__init__(f"O365 gateway returned {status_code}: {body[:200]}")
 
 
-async def o365_request(
-    method: str,
-    path: str,
-    query: Optional[dict] = None,
-    body: Optional[dict] = None,
-    timeout: float = 30.0,
-) -> dict | list:
-    stub = _get_stub()
-    req = gateway_pb2.O365Request(
-        ctx=_ctx(),
-        method=(method or "GET").upper(),
-        path=path.lstrip("/"),
-        query={str(k): str(v) for k, v in (query or {}).items() if v is not None},
-        body_json=_json.dumps(body) if body is not None else "",
-    )
-    resp = await stub.Request(req, timeout=timeout)
-    if resp.status_code >= 400:
-        raise O365GatewayError(resp.status_code, resp.body_json)
-    if not resp.body_json:
-        return {}
-    try:
-        return _json.loads(resp.body_json)
-    except Exception:
-        return {"raw": resp.body_json}
-
-
-# === V5a — Teams chats typed ================================================
+# === Teams chats ============================================================
 
 async def list_chats(
     client_id: str, top: int = 20, timeout: float = 30.0,

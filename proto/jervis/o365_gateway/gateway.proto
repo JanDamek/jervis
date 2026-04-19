@@ -14,35 +14,31 @@ option java_outer_classname = "O365GatewayProto";
 // are shared across RPC groups so the same `ChatMessage` is returned for
 // Teams chats and channel reads.
 //
-// Typed RPCs land incrementally (slice V5a -> Teams chats, V5b -> channels,
-// etc.). The legacy Request / RequestBytes passthrough stays until every
-// group is typed; it is dropped in V5h.
+// All RPCs are strongly typed — no JSON passthrough. Each RPC maps 1:1
+// to a Microsoft Graph resource and carries only the fields Jervis
+// consumers actually read.
 service O365GatewayService {
-  // === Legacy passthrough (drop at V5h) =====================================
-  rpc Request(O365Request) returns (O365Response);
-  rpc RequestBytes(O365Request) returns (O365BytesResponse);
-
-  // === V5a - Teams chats ====================================================
+  // === Teams chats ==========================================================
   rpc ListChats(ListChatsRequest) returns (ListChatsResponse);
   rpc ReadChat(ReadChatRequest) returns (ListChatMessagesResponse);
   rpc SendChatMessage(SendChatMessageRequest) returns (ChatMessage);
 
-  // === V5b - Teams teams / channels =========================================
+  // === Teams teams / channels ===============================================
   rpc ListTeams(ListTeamsRequest) returns (ListTeamsResponse);
   rpc ListChannels(ListChannelsRequest) returns (ListChannelsResponse);
   rpc ReadChannel(ReadChannelRequest) returns (ListChannelMessagesResponse);
   rpc SendChannelMessage(SendChannelMessageRequest) returns (ChatMessage);
 
-  // === V5c - Mail (Outlook) =================================================
+  // === Mail (Outlook) =======================================================
   rpc ListMail(ListMailRequest) returns (ListMailResponse);
   rpc ReadMail(ReadMailRequest) returns (MailMessage);
   rpc SendMail(SendMailRpcRequest) returns (SendMailAck);
 
-  // === V5d - Calendar =======================================================
+  // === Calendar =============================================================
   rpc ListCalendarEvents(ListCalendarEventsRequest) returns (ListCalendarEventsResponse);
   rpc CreateCalendarEvent(CreateCalendarEventRequest) returns (CalendarEvent);
 
-  // === V5e - Online meetings ================================================
+  // === Online meetings ======================================================
   // Part of the O365 umbrella: online meetings are a resource inside O365,
   // not a separate service. All five RPCs live here so consumers dial one
   // channel for everything meeting-related.
@@ -52,40 +48,13 @@ service O365GatewayService {
   rpc ListMeetingTranscripts(OnlineMeetingRequest) returns (ListTranscriptsResponse);
   rpc DownloadTranscriptVtt(TranscriptRef) returns (TranscriptContent);
 
-  // === V5f - Drive (OneDrive / SharePoint) ==================================
+  // === Drive (OneDrive / SharePoint) ========================================
   rpc ListDriveItems(ListDriveItemsRequest) returns (ListDriveItemsResponse);
   rpc GetDriveItem(DriveItemRequest) returns (DriveItem);
   rpc SearchDrive(SearchDriveRequest) returns (ListDriveItemsResponse);
 
-  // === V5g - Session status =================================================
+  // === Session status =======================================================
   rpc GetSessionStatus(SessionStatusRequest) returns (SessionStatus);
-}
-
-// ============================================================================
-// Legacy passthrough messages (drop at V5h)
-// ============================================================================
-
-message O365Request {
-  jervis.common.RequestContext ctx = 1;
-  string method = 2;                 // GET / POST (uppercase)
-  string path = 3;                   // relative to /api/o365/ - e.g. "chats/{clientId}/{chatId}/messages"
-  map<string, string> query = 4;     // query parameters
-  string body_json = 5;              // optional JSON body for POST
-  string content_type = 6;           // override content-type (defaults to application/json)
-}
-
-message O365Response {
-  int32 status_code = 1;
-  string body_json = 2;              // raw JSON response body (Graph API passthrough)
-  map<string, string> headers = 3;   // selected response headers (content-type, etc.)
-}
-
-message O365BytesResponse {
-  int32 status_code = 1;
-  bytes body = 2;                    // raw binary body (drive content, recording audio/video)
-  string content_type = 3;
-  string filename = 4;
-  map<string, string> headers = 5;
 }
 
 // ============================================================================
