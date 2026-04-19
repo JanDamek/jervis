@@ -292,3 +292,72 @@ async def send_mail(
         return await stub.SendMail(req, timeout=timeout)
     except grpc.aio.AioRpcError as e:
         raise O365GatewayError(e.code().value[0] if e.code() else 502, e.details() or "")
+
+
+# === V5d — Calendar typed ===================================================
+
+async def list_calendar_events(
+    client_id: str,
+    top: int = 20,
+    start_date_time: str = "",
+    end_date_time: str = "",
+    timeout: float = 30.0,
+) -> list[gateway_pb2.CalendarEvent]:
+    stub = _get_stub()
+    req = gateway_pb2.ListCalendarEventsRequest(
+        ctx=_ctx(),
+        client_id=client_id,
+        top=top,
+        start_date_time=start_date_time,
+        end_date_time=end_date_time,
+    )
+    try:
+        resp = await stub.ListCalendarEvents(req, timeout=timeout)
+    except grpc.aio.AioRpcError as e:
+        raise O365GatewayError(e.code().value[0] if e.code() else 502, e.details() or "")
+    return list(resp.events)
+
+
+async def create_calendar_event(
+    client_id: str,
+    subject: str,
+    start_date_time: str,
+    start_time_zone: str,
+    end_date_time: str,
+    end_time_zone: str,
+    location: str = "",
+    body_content: str = "",
+    attendee_addresses: list[str] | None = None,
+    is_online_meeting: bool = False,
+    timeout: float = 30.0,
+) -> gateway_pb2.CalendarEvent:
+    stub = _get_stub()
+    body = gateway_pb2.MailBody(content_type="text", content=body_content) if body_content else None
+    loc = gateway_pb2.Location(display_name=location) if location else None
+    attendees = [
+        gateway_pb2.Attendee(
+            email_address=gateway_pb2.EmailAddress(address=addr), type="required",
+        )
+        for addr in (attendee_addresses or [])
+    ]
+    req = gateway_pb2.CreateCalendarEventRequest(
+        ctx=_ctx(),
+        client_id=client_id,
+        subject=subject,
+        start=gateway_pb2.DateTimeTimeZone(
+            date_time=start_date_time, time_zone=start_time_zone or "UTC",
+        ),
+        end=gateway_pb2.DateTimeTimeZone(
+            date_time=end_date_time, time_zone=end_time_zone or "UTC",
+        ),
+        attendees=attendees,
+        is_online_meeting=is_online_meeting,
+    )
+    if body is not None:
+        req.body.CopyFrom(body)
+    if loc is not None:
+        req.location.CopyFrom(loc)
+    try:
+        return await stub.CreateCalendarEvent(req, timeout=timeout)
+    except grpc.aio.AioRpcError as e:
+        raise O365GatewayError(e.code().value[0] if e.code() else 502, e.details() or "")

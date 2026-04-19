@@ -211,6 +211,41 @@ public final class O365GatewayProto extends com.google.protobuf.GeneratedFile {
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_jervis_o365_gateway_SendMailAck_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_o365_gateway_DateTimeTimeZone_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_o365_gateway_DateTimeTimeZone_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_o365_gateway_Location_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_o365_gateway_Location_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_o365_gateway_Attendee_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_o365_gateway_Attendee_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_o365_gateway_CalendarEvent_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_o365_gateway_CalendarEvent_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_o365_gateway_ListCalendarEventsRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_o365_gateway_ListCalendarEventsRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_o365_gateway_ListCalendarEventsResponse_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_o365_gateway_ListCalendarEventsResponse_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_o365_gateway_CreateCalendarEventRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_o365_gateway_CreateCalendarEventRequest_fieldAccessorTable;
 
   public static com.google.protobuf.Descriptors.FileDescriptor
       getDescriptor() {
@@ -324,37 +359,76 @@ public final class O365GatewayProto extends com.google.protobuf.GeneratedFile {
       "\0132\036.jervis.o365_gateway.Recipient\0225\n\rcc_" +
       "recipients\030\006 \003(\0132\036.jervis.o365_gateway.R" +
       "ecipient\022\032\n\022save_to_sent_items\030\007 \001(\010\"\035\n\013" +
-      "SendMailAck\022\016\n\006result\030\001 \001(\t2\364\010\n\022O365Gate" +
-      "wayService\022N\n\007Request\022 .jervis.o365_gate" +
-      "way.O365Request\032!.jervis.o365_gateway.O3" +
-      "65Response\022X\n\014RequestBytes\022 .jervis.o365" +
-      "_gateway.O365Request\032&.jervis.o365_gatew" +
-      "ay.O365BytesResponse\022Z\n\tListChats\022%.jerv" +
-      "is.o365_gateway.ListChatsRequest\032&.jervi" +
-      "s.o365_gateway.ListChatsResponse\022_\n\010Read" +
-      "Chat\022$.jervis.o365_gateway.ReadChatReque" +
-      "st\032-.jervis.o365_gateway.ListChatMessage" +
-      "sResponse\022`\n\017SendChatMessage\022+.jervis.o3" +
-      "65_gateway.SendChatMessageRequest\032 .jerv" +
-      "is.o365_gateway.ChatMessage\022Z\n\tListTeams" +
-      "\022%.jervis.o365_gateway.ListTeamsRequest\032" +
-      "&.jervis.o365_gateway.ListTeamsResponse\022" +
-      "c\n\014ListChannels\022(.jervis.o365_gateway.Li" +
-      "stChannelsRequest\032).jervis.o365_gateway." +
-      "ListChannelsResponse\022h\n\013ReadChannel\022\'.je" +
-      "rvis.o365_gateway.ReadChannelRequest\0320.j" +
-      "ervis.o365_gateway.ListChannelMessagesRe" +
-      "sponse\022f\n\022SendChannelMessage\022..jervis.o3" +
-      "65_gateway.SendChannelMessageRequest\032 .j" +
-      "ervis.o365_gateway.ChatMessage\022W\n\010ListMa" +
-      "il\022$.jervis.o365_gateway.ListMailRequest" +
-      "\032%.jervis.o365_gateway.ListMailResponse\022" +
-      "R\n\010ReadMail\022$.jervis.o365_gateway.ReadMa" +
-      "ilRequest\032 .jervis.o365_gateway.MailMess" +
-      "age\022U\n\010SendMail\022\'.jervis.o365_gateway.Se" +
-      "ndMailRpcRequest\032 .jervis.o365_gateway.S" +
-      "endMailAckB7\n!com.jervis.contracts.o365_" +
-      "gatewayB\020O365GatewayProtoP\001b\006proto3"
+      "SendMailAck\022\016\n\006result\030\001 \001(\t\"8\n\020DateTimeT" +
+      "imeZone\022\021\n\tdate_time\030\001 \001(\t\022\021\n\ttime_zone\030" +
+      "\002 \001(\t\" \n\010Location\022\024\n\014display_name\030\001 \001(\t\"" +
+      "d\n\010Attendee\0228\n\remail_address\030\001 \001(\0132!.jer" +
+      "vis.o365_gateway.EmailAddress\022\014\n\004type\030\002 " +
+      "\001(\t\022\020\n\010response\030\003 \001(\t\"\364\003\n\rCalendarEvent\022" +
+      "\n\n\002id\030\001 \001(\t\022\017\n\007subject\030\002 \001(\t\022+\n\004body\030\003 \001" +
+      "(\0132\035.jervis.o365_gateway.MailBody\0224\n\005sta" +
+      "rt\030\004 \001(\0132%.jervis.o365_gateway.DateTimeT" +
+      "imeZone\0222\n\003end\030\005 \001(\0132%.jervis.o365_gatew" +
+      "ay.DateTimeTimeZone\022/\n\010location\030\006 \001(\0132\035." +
+      "jervis.o365_gateway.Location\0224\n\torganize" +
+      "r\030\007 \001(\0132!.jervis.o365_gateway.EmailAddre" +
+      "ss\0220\n\tattendees\030\010 \003(\0132\035.jervis.o365_gate" +
+      "way.Attendee\022\022\n\nis_all_day\030\t \001(\010\022\024\n\014is_c" +
+      "ancelled\030\n \001(\010\022\031\n\021is_online_meeting\030\013 \001(" +
+      "\010\022\032\n\022online_meeting_url\030\014 \001(\t\022\017\n\007show_as" +
+      "\030\r \001(\t\022\020\n\010web_link\030\016 \001(\t\022\022\n\nodata_etag\030\017" +
+      " \001(\t\"\227\001\n\031ListCalendarEventsRequest\022*\n\003ct" +
+      "x\030\001 \001(\0132\035.jervis.common.RequestContext\022\021" +
+      "\n\tclient_id\030\002 \001(\t\022\013\n\003top\030\003 \001(\005\022\027\n\017start_" +
+      "date_time\030\004 \001(\t\022\025\n\rend_date_time\030\005 \001(\t\"P" +
+      "\n\032ListCalendarEventsResponse\0222\n\006events\030\001" +
+      " \003(\0132\".jervis.o365_gateway.CalendarEvent" +
+      "\"\201\003\n\032CreateCalendarEventRequest\022*\n\003ctx\030\001" +
+      " \001(\0132\035.jervis.common.RequestContext\022\021\n\tc" +
+      "lient_id\030\002 \001(\t\022\017\n\007subject\030\003 \001(\t\022+\n\004body\030" +
+      "\004 \001(\0132\035.jervis.o365_gateway.MailBody\0224\n\005" +
+      "start\030\005 \001(\0132%.jervis.o365_gateway.DateTi" +
+      "meTimeZone\0222\n\003end\030\006 \001(\0132%.jervis.o365_ga" +
+      "teway.DateTimeTimeZone\022/\n\010location\030\007 \001(\013" +
+      "2\035.jervis.o365_gateway.Location\0220\n\tatten" +
+      "dees\030\010 \003(\0132\035.jervis.o365_gateway.Attende" +
+      "e\022\031\n\021is_online_meeting\030\t \001(\0102\327\n\n\022O365Gat" +
+      "ewayService\022N\n\007Request\022 .jervis.o365_gat" +
+      "eway.O365Request\032!.jervis.o365_gateway.O" +
+      "365Response\022X\n\014RequestBytes\022 .jervis.o36" +
+      "5_gateway.O365Request\032&.jervis.o365_gate" +
+      "way.O365BytesResponse\022Z\n\tListChats\022%.jer" +
+      "vis.o365_gateway.ListChatsRequest\032&.jerv" +
+      "is.o365_gateway.ListChatsResponse\022_\n\010Rea" +
+      "dChat\022$.jervis.o365_gateway.ReadChatRequ" +
+      "est\032-.jervis.o365_gateway.ListChatMessag" +
+      "esResponse\022`\n\017SendChatMessage\022+.jervis.o" +
+      "365_gateway.SendChatMessageRequest\032 .jer" +
+      "vis.o365_gateway.ChatMessage\022Z\n\tListTeam" +
+      "s\022%.jervis.o365_gateway.ListTeamsRequest" +
+      "\032&.jervis.o365_gateway.ListTeamsResponse" +
+      "\022c\n\014ListChannels\022(.jervis.o365_gateway.L" +
+      "istChannelsRequest\032).jervis.o365_gateway" +
+      ".ListChannelsResponse\022h\n\013ReadChannel\022\'.j" +
+      "ervis.o365_gateway.ReadChannelRequest\0320." +
+      "jervis.o365_gateway.ListChannelMessagesR" +
+      "esponse\022f\n\022SendChannelMessage\022..jervis.o" +
+      "365_gateway.SendChannelMessageRequest\032 ." +
+      "jervis.o365_gateway.ChatMessage\022W\n\010ListM" +
+      "ail\022$.jervis.o365_gateway.ListMailReques" +
+      "t\032%.jervis.o365_gateway.ListMailResponse" +
+      "\022R\n\010ReadMail\022$.jervis.o365_gateway.ReadM" +
+      "ailRequest\032 .jervis.o365_gateway.MailMes" +
+      "sage\022U\n\010SendMail\022\'.jervis.o365_gateway.S" +
+      "endMailRpcRequest\032 .jervis.o365_gateway." +
+      "SendMailAck\022u\n\022ListCalendarEvents\022..jerv" +
+      "is.o365_gateway.ListCalendarEventsReques" +
+      "t\032/.jervis.o365_gateway.ListCalendarEven" +
+      "tsResponse\022j\n\023CreateCalendarEvent\022/.jerv" +
+      "is.o365_gateway.CreateCalendarEventReque" +
+      "st\032\".jervis.o365_gateway.CalendarEventB7" +
+      "\n!com.jervis.contracts.o365_gatewayB\020O36" +
+      "5GatewayProtoP\001b\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
@@ -583,6 +657,48 @@ public final class O365GatewayProto extends com.google.protobuf.GeneratedFile {
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_gateway_SendMailAck_descriptor,
         new java.lang.String[] { "Result", });
+    internal_static_jervis_o365_gateway_DateTimeTimeZone_descriptor =
+      getDescriptor().getMessageTypes().get(34);
+    internal_static_jervis_o365_gateway_DateTimeTimeZone_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_o365_gateway_DateTimeTimeZone_descriptor,
+        new java.lang.String[] { "DateTime", "TimeZone", });
+    internal_static_jervis_o365_gateway_Location_descriptor =
+      getDescriptor().getMessageTypes().get(35);
+    internal_static_jervis_o365_gateway_Location_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_o365_gateway_Location_descriptor,
+        new java.lang.String[] { "DisplayName", });
+    internal_static_jervis_o365_gateway_Attendee_descriptor =
+      getDescriptor().getMessageTypes().get(36);
+    internal_static_jervis_o365_gateway_Attendee_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_o365_gateway_Attendee_descriptor,
+        new java.lang.String[] { "EmailAddress", "Type", "Response", });
+    internal_static_jervis_o365_gateway_CalendarEvent_descriptor =
+      getDescriptor().getMessageTypes().get(37);
+    internal_static_jervis_o365_gateway_CalendarEvent_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_o365_gateway_CalendarEvent_descriptor,
+        new java.lang.String[] { "Id", "Subject", "Body", "Start", "End", "Location", "Organizer", "Attendees", "IsAllDay", "IsCancelled", "IsOnlineMeeting", "OnlineMeetingUrl", "ShowAs", "WebLink", "OdataEtag", });
+    internal_static_jervis_o365_gateway_ListCalendarEventsRequest_descriptor =
+      getDescriptor().getMessageTypes().get(38);
+    internal_static_jervis_o365_gateway_ListCalendarEventsRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_o365_gateway_ListCalendarEventsRequest_descriptor,
+        new java.lang.String[] { "Ctx", "ClientId", "Top", "StartDateTime", "EndDateTime", });
+    internal_static_jervis_o365_gateway_ListCalendarEventsResponse_descriptor =
+      getDescriptor().getMessageTypes().get(39);
+    internal_static_jervis_o365_gateway_ListCalendarEventsResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_o365_gateway_ListCalendarEventsResponse_descriptor,
+        new java.lang.String[] { "Events", });
+    internal_static_jervis_o365_gateway_CreateCalendarEventRequest_descriptor =
+      getDescriptor().getMessageTypes().get(40);
+    internal_static_jervis_o365_gateway_CreateCalendarEventRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_o365_gateway_CreateCalendarEventRequest_descriptor,
+        new java.lang.String[] { "Ctx", "ClientId", "Subject", "Body", "Start", "End", "Location", "Attendees", "IsOnlineMeeting", });
     descriptor.resolveAllFeaturesImmutable();
     com.jervis.contracts.common.TypesProto.getDescriptor();
   }

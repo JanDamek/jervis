@@ -103,6 +103,16 @@ class O365GatewayServiceStub(object):
                 request_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.SendMailRpcRequest.SerializeToString,
                 response_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.SendMailAck.FromString,
                 _registered_method=True)
+        self.ListCalendarEvents = channel.unary_unary(
+                '/jervis.o365_gateway.O365GatewayService/ListCalendarEvents',
+                request_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListCalendarEventsRequest.SerializeToString,
+                response_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListCalendarEventsResponse.FromString,
+                _registered_method=True)
+        self.CreateCalendarEvent = channel.unary_unary(
+                '/jervis.o365_gateway.O365GatewayService/CreateCalendarEvent',
+                request_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.CreateCalendarEventRequest.SerializeToString,
+                response_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.CalendarEvent.FromString,
+                _registered_method=True)
 
 
 class O365GatewayServiceServicer(object):
@@ -193,6 +203,19 @@ class O365GatewayServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ListCalendarEvents(self, request, context):
+        """=== V5d - Calendar =======================================================
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CreateCalendarEvent(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_O365GatewayServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -255,6 +278,16 @@ def add_O365GatewayServiceServicer_to_server(servicer, server):
                     servicer.SendMail,
                     request_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.SendMailRpcRequest.FromString,
                     response_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.SendMailAck.SerializeToString,
+            ),
+            'ListCalendarEvents': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListCalendarEvents,
+                    request_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListCalendarEventsRequest.FromString,
+                    response_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.ListCalendarEventsResponse.SerializeToString,
+            ),
+            'CreateCalendarEvent': grpc.unary_unary_rpc_method_handler(
+                    servicer.CreateCalendarEvent,
+                    request_deserializer=jervis_dot_o365__gateway_dot_gateway__pb2.CreateCalendarEventRequest.FromString,
+                    response_serializer=jervis_dot_o365__gateway_dot_gateway__pb2.CalendarEvent.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -590,6 +623,60 @@ class O365GatewayService(object):
             '/jervis.o365_gateway.O365GatewayService/SendMail',
             jervis_dot_o365__gateway_dot_gateway__pb2.SendMailRpcRequest.SerializeToString,
             jervis_dot_o365__gateway_dot_gateway__pb2.SendMailAck.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListCalendarEvents(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.o365_gateway.O365GatewayService/ListCalendarEvents',
+            jervis_dot_o365__gateway_dot_gateway__pb2.ListCalendarEventsRequest.SerializeToString,
+            jervis_dot_o365__gateway_dot_gateway__pb2.ListCalendarEventsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CreateCalendarEvent(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.o365_gateway.O365GatewayService/CreateCalendarEvent',
+            jervis_dot_o365__gateway_dot_gateway__pb2.CreateCalendarEventRequest.SerializeToString,
+            jervis_dot_o365__gateway_dot_gateway__pb2.CalendarEvent.FromString,
             options,
             channel_credentials,
             insecure,

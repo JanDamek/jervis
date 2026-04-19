@@ -37,6 +37,10 @@ service O365GatewayService {
   rpc ListMail(ListMailRequest) returns (ListMailResponse);
   rpc ReadMail(ReadMailRequest) returns (MailMessage);
   rpc SendMail(SendMailRpcRequest) returns (SendMailAck);
+
+  // === V5d - Calendar =======================================================
+  rpc ListCalendarEvents(ListCalendarEventsRequest) returns (ListCalendarEventsResponse);
+  rpc CreateCalendarEvent(CreateCalendarEventRequest) returns (CalendarEvent);
 }
 
 // ============================================================================
@@ -279,4 +283,65 @@ message SendMailRpcRequest {
 
 message SendMailAck {
   string result = 1;                 // "Mail sent successfully"
+}
+
+// ============================================================================
+// Calendar (V5d)
+// ============================================================================
+
+message DateTimeTimeZone {
+  string date_time = 1;
+  string time_zone = 2;
+}
+
+message Location {
+  string display_name = 1;
+}
+
+message Attendee {
+  EmailAddress email_address = 1;
+  string type = 2;                   // "required" | "optional" | "resource"
+  string response = 3;               // attendee response status
+}
+
+message CalendarEvent {
+  string id = 1;
+  string subject = 2;
+  MailBody body = 3;
+  DateTimeTimeZone start = 4;
+  DateTimeTimeZone end = 5;
+  Location location = 6;
+  EmailAddress organizer = 7;
+  repeated Attendee attendees = 8;
+  bool is_all_day = 9;
+  bool is_cancelled = 10;
+  bool is_online_meeting = 11;
+  string online_meeting_url = 12;
+  string show_as = 13;
+  string web_link = 14;
+  string odata_etag = 15;            // upstream Graph @odata.etag for change detection
+}
+
+message ListCalendarEventsRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  int32 top = 3;                     // default 20
+  string start_date_time = 4;        // optional; if set with end -> calendarView range
+  string end_date_time = 5;
+}
+
+message ListCalendarEventsResponse {
+  repeated CalendarEvent events = 1;
+}
+
+message CreateCalendarEventRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string subject = 3;
+  MailBody body = 4;
+  DateTimeTimeZone start = 5;
+  DateTimeTimeZone end = 6;
+  Location location = 7;
+  repeated Attendee attendees = 8;
+  bool is_online_meeting = 9;
 }

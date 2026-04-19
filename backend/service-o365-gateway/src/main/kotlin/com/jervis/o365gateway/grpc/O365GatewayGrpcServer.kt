@@ -2,12 +2,19 @@ package com.jervis.o365gateway.grpc
 
 import com.google.protobuf.ByteString
 import com.jervis.contracts.interceptors.ServerContextInterceptor
+import com.jervis.contracts.o365_gateway.Attendee as ProtoAttendee
+import com.jervis.contracts.o365_gateway.CalendarEvent as ProtoCalendarEvent
 import com.jervis.contracts.o365_gateway.Channel as ProtoChannel
 import com.jervis.contracts.o365_gateway.ChatMessage as ProtoChatMessage
 import com.jervis.contracts.o365_gateway.ChatSummary as ProtoChatSummary
+import com.jervis.contracts.o365_gateway.CreateCalendarEventRequest
+import com.jervis.contracts.o365_gateway.DateTimeTimeZone as ProtoDateTimeTimeZone
 import com.jervis.contracts.o365_gateway.EmailAddress as ProtoEmailAddress
 import com.jervis.contracts.o365_gateway.GraphApplication as ProtoGraphApplication
 import com.jervis.contracts.o365_gateway.GraphUser as ProtoGraphUser
+import com.jervis.contracts.o365_gateway.ListCalendarEventsRequest
+import com.jervis.contracts.o365_gateway.ListCalendarEventsResponse
+import com.jervis.contracts.o365_gateway.Location as ProtoLocation
 import com.jervis.contracts.o365_gateway.ListChannelMessagesResponse
 import com.jervis.contracts.o365_gateway.ListChannelsRequest
 import com.jervis.contracts.o365_gateway.ListChannelsResponse
@@ -41,8 +48,12 @@ import com.jervis.o365gateway.model.CreateEventRequest
 import com.jervis.o365gateway.model.GraphApplication
 import com.jervis.o365gateway.model.GraphChannel
 import com.jervis.o365gateway.model.GraphChat
+import com.jervis.o365gateway.model.GraphAttendee
+import com.jervis.o365gateway.model.GraphDateTimeTimeZone
 import com.jervis.o365gateway.model.GraphEmailAddress
 import com.jervis.o365gateway.model.GraphEmailAddressDetail
+import com.jervis.o365gateway.model.GraphEvent
+import com.jervis.o365gateway.model.GraphLocation
 import com.jervis.o365gateway.model.GraphMailBody
 import com.jervis.o365gateway.model.GraphMailMessage
 import com.jervis.o365gateway.model.GraphMessage
@@ -224,6 +235,43 @@ private class GatewayServicer(
         )
         graphApi.sendMail(request.clientId, mail)
         return SendMailAck.newBuilder().setResult("Mail sent successfully").build()
+    }
+
+    // === V5d - Calendar typed ================================================
+
+    override suspend fun listCalendarEvents(
+        request: ListCalendarEventsRequest,
+    ): ListCalendarEventsResponse {
+        val top = if (request.top == 0) 20 else request.top
+        val events = graphApi.listEvents(
+            request.clientId,
+            top,
+            request.startDateTime.takeIf { it.isNotBlank() },
+            request.endDateTime.takeIf { it.isNotBlank() },
+        )
+        return ListCalendarEventsResponse.newBuilder()
+            .apply { events.forEach { addEvents(it.toProto()) } }
+            .build()
+    }
+
+    override suspend fun createCalendarEvent(
+        request: CreateCalendarEventRequest,
+    ): ProtoCalendarEvent {
+        val createReq = CreateEventRequest(
+            subject = request.subject,
+            body = if (request.hasBody()) GraphMailBody(
+                contentType = request.body.contentType.ifBlank { "text" },
+                content = request.body.content,
+            ) else null,
+            start = request.start.toGraph(),
+            end = request.end.toGraph(),
+            location = if (request.hasLocation()) GraphLocation(
+                displayName = request.location.displayName.takeIf { it.isNotBlank() },
+            ) else null,
+            attendees = request.attendeesList.takeIf { it.isNotEmpty() }?.map { it.toGraph() },
+            isOnlineMeeting = request.isOnlineMeeting,
+        )
+        return graphApi.createEvent(request.clientId, createReq).toProto()
     }
 
     override suspend fun requestBytes(request: O365Request): O365BytesResponse {
@@ -491,3 +539,62 @@ private fun ProtoRecipient.toGraph(): GraphRecipient =
             )
         } else null,
     )
+
+// === V5d - Calendar: Graph DTO <-> proto mappers =============================
+
+private fun GraphDateTimeTimeZone.toProto(): ProtoDateTimeTimeZone =
+    ProtoDateTimeTimeZone.newBuilder()
+        .setDateTime(dateTime.orEmpty())
+        .setTimeZone(timeZone.orEmpty())
+        .build()
+
+private fun ProtoDateTimeTimeZone.toGraph(): GraphDateTimeTimeZone =
+    GraphDateTimeTimeZone(
+        dateTime = dateTime.takeIf { it.isNotBlank() },
+        timeZone = timeZone.takeIf { it.isNotBlank() },
+    )
+
+private fun GraphLocation.toProto(): ProtoLocation =
+    ProtoLocation.newBuilder()
+        .setDisplayName(displayName.orEmpty())
+        .build()
+
+private fun GraphAttendee.toProto(): ProtoAttendee =
+    ProtoAttendee.newBuilder()
+        .setType(type.orEmpty())
+        .setResponse(status?.response.orEmpty())
+        .apply { emailAddress?.let { setEmailAddress(it.toProto()) } }
+        .build()
+
+private fun ProtoAttendee.toGraph(): GraphAttendee =
+    GraphAttendee(
+        emailAddress = if (hasEmailAddress()) {
+            GraphEmailAddressDetail(
+                name = emailAddress.name.takeIf { it.isNotBlank() },
+                address = emailAddress.address.takeIf { it.isNotBlank() },
+            )
+        } else null,
+        type = type.takeIf { it.isNotBlank() } ?: "required",
+        status = null,
+    )
+
+private fun GraphEvent.toProto(): ProtoCalendarEvent =
+    ProtoCalendarEvent.newBuilder()
+        .setId(id.orEmpty())
+        .setSubject(subject.orEmpty())
+        .setIsAllDay(isAllDay ?: false)
+        .setIsCancelled(isCancelled ?: false)
+        .setIsOnlineMeeting(isOnlineMeeting ?: false)
+        .setOnlineMeetingUrl(onlineMeetingUrl.orEmpty())
+        .setShowAs(showAs.orEmpty())
+        .setWebLink(webLink.orEmpty())
+        .setOdataEtag(odataEtag.orEmpty())
+        .apply {
+            body?.let { setBody(it.toProto()) }
+            start?.let { setStart(it.toProto()) }
+            end?.let { setEnd(it.toProto()) }
+            location?.let { setLocation(it.toProto()) }
+            organizer?.emailAddress?.let { setOrganizer(it.toProto()) }
+            attendees?.forEach { addAttendees(it.toProto()) }
+        }
+        .build()

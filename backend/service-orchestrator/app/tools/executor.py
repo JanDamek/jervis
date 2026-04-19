@@ -4035,15 +4035,14 @@ async def _execute_o365_calendar_events(
     client_id: str, top: int = 20,
     start_date_time: str = "", end_date_time: str = "",
 ) -> str:
-    params: dict = {"top": top}
-    if start_date_time:
-        params["startDateTime"] = start_date_time
-    if end_date_time:
-        params["endDateTime"] = end_date_time
-    from app.o365_gateway_client import O365GatewayError, o365_request
+    from app.o365_gateway_client import O365GatewayError, list_calendar_events
 
     try:
-        events = await o365_request("GET", f"calendar/{client_id}", query=params)
+        events = await list_calendar_events(
+            client_id, top=top,
+            start_date_time=start_date_time or "",
+            end_date_time=end_date_time or "",
+        )
     except O365GatewayError as e:
         return f"Error ({e.status_code}): {e.body[:300]}"
     except Exception as e:
@@ -4053,22 +4052,19 @@ async def _execute_o365_calendar_events(
         return "No events found."
     lines = []
     for ev in events:
-        subj = ev.get("subject", "(no subject)")
-        start = (ev.get("start") or {}).get("dateTime", "?")
-        end = (ev.get("end") or {}).get("dateTime", "?")
+        subj = ev.subject or "(no subject)"
+        start = ev.start.date_time if ev.HasField("start") else "?"
+        end = ev.end.date_time if ev.HasField("end") else "?"
         loc = ""
-        if ev.get("location") and ev["location"].get("displayName"):
-            loc = f" @ {ev['location']['displayName']}"
-        online = " [ONLINE]" if ev.get("isOnlineMeeting") else ""
-        all_day = " [ALL DAY]" if ev.get("isAllDay") else ""
-        ev_id = ev.get("id", "?")
-        attendees = []
-        for a in ev.get("attendees") or []:
-            if a.get("emailAddress"):
-                attendees.append(
-                    a["emailAddress"].get("name")
-                    or a["emailAddress"].get("address", "")
-                )
+        if ev.HasField("location") and ev.location.display_name:
+            loc = f" @ {ev.location.display_name}"
+        online = " [ONLINE]" if ev.is_online_meeting else ""
+        all_day = " [ALL DAY]" if ev.is_all_day else ""
+        ev_id = ev.id or "?"
+        attendees = [
+            (a.email_address.name or a.email_address.address)
+            for a in ev.attendees if a.HasField("email_address")
+        ]
         att_str = f"\n  Attendees: {', '.join(attendees)}" if attendees else ""
         lines.append(
             f"{subj}{all_day}{online}{loc}\n  {start} → {end}\n  id={ev_id}{att_str}"
@@ -4085,35 +4081,32 @@ async def _execute_o365_calendar_create(
 ) -> str:
     if not subject or not start_date_time or not end_date_time:
         return "Error: subject, start_date_time, and end_date_time are required."
-    payload: dict = {
-        "subject": subject,
-        "start": {"dateTime": start_date_time, "timeZone": start_time_zone or "UTC"},
-        "end": {"dateTime": end_date_time, "timeZone": end_time_zone or "UTC"},
-        "isOnlineMeeting": is_online_meeting,
-    }
-    if location:
-        payload["location"] = {"displayName": location}
-    if body:
-        payload["body"] = {"contentType": "text", "content": body}
-    if attendees:
-        payload["attendees"] = [
-            {"emailAddress": {"address": addr.strip()}, "type": "required"}
-            for addr in attendees.split(",") if addr.strip()
-        ]
-    from app.o365_gateway_client import O365GatewayError, o365_request
+    attendee_list = [a.strip() for a in attendees.split(",") if a.strip()] if attendees else []
+    from app.o365_gateway_client import O365GatewayError, create_calendar_event
 
     try:
-        ev = await o365_request("POST", f"calendar/{client_id}", body=payload)
+        ev = await create_calendar_event(
+            client_id,
+            subject=subject,
+            start_date_time=start_date_time,
+            start_time_zone=start_time_zone or "UTC",
+            end_date_time=end_date_time,
+            end_time_zone=end_time_zone or "UTC",
+            location=location,
+            body_content=body,
+            attendee_addresses=attendee_list,
+            is_online_meeting=is_online_meeting,
+        )
     except O365GatewayError as e:
         return f"Error ({e.status_code}): {e.body[:300]}"
     except Exception as e:
         return f"Error creating calendar event: {str(e)[:300]}"
 
-    result = f"Event created: {ev.get('subject', subject)} (id={ev.get('id', '?')})"
-    if ev.get("onlineMeetingUrl"):
-        result += f"\nTeams meeting URL: {ev['onlineMeetingUrl']}"
-    if ev.get("webLink"):
-        result += f"\nWeb link: {ev['webLink']}"
+    result = f"Event created: {ev.subject or subject} (id={ev.id or '?'})"
+    if ev.online_meeting_url:
+        result += f"\nTeams meeting URL: {ev.online_meeting_url}"
+    if ev.web_link:
+        result += f"\nWeb link: {ev.web_link}"
     return result
 
 

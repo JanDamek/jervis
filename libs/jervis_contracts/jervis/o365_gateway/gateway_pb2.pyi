@@ -393,3 +393,103 @@ class SendMailAck(_message.Message):
     RESULT_FIELD_NUMBER: _ClassVar[int]
     result: str
     def __init__(self, result: _Optional[str] = ...) -> None: ...
+
+class DateTimeTimeZone(_message.Message):
+    __slots__ = ("date_time", "time_zone")
+    DATE_TIME_FIELD_NUMBER: _ClassVar[int]
+    TIME_ZONE_FIELD_NUMBER: _ClassVar[int]
+    date_time: str
+    time_zone: str
+    def __init__(self, date_time: _Optional[str] = ..., time_zone: _Optional[str] = ...) -> None: ...
+
+class Location(_message.Message):
+    __slots__ = ("display_name",)
+    DISPLAY_NAME_FIELD_NUMBER: _ClassVar[int]
+    display_name: str
+    def __init__(self, display_name: _Optional[str] = ...) -> None: ...
+
+class Attendee(_message.Message):
+    __slots__ = ("email_address", "type", "response")
+    EMAIL_ADDRESS_FIELD_NUMBER: _ClassVar[int]
+    TYPE_FIELD_NUMBER: _ClassVar[int]
+    RESPONSE_FIELD_NUMBER: _ClassVar[int]
+    email_address: EmailAddress
+    type: str
+    response: str
+    def __init__(self, email_address: _Optional[_Union[EmailAddress, _Mapping]] = ..., type: _Optional[str] = ..., response: _Optional[str] = ...) -> None: ...
+
+class CalendarEvent(_message.Message):
+    __slots__ = ("id", "subject", "body", "start", "end", "location", "organizer", "attendees", "is_all_day", "is_cancelled", "is_online_meeting", "online_meeting_url", "show_as", "web_link", "odata_etag")
+    ID_FIELD_NUMBER: _ClassVar[int]
+    SUBJECT_FIELD_NUMBER: _ClassVar[int]
+    BODY_FIELD_NUMBER: _ClassVar[int]
+    START_FIELD_NUMBER: _ClassVar[int]
+    END_FIELD_NUMBER: _ClassVar[int]
+    LOCATION_FIELD_NUMBER: _ClassVar[int]
+    ORGANIZER_FIELD_NUMBER: _ClassVar[int]
+    ATTENDEES_FIELD_NUMBER: _ClassVar[int]
+    IS_ALL_DAY_FIELD_NUMBER: _ClassVar[int]
+    IS_CANCELLED_FIELD_NUMBER: _ClassVar[int]
+    IS_ONLINE_MEETING_FIELD_NUMBER: _ClassVar[int]
+    ONLINE_MEETING_URL_FIELD_NUMBER: _ClassVar[int]
+    SHOW_AS_FIELD_NUMBER: _ClassVar[int]
+    WEB_LINK_FIELD_NUMBER: _ClassVar[int]
+    ODATA_ETAG_FIELD_NUMBER: _ClassVar[int]
+    id: str
+    subject: str
+    body: MailBody
+    start: DateTimeTimeZone
+    end: DateTimeTimeZone
+    location: Location
+    organizer: EmailAddress
+    attendees: _containers.RepeatedCompositeFieldContainer[Attendee]
+    is_all_day: bool
+    is_cancelled: bool
+    is_online_meeting: bool
+    online_meeting_url: str
+    show_as: str
+    web_link: str
+    odata_etag: str
+    def __init__(self, id: _Optional[str] = ..., subject: _Optional[str] = ..., body: _Optional[_Union[MailBody, _Mapping]] = ..., start: _Optional[_Union[DateTimeTimeZone, _Mapping]] = ..., end: _Optional[_Union[DateTimeTimeZone, _Mapping]] = ..., location: _Optional[_Union[Location, _Mapping]] = ..., organizer: _Optional[_Union[EmailAddress, _Mapping]] = ..., attendees: _Optional[_Iterable[_Union[Attendee, _Mapping]]] = ..., is_all_day: bool = ..., is_cancelled: bool = ..., is_online_meeting: bool = ..., online_meeting_url: _Optional[str] = ..., show_as: _Optional[str] = ..., web_link: _Optional[str] = ..., odata_etag: _Optional[str] = ...) -> None: ...
+
+class ListCalendarEventsRequest(_message.Message):
+    __slots__ = ("ctx", "client_id", "top", "start_date_time", "end_date_time")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    CLIENT_ID_FIELD_NUMBER: _ClassVar[int]
+    TOP_FIELD_NUMBER: _ClassVar[int]
+    START_DATE_TIME_FIELD_NUMBER: _ClassVar[int]
+    END_DATE_TIME_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    client_id: str
+    top: int
+    start_date_time: str
+    end_date_time: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., client_id: _Optional[str] = ..., top: _Optional[int] = ..., start_date_time: _Optional[str] = ..., end_date_time: _Optional[str] = ...) -> None: ...
+
+class ListCalendarEventsResponse(_message.Message):
+    __slots__ = ("events",)
+    EVENTS_FIELD_NUMBER: _ClassVar[int]
+    events: _containers.RepeatedCompositeFieldContainer[CalendarEvent]
+    def __init__(self, events: _Optional[_Iterable[_Union[CalendarEvent, _Mapping]]] = ...) -> None: ...
+
+class CreateCalendarEventRequest(_message.Message):
+    __slots__ = ("ctx", "client_id", "subject", "body", "start", "end", "location", "attendees", "is_online_meeting")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    CLIENT_ID_FIELD_NUMBER: _ClassVar[int]
+    SUBJECT_FIELD_NUMBER: _ClassVar[int]
+    BODY_FIELD_NUMBER: _ClassVar[int]
+    START_FIELD_NUMBER: _ClassVar[int]
+    END_FIELD_NUMBER: _ClassVar[int]
+    LOCATION_FIELD_NUMBER: _ClassVar[int]
+    ATTENDEES_FIELD_NUMBER: _ClassVar[int]
+    IS_ONLINE_MEETING_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    client_id: str
+    subject: str
+    body: MailBody
+    start: DateTimeTimeZone
+    end: DateTimeTimeZone
+    location: Location
+    attendees: _containers.RepeatedCompositeFieldContainer[Attendee]
+    is_online_meeting: bool
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., client_id: _Optional[str] = ..., subject: _Optional[str] = ..., body: _Optional[_Union[MailBody, _Mapping]] = ..., start: _Optional[_Union[DateTimeTimeZone, _Mapping]] = ..., end: _Optional[_Union[DateTimeTimeZone, _Mapping]] = ..., location: _Optional[_Union[Location, _Mapping]] = ..., attendees: _Optional[_Iterable[_Union[Attendee, _Mapping]]] = ..., is_online_meeting: bool = ...) -> None: ...

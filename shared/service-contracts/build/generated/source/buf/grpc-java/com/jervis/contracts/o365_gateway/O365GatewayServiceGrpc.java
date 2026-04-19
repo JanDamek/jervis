@@ -397,6 +397,68 @@ public final class O365GatewayServiceGrpc {
     return getSendMailMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.ListCalendarEventsRequest,
+      com.jervis.contracts.o365_gateway.ListCalendarEventsResponse> getListCalendarEventsMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "ListCalendarEvents",
+      requestType = com.jervis.contracts.o365_gateway.ListCalendarEventsRequest.class,
+      responseType = com.jervis.contracts.o365_gateway.ListCalendarEventsResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.ListCalendarEventsRequest,
+      com.jervis.contracts.o365_gateway.ListCalendarEventsResponse> getListCalendarEventsMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.ListCalendarEventsRequest, com.jervis.contracts.o365_gateway.ListCalendarEventsResponse> getListCalendarEventsMethod;
+    if ((getListCalendarEventsMethod = O365GatewayServiceGrpc.getListCalendarEventsMethod) == null) {
+      synchronized (O365GatewayServiceGrpc.class) {
+        if ((getListCalendarEventsMethod = O365GatewayServiceGrpc.getListCalendarEventsMethod) == null) {
+          O365GatewayServiceGrpc.getListCalendarEventsMethod = getListCalendarEventsMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_gateway.ListCalendarEventsRequest, com.jervis.contracts.o365_gateway.ListCalendarEventsResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "ListCalendarEvents"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.ListCalendarEventsRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.ListCalendarEventsResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new O365GatewayServiceMethodDescriptorSupplier("ListCalendarEvents"))
+              .build();
+        }
+      }
+    }
+    return getListCalendarEventsMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.CreateCalendarEventRequest,
+      com.jervis.contracts.o365_gateway.CalendarEvent> getCreateCalendarEventMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "CreateCalendarEvent",
+      requestType = com.jervis.contracts.o365_gateway.CreateCalendarEventRequest.class,
+      responseType = com.jervis.contracts.o365_gateway.CalendarEvent.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.CreateCalendarEventRequest,
+      com.jervis.contracts.o365_gateway.CalendarEvent> getCreateCalendarEventMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.o365_gateway.CreateCalendarEventRequest, com.jervis.contracts.o365_gateway.CalendarEvent> getCreateCalendarEventMethod;
+    if ((getCreateCalendarEventMethod = O365GatewayServiceGrpc.getCreateCalendarEventMethod) == null) {
+      synchronized (O365GatewayServiceGrpc.class) {
+        if ((getCreateCalendarEventMethod = O365GatewayServiceGrpc.getCreateCalendarEventMethod) == null) {
+          O365GatewayServiceGrpc.getCreateCalendarEventMethod = getCreateCalendarEventMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_gateway.CreateCalendarEventRequest, com.jervis.contracts.o365_gateway.CalendarEvent>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "CreateCalendarEvent"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.CreateCalendarEventRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_gateway.CalendarEvent.getDefaultInstance()))
+              .setSchemaDescriptor(new O365GatewayServiceMethodDescriptorSupplier("CreateCalendarEvent"))
+              .build();
+        }
+      }
+    }
+    return getCreateCalendarEventMethod;
+  }
+
   /**
    * Creates a new async stub that supports all call types for the service
    */
@@ -549,6 +611,23 @@ public final class O365GatewayServiceGrpc {
     default void sendMail(com.jervis.contracts.o365_gateway.SendMailRpcRequest request,
         io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.SendMailAck> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getSendMailMethod(), responseObserver);
+    }
+
+    /**
+     * <pre>
+     * === V5d - Calendar =======================================================
+     * </pre>
+     */
+    default void listCalendarEvents(com.jervis.contracts.o365_gateway.ListCalendarEventsRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ListCalendarEventsResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getListCalendarEventsMethod(), responseObserver);
+    }
+
+    /**
+     */
+    default void createCalendarEvent(com.jervis.contracts.o365_gateway.CreateCalendarEventRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.CalendarEvent> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getCreateCalendarEventMethod(), responseObserver);
     }
   }
 
@@ -706,6 +785,25 @@ public final class O365GatewayServiceGrpc {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getSendMailMethod(), getCallOptions()), request, responseObserver);
     }
+
+    /**
+     * <pre>
+     * === V5d - Calendar =======================================================
+     * </pre>
+     */
+    public void listCalendarEvents(com.jervis.contracts.o365_gateway.ListCalendarEventsRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ListCalendarEventsResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getListCalendarEventsMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void createCalendarEvent(com.jervis.contracts.o365_gateway.CreateCalendarEventRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.CalendarEvent> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getCreateCalendarEventMethod(), getCallOptions()), request, responseObserver);
+    }
   }
 
   /**
@@ -828,6 +926,23 @@ public final class O365GatewayServiceGrpc {
     public com.jervis.contracts.o365_gateway.SendMailAck sendMail(com.jervis.contracts.o365_gateway.SendMailRpcRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getSendMailMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * === V5d - Calendar =======================================================
+     * </pre>
+     */
+    public com.jervis.contracts.o365_gateway.ListCalendarEventsResponse listCalendarEvents(com.jervis.contracts.o365_gateway.ListCalendarEventsRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getListCalendarEventsMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_gateway.CalendarEvent createCalendarEvent(com.jervis.contracts.o365_gateway.CreateCalendarEventRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getCreateCalendarEventMethod(), getCallOptions(), request);
     }
   }
 
@@ -964,6 +1079,25 @@ public final class O365GatewayServiceGrpc {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getSendMailMethod(), getCallOptions()), request);
     }
+
+    /**
+     * <pre>
+     * === V5d - Calendar =======================================================
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_gateway.ListCalendarEventsResponse> listCalendarEvents(
+        com.jervis.contracts.o365_gateway.ListCalendarEventsRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getListCalendarEventsMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_gateway.CalendarEvent> createCalendarEvent(
+        com.jervis.contracts.o365_gateway.CreateCalendarEventRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getCreateCalendarEventMethod(), getCallOptions()), request);
+    }
   }
 
   private static final int METHODID_REQUEST = 0;
@@ -978,6 +1112,8 @@ public final class O365GatewayServiceGrpc {
   private static final int METHODID_LIST_MAIL = 9;
   private static final int METHODID_READ_MAIL = 10;
   private static final int METHODID_SEND_MAIL = 11;
+  private static final int METHODID_LIST_CALENDAR_EVENTS = 12;
+  private static final int METHODID_CREATE_CALENDAR_EVENT = 13;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -1043,6 +1179,14 @@ public final class O365GatewayServiceGrpc {
         case METHODID_SEND_MAIL:
           serviceImpl.sendMail((com.jervis.contracts.o365_gateway.SendMailRpcRequest) request,
               (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.SendMailAck>) responseObserver);
+          break;
+        case METHODID_LIST_CALENDAR_EVENTS:
+          serviceImpl.listCalendarEvents((com.jervis.contracts.o365_gateway.ListCalendarEventsRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.ListCalendarEventsResponse>) responseObserver);
+          break;
+        case METHODID_CREATE_CALENDAR_EVENT:
+          serviceImpl.createCalendarEvent((com.jervis.contracts.o365_gateway.CreateCalendarEventRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_gateway.CalendarEvent>) responseObserver);
           break;
         default:
           throw new AssertionError();
@@ -1146,6 +1290,20 @@ public final class O365GatewayServiceGrpc {
               com.jervis.contracts.o365_gateway.SendMailRpcRequest,
               com.jervis.contracts.o365_gateway.SendMailAck>(
                 service, METHODID_SEND_MAIL)))
+        .addMethod(
+          getListCalendarEventsMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.o365_gateway.ListCalendarEventsRequest,
+              com.jervis.contracts.o365_gateway.ListCalendarEventsResponse>(
+                service, METHODID_LIST_CALENDAR_EVENTS)))
+        .addMethod(
+          getCreateCalendarEventMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.o365_gateway.CreateCalendarEventRequest,
+              com.jervis.contracts.o365_gateway.CalendarEvent>(
+                service, METHODID_CREATE_CALENDAR_EVENT)))
         .build();
   }
 
@@ -1206,6 +1364,8 @@ public final class O365GatewayServiceGrpc {
               .addMethod(getListMailMethod())
               .addMethod(getReadMailMethod())
               .addMethod(getSendMailMethod())
+              .addMethod(getListCalendarEventsMethod())
+              .addMethod(getCreateCalendarEventMethod())
               .build();
         }
       }

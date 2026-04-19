@@ -81,6 +81,15 @@ public object O365GatewayServiceGrpcKt {
     @JvmStatic
     get() = O365GatewayServiceGrpc.getSendMailMethod()
 
+  public val listCalendarEventsMethod:
+      MethodDescriptor<ListCalendarEventsRequest, ListCalendarEventsResponse>
+    @JvmStatic
+    get() = O365GatewayServiceGrpc.getListCalendarEventsMethod()
+
+  public val createCalendarEventMethod: MethodDescriptor<CreateCalendarEventRequest, CalendarEvent>
+    @JvmStatic
+    get() = O365GatewayServiceGrpc.getCreateCalendarEventMethod()
+
   /**
    * A stub for issuing RPCs to a(n) jervis.o365_gateway.O365GatewayService service as suspending
    * coroutines.
@@ -356,6 +365,50 @@ public object O365GatewayServiceGrpcKt {
       callOptions,
       headers
     )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun listCalendarEvents(request: ListCalendarEventsRequest, headers: Metadata =
+        Metadata()): ListCalendarEventsResponse = unaryRpc(
+      channel,
+      O365GatewayServiceGrpc.getListCalendarEventsMethod(),
+      request,
+      callOptions,
+      headers
+    )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
+     * corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun createCalendarEvent(request: CreateCalendarEventRequest, headers: Metadata =
+        Metadata()): CalendarEvent = unaryRpc(
+      channel,
+      O365GatewayServiceGrpc.getCreateCalendarEventMethod(),
+      request,
+      callOptions,
+      headers
+    )
   }
 
   /**
@@ -535,6 +588,37 @@ public object O365GatewayServiceGrpcKt {
     public open suspend fun sendMail(request: SendMailRpcRequest): SendMailAck = throw
         StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.SendMail is unimplemented"))
 
+    /**
+     * Returns the response to an RPC for jervis.o365_gateway.O365GatewayService.ListCalendarEvents.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun listCalendarEvents(request: ListCalendarEventsRequest):
+        ListCalendarEventsResponse = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.ListCalendarEvents is unimplemented"))
+
+    /**
+     * Returns the response to an RPC for
+     * jervis.o365_gateway.O365GatewayService.CreateCalendarEvent.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
+     * the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun createCalendarEvent(request: CreateCalendarEventRequest): CalendarEvent
+        = throw
+        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.CreateCalendarEvent is unimplemented"))
+
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(
       context = this.context,
@@ -595,6 +679,16 @@ public object O365GatewayServiceGrpcKt {
       context = this.context,
       descriptor = O365GatewayServiceGrpc.getSendMailMethod(),
       implementation = ::sendMail
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = O365GatewayServiceGrpc.getListCalendarEventsMethod(),
+      implementation = ::listCalendarEvents
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = O365GatewayServiceGrpc.getCreateCalendarEventMethod(),
+      implementation = ::createCalendarEvent
     )).build()
   }
 }
