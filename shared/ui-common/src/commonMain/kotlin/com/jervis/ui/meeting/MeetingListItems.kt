@@ -97,8 +97,13 @@ internal fun MeetingListItem(
                 )
                 Text(
                     text = when {
-                        meeting.state == MeetingStateEnum.TRANSCRIBING && transcriptionPercent != null ->
-                            "Přepis ${transcriptionPercent.toInt()}%"
+                        // Whisper progress percent stops at the end of the
+                        // transcription phase and says nothing about the
+                        // following diarization, so showing "Přepis 5 %"
+                        // mid-diarize was misleading. Stick to the plain
+                        // state label during TRANSCRIBING — reintroduce
+                        // a real progress value only once the backend
+                        // emits one for both phases.
                         meeting.state == MeetingStateEnum.CORRECTING && correctionProgress != null ->
                             "Korekce ${correctionProgress.chunksDone}/${correctionProgress.totalChunks}"
                         else -> stateLabel(meeting.state)

@@ -179,7 +179,21 @@ internal fun PipelineProgress(
                 (state == MeetingStateEnum.CORRECTING && elapsedMinutes >= 45 && correctionProgress == null)
             )
 
-            // Status description
+            // Status description.
+            //
+            // Whisper TRANSCRIBING covers two phases: the actual Whisper
+            // transcription (emits Progress events with percent +
+            // last-segment text) and speaker diarization (pyannote on CPU,
+            // silent — no progress hook). Surfacing the transcription
+            // percent + last-segment text is misleading once the stream
+            // reaches 100 %: the UI still says "Whisper přepisuje: 5 %"
+            // or shows a stale segment for several minutes while pyannote
+            // grinds through the audio on CPU.
+            //
+            // Keep a plain static label + elapsed minutes during
+            // TRANSCRIBING; no percent, no last-segment preview. Percent
+            // comes back only if we add a real diarization progress hook
+            // (see project-progressive-transcription-ui in memory).
             val elapsedSuffix = if (elapsedMinutes != null && elapsedMinutes > 0 && isActive) " (${elapsedMinutes} min)" else ""
             val statusText = when {
                 state == MeetingStateEnum.FAILED -> null // handled separately
@@ -189,8 +203,8 @@ internal fun PipelineProgress(
                 state == MeetingStateEnum.UPLOADED -> "Ve frontě – čeká na přepis přes Whisper"
                 isLikelyStuck && state == MeetingStateEnum.TRANSCRIBING ->
                     "Možná zaseknuto – žádný progress ${elapsedMinutes} min. Zkuste 'Přepsat znovu'."
-                state == MeetingStateEnum.TRANSCRIBING && transcriptionPercent != null ->
-                    "Whisper přepisuje: ${transcriptionPercent.toInt()}%$elapsedSuffix"
+                state == MeetingStateEnum.TRANSCRIBING ->
+                    "Whisper přepisuje + diarizuje audio$elapsedSuffix"
                 isLikelyStuck && state == MeetingStateEnum.CORRECTING ->
                     "Možná zaseknuto – žádný progress ${elapsedMinutes} min."
                 state == MeetingStateEnum.CORRECTING && correctionProgress != null ->
@@ -210,12 +224,7 @@ internal fun PipelineProgress(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    if (state == MeetingStateEnum.TRANSCRIBING && transcriptionPercent != null) {
-                        LinearProgressIndicator(
-                            progress = { (transcriptionPercent / 100.0).toFloat() },
-                            modifier = Modifier.width(80.dp).height(3.dp),
-                        )
-                    } else if (state == MeetingStateEnum.CORRECTING && correctionProgress != null) {
+                    if (state == MeetingStateEnum.CORRECTING && correctionProgress != null) {
                         LinearProgressIndicator(
                             progress = { (correctionProgress.percent / 100.0).toFloat() },
                             modifier = Modifier.width(80.dp).height(3.dp),
@@ -247,17 +256,12 @@ internal fun PipelineProgress(
                 }
             }
 
-            // Last transcribed segment preview — only show during active transcription
-            if (!lastSegmentText.isNullOrBlank() && state == MeetingStateEnum.TRANSCRIBING) {
-                Text(
-                    text = lastSegmentText,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-            }
+            // Last-segment preview removed — the Progress stream stops
+            // emitting once Whisper hands off to pyannote diarization,
+            // so the last segment text becomes stale (freezes at 5 s of
+            // audio) while the backend keeps working for minutes. Bring
+            // it back once we have a proper progressive-transcript push
+            // (see memory: project-progressive-transcription-ui).
         }
     }
 }
