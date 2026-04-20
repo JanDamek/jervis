@@ -297,7 +297,7 @@ class ServerEnvironmentGrpcImpl(
                         .setImage(it.image)
                         .build()
                 })
-                .addAllDefaultPorts(defaults.ports.map { it.toProto() })
+                .addAllDefaultPorts(defaults.ports.map { it.toDto().toProto() })
                 .putAllDefaultEnvVars(defaults.defaultEnvVars)
                 .setDefaultVolumeMountPath(defaults.defaultVolumeMountPath ?: "")
             PROPERTY_MAPPING_TEMPLATES[type]?.forEach {

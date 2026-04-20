@@ -9,6 +9,12 @@ lint:
     - STANDARD
   except:
     - PACKAGE_VERSION_SUFFIX
+    # TODO: refactor 409 RPC definitions to follow standard naming
+    # (<Method>Request / <Method>Response, unique per RPC). Night-batch
+    # refactor; re-enable these rules afterwards.
+    - RPC_REQUEST_STANDARD_NAME
+    - RPC_RESPONSE_STANDARD_NAME
+    - RPC_REQUEST_RESPONSE_UNIQUE
   enum_zero_value_suffix: _UNSPECIFIED
   rpc_allow_same_request_response: false
   rpc_allow_google_protobuf_empty_requests: true

@@ -48,6 +48,9 @@ echo ""
 "${K8S_DIR}/build_whatsapp_browser.sh"
 echo ""
 
+"${K8S_DIR}/build_visual_capture.sh"
+echo ""
+
 "${K8S_DIR}/build_atlassian.sh"
 echo ""
 

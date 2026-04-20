@@ -384,9 +384,9 @@ private fun GraphMessageBody.toProto(): ProtoMessageBody =
 
 private fun GraphMessageFrom.toProto(): ProtoMessageFrom =
     ProtoMessageFrom.newBuilder()
-        .apply {
-            user?.let { setUser(it.toProto()) }
-            application?.let { setApplication(it.toProto()) }
+        .also { b ->
+            user?.let { b.setUser(it.toProto()) }
+            application?.let { b.setApplication(it.toProto()) }
         }
         .build()
 
@@ -394,9 +394,9 @@ private fun GraphMessagePreview.toProto(): ProtoMessagePreview =
     ProtoMessagePreview.newBuilder()
         .setId(id.orEmpty())
         .setCreatedDateTime(createdDateTime.orEmpty())
-        .apply {
-            body?.let { setBody(it.toProto()) }
-            from?.let { setSender(it.toProto()) }
+        .also { b ->
+            body?.let { b.setBody(it.toProto()) }
+            from?.let { b.setSender(it.toProto()) }
         }
         .build()
 
@@ -407,7 +407,7 @@ private fun GraphChat.toProto(): ProtoChatSummary =
         .setChatType(chatType.orEmpty())
         .setCreatedDateTime(createdDateTime.orEmpty())
         .setLastUpdatedDateTime(lastUpdatedDateTime.orEmpty())
-        .apply { lastMessagePreview?.let { setLastMessagePreview(it.toProto()) } }
+        .also { b -> lastMessagePreview?.let { b.setLastMessagePreview(it.toProto()) } }
         .build()
 
 private fun GraphMessage.toProto(): ProtoChatMessage =
@@ -416,9 +416,9 @@ private fun GraphMessage.toProto(): ProtoChatMessage =
         .setCreatedDateTime(createdDateTime.orEmpty())
         .setLastModifiedDateTime(lastModifiedDateTime.orEmpty())
         .setMessageType(messageType.orEmpty())
-        .apply {
-            body?.let { setBody(it.toProto()) }
-            from?.let { setSender(it.toProto()) }
+        .also { b ->
+            body?.let { b.setBody(it.toProto()) }
+            from?.let { b.setSender(it.toProto()) }
         }
         .build()
 
@@ -455,12 +455,12 @@ private fun GraphMailBody.toProto(): ProtoMailBody =
 
 private fun GraphEmailAddress.toSenderProto(): ProtoMailSender =
     ProtoMailSender.newBuilder()
-        .apply { emailAddress?.let { setEmailAddress(it.toProto()) } }
+        .also { b -> emailAddress?.let { b.setEmailAddress(it.toProto()) } }
         .build()
 
 private fun GraphRecipient.toProto(): ProtoRecipient =
     ProtoRecipient.newBuilder()
-        .apply { emailAddress?.let { setEmailAddress(it.toProto()) } }
+        .also { b -> emailAddress?.let { b.setEmailAddress(it.toProto()) } }
         .build()
 
 private fun GraphMailMessage.toProto(): ProtoMailMessage =
@@ -475,11 +475,11 @@ private fun GraphMailMessage.toProto(): ProtoMailMessage =
         .setHasAttachments(hasAttachments ?: false)
         .setImportance(importance.orEmpty())
         .setConversationId(conversationId.orEmpty())
-        .apply {
-            body?.let { setBody(it.toProto()) }
-            from?.let { setSender(it.toSenderProto()) }
-            toRecipients?.forEach { addToRecipients(it.toProto()) }
-            ccRecipients?.forEach { addCcRecipients(it.toProto()) }
+        .also { b ->
+            body?.let { b.setBody(it.toProto()) }
+            from?.let { b.setSender(it.toSenderProto()) }
+            toRecipients?.forEach { b.addToRecipients(it.toProto()) }
+            ccRecipients?.forEach { b.addCcRecipients(it.toProto()) }
         }
         .build()
 
@@ -516,7 +516,7 @@ private fun GraphAttendee.toProto(): ProtoAttendee =
     ProtoAttendee.newBuilder()
         .setType(type.orEmpty())
         .setResponse(status?.response.orEmpty())
-        .apply { emailAddress?.let { setEmailAddress(it.toProto()) } }
+        .also { b -> emailAddress?.let { b.setEmailAddress(it.toProto()) } }
         .build()
 
 private fun ProtoAttendee.toGraph(): GraphAttendee =
@@ -544,14 +544,14 @@ private fun GraphMeetingParticipant.toProto(): ProtoMeetingParticipant =
     ProtoMeetingParticipant.newBuilder()
         .setRole(role.orEmpty())
         .setUpn(upn.orEmpty())
-        .apply { identity?.user?.let { setUser(it.toProto()) } }
+        .also { b -> identity?.user?.let { b.setUser(it.toProto()) } }
         .build()
 
 private fun GraphMeetingParticipants.toProto(): ProtoMeetingParticipants =
     ProtoMeetingParticipants.newBuilder()
-        .apply {
-            organizer?.let { setOrganizer(it.toProto()) }
-            attendees?.forEach { addAttendees(it.toProto()) }
+        .also { b ->
+            organizer?.let { b.setOrganizer(it.toProto()) }
+            attendees?.forEach { b.addAttendees(it.toProto()) }
         }
         .build()
 
@@ -562,9 +562,9 @@ private fun GraphOnlineMeeting.toProto(): ProtoOnlineMeeting =
         .setSubject(subject.orEmpty())
         .setStartDateTime(startDateTime.orEmpty())
         .setEndDateTime(endDateTime.orEmpty())
-        .apply {
-            chatInfo?.let { setChatInfo(it.toProto()) }
-            participants?.let { setParticipants(it.toProto()) }
+        .also { b ->
+            chatInfo?.let { b.setChatInfo(it.toProto()) }
+            participants?.let { b.setParticipants(it.toProto()) }
         }
         .build()
 
@@ -596,7 +596,7 @@ private fun GraphHashes.toProto(): ProtoHashes =
 private fun GraphFileInfo.toProto(): ProtoFileInfo =
     ProtoFileInfo.newBuilder()
         .setMimeType(mimeType.orEmpty())
-        .apply { hashes?.let { setHashes(it.toProto()) } }
+        .also { b -> hashes?.let { b.setHashes(it.toProto()) } }
         .build()
 
 private fun GraphFolderInfo.toProto(): ProtoFolderInfo =
@@ -620,10 +620,10 @@ private fun GraphDriveItem.toProto(): ProtoDriveItem =
         .setLastModifiedDateTime(lastModifiedDateTime.orEmpty())
         .setWebUrl(webUrl.orEmpty())
         .setDownloadUrl(downloadUrl.orEmpty())
-        .apply {
-            file?.let { setFile(it.toProto()) }
-            folder?.let { setFolder(it.toProto()) }
-            parentReference?.let { setParentReference(it.toProto()) }
+        .also { b ->
+            file?.let { b.setFile(it.toProto()) }
+            folder?.let { b.setFolder(it.toProto()) }
+            parentReference?.let { b.setParentReference(it.toProto()) }
         }
         .build()
 
@@ -638,12 +638,12 @@ private fun GraphEvent.toProto(): ProtoCalendarEvent =
         .setShowAs(showAs.orEmpty())
         .setWebLink(webLink.orEmpty())
         .setOdataEtag(odataEtag.orEmpty())
-        .apply {
-            body?.let { setBody(it.toProto()) }
-            start?.let { setStart(it.toProto()) }
-            end?.let { setEnd(it.toProto()) }
-            location?.let { setLocation(it.toProto()) }
-            organizer?.emailAddress?.let { setOrganizer(it.toProto()) }
-            attendees?.forEach { addAttendees(it.toProto()) }
+        .also { b ->
+            body?.let { b.setBody(it.toProto()) }
+            start?.let { b.setStart(it.toProto()) }
+            end?.let { b.setEnd(it.toProto()) }
+            location?.let { b.setLocation(it.toProto()) }
+            organizer?.emailAddress?.let { b.setOrganizer(it.toProto()) }
+            attendees?.forEach { b.addAttendees(it.toProto()) }
         }
         .build()

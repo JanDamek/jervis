@@ -140,7 +140,7 @@ class MeetingCompanionAssistant(
         logger.info { "MeetingCompanionAssistant: stopped session=${session.sessionId} for meeting=$meetingId" }
     }
 
-    private suspend fun handleOutboxEvent(meetingId: String, event: OrchestratorCompanionClient.OutboxEvent) {
+    private suspend fun handleOutboxEvent(meetingId: String, event: OrchestratorCompanionClient.OutboxEventDto) {
         val text = event.content.trim()
         if (text.isBlank()) return
         // Only surface suggestions and answers to the user. Notes are internal.

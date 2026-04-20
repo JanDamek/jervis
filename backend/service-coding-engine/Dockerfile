@@ -55,14 +55,16 @@ RUN curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc \
     apt-get install -y --no-install-recommends mongodb-mongosh && \
     rm -rf /var/lib/apt/lists/*
 
-# === ArangoDB Shell (arangosh) ===
-RUN curl -fsSL https://download.arangodb.com/arangodb311/DEBIAN/Release.key \
-    | gpg --dearmor -o /usr/share/keyrings/arangodb.gpg && \
-    echo "deb [signed-by=/usr/share/keyrings/arangodb.gpg] \
-    https://download.arangodb.com/arangodb311/DEBIAN/ /" \
-    > /etc/apt/sources.list.d/arangodb.list && \
+# === ArangoDB Shell (arangosh) — direct .deb download ===
+# ArangoDB APT repo signing key (C04AD0FD86FEC04D) expired 2026-04-07, so we
+# bypass the apt repo and install the .deb directly. Pinned to 3.12.4.3-1.
+RUN ARANGODB_CLIENT_VERSION="3.12.4.3-1" && \
+    curl -fsSLo /tmp/arangodb3-client.deb \
+    "https://download.arangodb.com/arangodb312/DEBIAN/amd64/arangodb3-client_${ARANGODB_CLIENT_VERSION}_amd64.deb" && \
     apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends arangodb3-client && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        /tmp/arangodb3-client.deb && \
+    rm -f /tmp/arangodb3-client.deb && \
     rm -rf /var/lib/apt/lists/*
 
 # === PostgreSQL client (psql) ===

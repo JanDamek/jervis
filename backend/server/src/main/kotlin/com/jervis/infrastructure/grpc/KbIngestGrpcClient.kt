@@ -170,7 +170,6 @@ class KbIngestGrpcClient(
             .setSourceType(request.sourceType ?: "")
             .setSubject(request.subject ?: "")
             .setContent(request.content)
-            .setMaxTier(request.maxTier ?: "NONE")
         request.metadata.forEach { (k, v) -> builder.putMetadata(k, v.toString()) }
         request.attachments.forEach { attachment ->
             builder.addAttachments(
