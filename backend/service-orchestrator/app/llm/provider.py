@@ -1,9 +1,11 @@
-"""LLM provider — thin wrapper over jervis-ollama-router /api/chat.
+"""LLM provider — thin wrapper over jervis-ollama-router gRPC.
 
-No LiteLLM. No per-provider adapters. No orchestrator-side retry or rate
-limiting. The router (backend/service-ollama-router) owns routing, model
-selection, cloud failover, and rate limiting. Orchestrator just calls
-`/api/chat` with urgency headers and consumes the Ollama-format response.
+No LiteLLM. No per-provider adapters. No orchestrator-side retry or
+rate limiting. The router (service-ollama-router) owns routing, model
+selection, cloud failover, rate limiting, tier resolution. Orchestrator
+dials `RouterInferenceService.Chat` (server-stream) and assembles the
+chunks into a LiteLLM-shape response so existing callers keep working
+unchanged.
 
 See KB agent://claude-code/task-routing-unified-design and
 agent://claude-code/orchestrator-llm-unification-proposal.
@@ -11,17 +13,19 @@ agent://claude-code/orchestrator-llm-unification-proposal.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Optional
 
-import httpx
+import grpc.aio
 
 from app.config import settings
 from app.models import ModelTier
+from jervis.common import enums_pb2, types_pb2
+from jervis.router import inference_pb2, inference_pb2_grpc
+from jervis_contracts.interceptors import prepare_context
 
 logger = logging.getLogger(__name__)
 
@@ -97,34 +101,50 @@ class CompletionResponse:
     model: str = ""
 
 
-# ── Router configuration ─────────────────────────────────────────────────
+# ── Router gRPC channel ──────────────────────────────────────────────────
 
-def _router_base() -> str:
-    return settings.ollama_url.rstrip("/").replace("/v1", "").replace("/api", "")
+_GRPC_MAX_MSG_BYTES = 32 * 1024 * 1024
+_router_channel: Optional[grpc.aio.Channel] = None
+_router_stub: Optional[inference_pb2_grpc.RouterInferenceServiceStub] = None
 
 
-def _build_headers(
-    *,
-    capability: str,
-    client_id: str | None,
-) -> dict[str, str]:
-    """Minimal caller contract: client identifies the tenant (so the router
-    resolves tier + quota from CloudModelPolicy), capability tells the router
-    what kind of model is needed. Everything else — tier, bucket, skip list,
-    model selection, escalation, retries — is the router's job.
-    """
-    headers: dict[str, str] = {
-        "Content-Type": "application/json",
-        "X-Capability": capability,
-    }
-    if client_id:
-        headers["X-Client-Id"] = client_id
-    return headers
+def _router_target() -> str:
+    url = str(getattr(settings, "ollama_url", "")).rstrip("/")
+    if "://" in url:
+        url = url.split("://", 1)[1]
+    host = url.split("/")[0].split(":")[0] if url else "jervis-ollama-router"
+    return f"{host}:5501"
+
+
+def _get_router_stub() -> inference_pb2_grpc.RouterInferenceServiceStub:
+    global _router_channel, _router_stub
+    if _router_stub is None:
+        _router_channel = grpc.aio.insecure_channel(
+            _router_target(),
+            options=[
+                ("grpc.max_send_message_length", _GRPC_MAX_MSG_BYTES),
+                ("grpc.max_receive_message_length", _GRPC_MAX_MSG_BYTES),
+                ("grpc.keepalive_time_ms", 30_000),
+                ("grpc.keepalive_timeout_ms", 10_000),
+                ("grpc.keepalive_permit_without_calls", 1),
+            ],
+        )
+        _router_stub = inference_pb2_grpc.RouterInferenceServiceStub(_router_channel)
+        logger.info("RouterInferenceService gRPC channel opened to %s", _router_target())
+    return _router_stub
+
+
+_CAPABILITY_TO_ENUM = {
+    "chat": enums_pb2.CAPABILITY_CHAT,
+    "thinking": enums_pb2.CAPABILITY_THINKING,
+    "coding": enums_pb2.CAPABILITY_CODING,
+    "extraction": enums_pb2.CAPABILITY_EXTRACTION,
+    "embedding": enums_pb2.CAPABILITY_EMBEDDING,
+    "visual": enums_pb2.CAPABILITY_VISUAL,
+}
 
 
 # ── Gemini usage counter (daily cap, kept locally) ───────────────────────
-# Router does not track per-provider daily quotas. This is a tiny counter so
-# we can warn the user when the free-tier Gemini limit is close.
 
 _gemini_daily_count = 0
 _gemini_day = ""
@@ -156,8 +176,71 @@ def increment_gemini_counter() -> None:
 
 # ── Main entry point ─────────────────────────────────────────────────────
 
+def _messages_to_proto(messages: list[dict]) -> list[inference_pb2.ChatMessage]:
+    out: list[inference_pb2.ChatMessage] = []
+    for m in messages:
+        role = m.get("role", "user")
+        content = m.get("content", "") or ""
+        msg = inference_pb2.ChatMessage(
+            role=role,
+            content=content if isinstance(content, str) else json.dumps(content, default=str),
+            tool_call_id=m.get("tool_call_id", "") or "",
+            name=m.get("name", "") or "",
+        )
+        tc_list = m.get("tool_calls")
+        if isinstance(tc_list, list):
+            from google.protobuf import struct_pb2
+            from google.protobuf.json_format import ParseDict
+            proto_tcs: list[inference_pb2.ToolCall] = []
+            for tc in tc_list:
+                fn = tc.get("function") or {}
+                raw_args = fn.get("arguments")
+                if isinstance(raw_args, str):
+                    try:
+                        args = json.loads(raw_args)
+                    except Exception:
+                        args = {}
+                elif isinstance(raw_args, dict):
+                    args = raw_args
+                else:
+                    args = {}
+                args_struct = struct_pb2.Struct()
+                if args:
+                    ParseDict(args, args_struct)
+                proto_tcs.append(
+                    inference_pb2.ToolCall(
+                        id=tc.get("id") or "",
+                        name=fn.get("name", ""),
+                        args=args_struct,
+                    )
+                )
+            msg.tool_calls.extend(proto_tcs)
+        out.append(msg)
+    return out
+
+
+def _tools_to_proto(tools: list[dict] | None) -> list[inference_pb2.Tool]:
+    if not tools:
+        return []
+    from google.protobuf import struct_pb2
+    from google.protobuf.json_format import ParseDict
+    out: list[inference_pb2.Tool] = []
+    for t in tools:
+        fn = t.get("function") or {}
+        params = fn.get("parameters") or {}
+        params_struct = struct_pb2.Struct()
+        if params:
+            ParseDict(params, params_struct)
+        out.append(inference_pb2.Tool(
+            name=fn.get("name", ""),
+            description=fn.get("description", ""),
+            parameters=params_struct,
+        ))
+    return out
+
+
 class LlmProvider:
-    """Stateless wrapper that forwards every call to the router."""
+    """Stateless wrapper that forwards every call to the router via gRPC."""
 
     async def completion(
         self,
@@ -169,109 +252,103 @@ class LlmProvider:
         temperature: float = 0.1,
         max_tokens: int = 8192,
     ) -> CompletionResponse:
-        """Send an LLM chat request through the router.
-
-        The caller contract is intentionally minimal — only the payload,
-        the tenant (client_id) and the capability. The router resolves tier
-        from the client's CloudModelPolicy, picks local vs cloud, selects
-        the concrete model, handles retries / cooldowns / queue priority,
-        and streams back the response.
+        """Send an LLM chat request through the router (gRPC streaming).
 
         Args:
             messages: OpenAI-style chat messages.
             capability: chat | thinking | coding | extraction | embedding | visual.
             client_id: resolves tier from CloudModelPolicy on the router side.
-            tools: OpenAI tool schema — body-level, not a routing signal.
-            temperature / max_tokens: Ollama `options`.
+            tools: OpenAI tool schema.
+            temperature / max_tokens: mapped to ChatOptions.
         """
-        url = f"{_router_base()}/api/chat"
-        headers = _build_headers(capability=capability, client_id=client_id)
-        body: dict[str, Any] = {
-            "messages": messages,
-            "stream": True,
-            "options": {
-                "temperature": temperature,
-                "num_predict": max_tokens,
-            },
-        }
-        if tools:
-            body["tools"] = tools
+        ctx = types_pb2.RequestContext(
+            scope=types_pb2.Scope(client_id=client_id or ""),
+            priority=enums_pb2.PRIORITY_FOREGROUND,
+            capability=_CAPABILITY_TO_ENUM.get(capability.lower(), enums_pb2.CAPABILITY_CHAT),
+            intent=capability,
+        )
+        prepare_context(ctx)
 
-        return await _stream_and_assemble(url, headers, body)
+        request = inference_pb2.ChatRequest(
+            ctx=ctx,
+            messages=_messages_to_proto(messages),
+            tools=_tools_to_proto(tools),
+            options=inference_pb2.ChatOptions(
+                temperature=temperature,
+                num_predict=max_tokens,
+            ),
+        )
+
+        return await _drain_chat(request)
 
 
-async def _stream_and_assemble(
-    url: str, headers: dict[str, str], body: dict,
-) -> CompletionResponse:
-    """Stream NDJSON chunks from the router, assemble a LiteLLM-shape response."""
+async def _drain_chat(request: inference_pb2.ChatRequest) -> CompletionResponse:
+    """Stream RouterInferenceService.Chat and assemble a LiteLLM-shape response."""
     content_parts: list[str] = []
     thinking_parts: list[str] = []
-    tool_calls: list[_ToolCall] = []
+    tool_call_slots: list[dict] = []
+    id_to_slot: dict[str, int] = {}
     model_name = ""
     prompt_tokens = 0
     completion_tokens = 0
     finish_reason = "stop"
     last_chunk_time = time.monotonic()
 
-    timeout = httpx.Timeout(connect=10, read=None, write=10, pool=30)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        async with client.stream("POST", url, headers=headers, json=body) as response:
-            if response.status_code != 200:
-                text = (await response.aread()).decode("utf-8", errors="replace")
-                raise RuntimeError(
-                    f"Router /api/chat returned {response.status_code}: {text[:500]}"
-                )
-            async for line in response.aiter_lines():
-                if not line.strip():
-                    continue
-                now = time.monotonic()
-                if now - last_chunk_time > TOKEN_TIMEOUT_SECONDS:
-                    raise TokenTimeoutError(
-                        f"No chunk from router for {TOKEN_TIMEOUT_SECONDS}s"
-                    )
-                last_chunk_time = now
-                try:
-                    chunk = json.loads(line)
-                except json.JSONDecodeError:
-                    logger.debug("LLM stream: non-JSON line: %s", line[:120])
-                    continue
+    stub = _get_router_stub()
+    async for chunk in stub.Chat(request):
+        now = time.monotonic()
+        if now - last_chunk_time > TOKEN_TIMEOUT_SECONDS:
+            raise TokenTimeoutError(
+                f"No chunk from router for {TOKEN_TIMEOUT_SECONDS}s"
+            )
+        last_chunk_time = now
 
-                if "error" in chunk:
-                    raise RuntimeError(f"Router error: {chunk['error']}")
+        if chunk.model_used and not model_name:
+            model_name = chunk.model_used
+        if chunk.content_delta:
+            content_parts.append(chunk.content_delta)
+        if chunk.thinking_delta:
+            thinking_parts.append(chunk.thinking_delta)
 
-                if "model" in chunk and not model_name:
-                    model_name = chunk["model"]
+        for idx_in_chunk, tc in enumerate(chunk.tool_calls):
+            # OpenAI-style deltas: id+name in one chunk, args in the next.
+            if tc.id and tc.id in id_to_slot:
+                slot = tool_call_slots[id_to_slot[tc.id]]
+            elif tc.id:
+                slot = {"id": tc.id, "name": "", "args": {}}
+                id_to_slot[tc.id] = len(tool_call_slots)
+                tool_call_slots.append(slot)
+            elif idx_in_chunk < len(tool_call_slots):
+                slot = tool_call_slots[idx_in_chunk]
+            else:
+                slot = {"id": "", "name": "", "args": {}}
+                tool_call_slots.append(slot)
+            if tc.name:
+                slot["name"] = tc.name
+            if tc.args and tc.args.fields:
+                from google.protobuf.json_format import MessageToDict
+                args_delta = MessageToDict(tc.args, preserving_proto_field_name=True)
+                slot["args"].update(args_delta)
 
-                msg = chunk.get("message")
-                if isinstance(msg, dict):
-                    c = msg.get("content")
-                    if c:
-                        content_parts.append(c)
-                    t = msg.get("thinking")
-                    if t:
-                        thinking_parts.append(t)
-                    tc = msg.get("tool_calls")
-                    if isinstance(tc, list):
-                        for raw in tc:
-                            fn = raw.get("function") or {}
-                            args = fn.get("arguments")
-                            if isinstance(args, dict):
-                                args = json.dumps(args, ensure_ascii=False)
-                            tool_calls.append(
-                                _ToolCall(
-                                    id=raw.get("id", ""),
-                                    type=raw.get("type", "function"),
-                                    function=_FunctionCall(
-                                        name=fn.get("name", ""),
-                                        arguments=args or "",
-                                    ),
-                                )
-                            )
+        if chunk.done:
+            prompt_tokens = int(chunk.prompt_tokens) or prompt_tokens
+            completion_tokens = int(chunk.completion_tokens) or completion_tokens
+            finish_reason = chunk.finish_reason or finish_reason
 
-                if chunk.get("done"):
-                    prompt_tokens = chunk.get("prompt_eval_count", prompt_tokens)
-                    completion_tokens = chunk.get("eval_count", completion_tokens)
-                    finish_reason = chunk.get("done_reason") or finish_reason
+    tool_calls: list[_ToolCall] = []
+    for slot in tool_call_slots:
+        if not slot["name"]:
+            continue
+        tool_calls.append(
+            _ToolCall(
+                id=slot["id"] or "",
+                type="function",
+                function=_FunctionCall(
+                    name=slot["name"],
+                    arguments=json.dumps(slot["args"], ensure_ascii=False),
+                ),
+            )
+        )
 
     full_content = "".join(content_parts) if content_parts else None
     full_thinking = "".join(thinking_parts) if thinking_parts else None
@@ -303,9 +380,9 @@ llm_provider = LlmProvider()
 async def refresh_openrouter_api_key() -> None:
     """No-op shim — orchestrator no longer holds OpenRouter credentials.
 
-    The router (/api/chat → proxy_to_openrouter) owns the API key and refreshes
-    it from Kotlin server directly. This function is kept so the existing
-    `app.main.lifespan` startup import still resolves; a follow-up cleanup can
-    delete the call site.
+    The router owns the API key and refreshes it from Kotlin server
+    directly. This function is kept so the existing `app.main.lifespan`
+    startup import still resolves; a follow-up cleanup can delete the
+    call site.
     """
     return None

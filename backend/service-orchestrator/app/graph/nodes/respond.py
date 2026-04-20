@@ -440,51 +440,25 @@ async def _stream_answer_realtime(state: dict, messages: list[dict], context_tok
     orchestrator's main Chat server-streaming RPC; this helper concentrates
     on collecting the model output for the graph's `final_result`.
     """
-    import json as _json
-
-    import httpx
+    from app.llm.provider import llm_provider
 
     task = CodingTask(**state["task"])
     client_id = state.get("client_id", "") or ""
     capability = (task.capability or "chat").lower()
     message_id = f"stream-{uuid.uuid4().hex[:12]}"
 
-    router_base = settings.ollama_url.rstrip("/").replace("/v1", "").replace("/api", "")
-    url = f"{router_base}/api/chat"
-    headers = {
-        "Content-Type": "application/json",
-        "X-Capability": capability,
-    }
-    if client_id:
-        headers["X-Client-Id"] = client_id
-    body = {
-        "messages": messages,
-        "stream": True,
-        "options": {
-            "temperature": 0.1,
-            "num_predict": settings.default_output_tokens,
-        },
-    }
-
     content_parts: list[str] = []
     try:
-        timeout = httpx.Timeout(connect=10, read=None, write=10, pool=30)
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            async with client.stream("POST", url, json=body, headers=headers) as resp:
-                resp.raise_for_status()
-                async for line in resp.aiter_lines():
-                    if not line.strip():
-                        continue
-                    try:
-                        chunk = _json.loads(line)
-                    except _json.JSONDecodeError:
-                        continue
-                    msg = chunk.get("message") or {}
-                    token = msg.get("content") or ""
-                    if token:
-                        content_parts.append(token)
-                    if chunk.get("done"):
-                        break
+        reply = await llm_provider.completion(
+            messages=messages,
+            capability=capability,
+            client_id=client_id,
+            temperature=0.1,
+            max_tokens=settings.default_output_tokens,
+        )
+        content = reply.choices[0].message.content or ""
+        if content:
+            content_parts.append(content)
 
         answer = "".join(content_parts)
         logger.info(
