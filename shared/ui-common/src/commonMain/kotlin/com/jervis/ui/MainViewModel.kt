@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -199,28 +200,38 @@ class MainViewModel(
         // Start polling for pending question count (badge updates)
         pendingQuestions.startCountPolling()
 
-        // Subscribe to global events for the selected client + register FCM token
+        // Subscribe to global events for the selected client.
         scope.launch {
             _selectedClientId.collect { clientId ->
                 println("MainViewModel: _selectedClientId changed to $clientId")
                 if (clientId != null) {
                     subscribeToEventStream(clientId)
-                    // Register push token (FCM on Android, APNs on iOS, desktop).
-                    // Push token MUST reach the backend — wait for RPC Connected
-                    // instead of throwing OfflineException on first emit. If the
-                    // 10 s awaitConnected times out (still offline), fall through
-                    // silently — the next _selectedClientId emit after reconnect
-                    // will retry the registration.
-                    scope.launch {
-                        runCatching {
-                            connectionManager.awaitConnected()
-                            PushTokenRegistrar.registerIfNeeded(clientId, repository.deviceTokens)
-                        }.onFailure { e ->
-                            println("MainViewModel: push token registration deferred — ${e.message}")
-                        }
-                    }
                 } else {
                     eventJob?.cancel()
+                }
+            }
+        }
+
+        // Register push token (FCM on Android, APNs on iOS, desktop) whenever
+        // we have BOTH a selected client AND a live RPC connection.
+        //
+        // Push tokens MUST reach the backend — an app can run offline for
+        // arbitrary time (cached data + infinite reconnect loop), so we
+        // don't time out. Instead we re-fire registration on every
+        // (clientId, Connected) pair as the user may well stay on the
+        // same __global__ selection through many reconnect cycles.
+        // distinctUntilChanged + PushTokenRegistrar.registerIfNeeded
+        // keep repeated emits a no-op when nothing changed.
+        scope.launch {
+            combine(_selectedClientId, connectionManager.state) { cid, state ->
+                if (cid != null && state is RpcConnectionState.Connected) cid else null
+            }.distinctUntilChanged().collect { readyClientId ->
+                if (readyClientId != null) {
+                    runCatching {
+                        PushTokenRegistrar.registerIfNeeded(readyClientId, repository.deviceTokens)
+                    }.onFailure { e ->
+                        println("MainViewModel: push token registration failed — ${e.message}")
+                    }
                 }
             }
         }
