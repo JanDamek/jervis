@@ -70,14 +70,22 @@ if [ ! -d "$APP_PATH" ]; then
     exit 1
 fi
 
-# --- 3. Launch ------------------------------------------------------------
-# Kill any previous macApp instance so a new socket can bind cleanly.
+# --- 3. Launch macApp helper in background --------------------------------
+# The user-visible UI is the Compose Desktop Jervis — it already has a
+# tray icon, a main window that closes to tray, and Exit-only shutdown
+# (see apps/desktop/src/main/kotlin/com/jervis/desktop/Main.kt).
+# macApp is intentionally LSUIElement=true (no Dock, no window) — it
+# exists only to own the APNs entitlement and the Unix socket once
+# Push Notifications is enabled in Xcode.
 pkill -f "$DERIVED/Build/Products/Debug/Jervis.app" 2>/dev/null || true
 rm -f /tmp/jervis-macapp-apns.sock
 
-echo "[run-mac] Launching ${APP_PATH}"
-open "${APP_PATH}"
-echo "[run-mac] macApp (APNs helper) started. Start the Compose Desktop"
-echo "          client separately via:  ./gradlew :apps:desktop:runPublic"
-echo "          Tail logs:"
-echo "            log stream --predicate 'process == \"Jervis\"' --style compact"
+echo "[run-mac] Launching macApp helper in background (menubar-only)…"
+open -g -n "${APP_PATH}"
+
+export JERVIS_MACAPP_SOCKET="/tmp/jervis-macapp-apns.sock"
+
+# --- 4. Launch Compose Desktop (blocking) ---------------------------------
+echo "[run-mac] Starting Compose Desktop (tray + window)…"
+cd "$ROOT"
+./gradlew :apps:desktop:runPublic
