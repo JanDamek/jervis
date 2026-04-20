@@ -7,9 +7,13 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
  * O365BrowserPoolService — typed wrapper over the per-client browser pod.
  * Replaces the former REST surface that was consumed by the Kotlin
  * server (/health, /session/{cid}, /session/{cid}/init,
- * /session/{cid}/mfa, /vnc-token/{cid}, /instruction/{cid}). The VNC
- * proxy routes (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing,
- * not pod-to-pod.
+ * /session/{cid}/mfa, /instruction/{cid}).
+ * VNC flow: the browser talks HTTP/WS to the Kotlin server only (external
+ * boundary, guideline §10). The server validates a single-use token
+ * against MongoDB, opens a StreamVnc bidi stream to the pod, and pipes
+ * raw RFB bytes between the browser WebSocket and the gRPC stream.
+ * The pod never sees the token — the first client-&gt;server frame carries
+ * `client_id` to pick the Xvfb session, subsequent frames are raw bytes.
  * </pre>
  */
 @io.grpc.stub.annotations.GrpcGenerated
@@ -144,37 +148,6 @@ public final class O365BrowserPoolServiceGrpc {
     return getSubmitMfaMethod;
   }
 
-  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.SessionRef,
-      com.jervis.contracts.o365_browser_pool.VncTokenResponse> getCreateVncTokenMethod;
-
-  @io.grpc.stub.annotations.RpcMethod(
-      fullMethodName = SERVICE_NAME + '/' + "CreateVncToken",
-      requestType = com.jervis.contracts.o365_browser_pool.SessionRef.class,
-      responseType = com.jervis.contracts.o365_browser_pool.VncTokenResponse.class,
-      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.SessionRef,
-      com.jervis.contracts.o365_browser_pool.VncTokenResponse> getCreateVncTokenMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.SessionRef, com.jervis.contracts.o365_browser_pool.VncTokenResponse> getCreateVncTokenMethod;
-    if ((getCreateVncTokenMethod = O365BrowserPoolServiceGrpc.getCreateVncTokenMethod) == null) {
-      synchronized (O365BrowserPoolServiceGrpc.class) {
-        if ((getCreateVncTokenMethod = O365BrowserPoolServiceGrpc.getCreateVncTokenMethod) == null) {
-          O365BrowserPoolServiceGrpc.getCreateVncTokenMethod = getCreateVncTokenMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_browser_pool.SessionRef, com.jervis.contracts.o365_browser_pool.VncTokenResponse>newBuilder()
-              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
-              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "CreateVncToken"))
-              .setSampledToLocalTracing(true)
-              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.o365_browser_pool.SessionRef.getDefaultInstance()))
-              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.o365_browser_pool.VncTokenResponse.getDefaultInstance()))
-              .setSchemaDescriptor(new O365BrowserPoolServiceMethodDescriptorSupplier("CreateVncToken"))
-              .build();
-        }
-      }
-    }
-    return getCreateVncTokenMethod;
-  }
-
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.InstructionRequest,
       com.jervis.contracts.o365_browser_pool.InstructionResponse> getPushInstructionMethod;
 
@@ -204,6 +177,37 @@ public final class O365BrowserPoolServiceGrpc {
       }
     }
     return getPushInstructionMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.VncFrame,
+      com.jervis.contracts.o365_browser_pool.VncFrame> getStreamVncMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "StreamVnc",
+      requestType = com.jervis.contracts.o365_browser_pool.VncFrame.class,
+      responseType = com.jervis.contracts.o365_browser_pool.VncFrame.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.BIDI_STREAMING)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.VncFrame,
+      com.jervis.contracts.o365_browser_pool.VncFrame> getStreamVncMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.o365_browser_pool.VncFrame, com.jervis.contracts.o365_browser_pool.VncFrame> getStreamVncMethod;
+    if ((getStreamVncMethod = O365BrowserPoolServiceGrpc.getStreamVncMethod) == null) {
+      synchronized (O365BrowserPoolServiceGrpc.class) {
+        if ((getStreamVncMethod = O365BrowserPoolServiceGrpc.getStreamVncMethod) == null) {
+          O365BrowserPoolServiceGrpc.getStreamVncMethod = getStreamVncMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.o365_browser_pool.VncFrame, com.jervis.contracts.o365_browser_pool.VncFrame>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.BIDI_STREAMING)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "StreamVnc"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_browser_pool.VncFrame.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.o365_browser_pool.VncFrame.getDefaultInstance()))
+              .setSchemaDescriptor(new O365BrowserPoolServiceMethodDescriptorSupplier("StreamVnc"))
+              .build();
+        }
+      }
+    }
+    return getStreamVncMethod;
   }
 
   /**
@@ -270,9 +274,13 @@ public final class O365BrowserPoolServiceGrpc {
    * O365BrowserPoolService — typed wrapper over the per-client browser pod.
    * Replaces the former REST surface that was consumed by the Kotlin
    * server (/health, /session/{cid}, /session/{cid}/init,
-   * /session/{cid}/mfa, /vnc-token/{cid}, /instruction/{cid}). The VNC
-   * proxy routes (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing,
-   * not pod-to-pod.
+   * /session/{cid}/mfa, /instruction/{cid}).
+   * VNC flow: the browser talks HTTP/WS to the Kotlin server only (external
+   * boundary, guideline §10). The server validates a single-use token
+   * against MongoDB, opens a StreamVnc bidi stream to the pod, and pipes
+   * raw RFB bytes between the browser WebSocket and the gRPC stream.
+   * The pod never sees the token — the first client-&gt;server frame carries
+   * `client_id` to pick the Xvfb session, subsequent frames are raw bytes.
    * </pre>
    */
   public interface AsyncService {
@@ -307,16 +315,16 @@ public final class O365BrowserPoolServiceGrpc {
 
     /**
      */
-    default void createVncToken(com.jervis.contracts.o365_browser_pool.SessionRef request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.VncTokenResponse> responseObserver) {
-      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getCreateVncTokenMethod(), responseObserver);
+    default void pushInstruction(com.jervis.contracts.o365_browser_pool.InstructionRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.InstructionResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getPushInstructionMethod(), responseObserver);
     }
 
     /**
      */
-    default void pushInstruction(com.jervis.contracts.o365_browser_pool.InstructionRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.InstructionResponse> responseObserver) {
-      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getPushInstructionMethod(), responseObserver);
+    default io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.VncFrame> streamVnc(
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.VncFrame> responseObserver) {
+      return io.grpc.stub.ServerCalls.asyncUnimplementedStreamingCall(getStreamVncMethod(), responseObserver);
     }
   }
 
@@ -326,9 +334,13 @@ public final class O365BrowserPoolServiceGrpc {
    * O365BrowserPoolService — typed wrapper over the per-client browser pod.
    * Replaces the former REST surface that was consumed by the Kotlin
    * server (/health, /session/{cid}, /session/{cid}/init,
-   * /session/{cid}/mfa, /vnc-token/{cid}, /instruction/{cid}). The VNC
-   * proxy routes (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing,
-   * not pod-to-pod.
+   * /session/{cid}/mfa, /instruction/{cid}).
+   * VNC flow: the browser talks HTTP/WS to the Kotlin server only (external
+   * boundary, guideline §10). The server validates a single-use token
+   * against MongoDB, opens a StreamVnc bidi stream to the pod, and pipes
+   * raw RFB bytes between the browser WebSocket and the gRPC stream.
+   * The pod never sees the token — the first client-&gt;server frame carries
+   * `client_id` to pick the Xvfb session, subsequent frames are raw bytes.
    * </pre>
    */
   public static abstract class O365BrowserPoolServiceImplBase
@@ -345,9 +357,13 @@ public final class O365BrowserPoolServiceGrpc {
    * O365BrowserPoolService — typed wrapper over the per-client browser pod.
    * Replaces the former REST surface that was consumed by the Kotlin
    * server (/health, /session/{cid}, /session/{cid}/init,
-   * /session/{cid}/mfa, /vnc-token/{cid}, /instruction/{cid}). The VNC
-   * proxy routes (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing,
-   * not pod-to-pod.
+   * /session/{cid}/mfa, /instruction/{cid}).
+   * VNC flow: the browser talks HTTP/WS to the Kotlin server only (external
+   * boundary, guideline §10). The server validates a single-use token
+   * against MongoDB, opens a StreamVnc bidi stream to the pod, and pipes
+   * raw RFB bytes between the browser WebSocket and the gRPC stream.
+   * The pod never sees the token — the first client-&gt;server frame carries
+   * `client_id` to pick the Xvfb session, subsequent frames are raw bytes.
    * </pre>
    */
   public static final class O365BrowserPoolServiceStub
@@ -397,18 +413,18 @@ public final class O365BrowserPoolServiceGrpc {
 
     /**
      */
-    public void createVncToken(com.jervis.contracts.o365_browser_pool.SessionRef request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.VncTokenResponse> responseObserver) {
-      io.grpc.stub.ClientCalls.asyncUnaryCall(
-          getChannel().newCall(getCreateVncTokenMethod(), getCallOptions()), request, responseObserver);
-    }
-
-    /**
-     */
     public void pushInstruction(com.jervis.contracts.o365_browser_pool.InstructionRequest request,
         io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.InstructionResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getPushInstructionMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.VncFrame> streamVnc(
+        io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.VncFrame> responseObserver) {
+      return io.grpc.stub.ClientCalls.asyncBidiStreamingCall(
+          getChannel().newCall(getStreamVncMethod(), getCallOptions()), responseObserver);
     }
   }
 
@@ -418,9 +434,13 @@ public final class O365BrowserPoolServiceGrpc {
    * O365BrowserPoolService — typed wrapper over the per-client browser pod.
    * Replaces the former REST surface that was consumed by the Kotlin
    * server (/health, /session/{cid}, /session/{cid}/init,
-   * /session/{cid}/mfa, /vnc-token/{cid}, /instruction/{cid}). The VNC
-   * proxy routes (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing,
-   * not pod-to-pod.
+   * /session/{cid}/mfa, /instruction/{cid}).
+   * VNC flow: the browser talks HTTP/WS to the Kotlin server only (external
+   * boundary, guideline §10). The server validates a single-use token
+   * against MongoDB, opens a StreamVnc bidi stream to the pod, and pipes
+   * raw RFB bytes between the browser WebSocket and the gRPC stream.
+   * The pod never sees the token — the first client-&gt;server frame carries
+   * `client_id` to pick the Xvfb session, subsequent frames are raw bytes.
    * </pre>
    */
   public static final class O365BrowserPoolServiceBlockingV2Stub
@@ -466,16 +486,18 @@ public final class O365BrowserPoolServiceGrpc {
 
     /**
      */
-    public com.jervis.contracts.o365_browser_pool.VncTokenResponse createVncToken(com.jervis.contracts.o365_browser_pool.SessionRef request) throws io.grpc.StatusException {
+    public com.jervis.contracts.o365_browser_pool.InstructionResponse pushInstruction(com.jervis.contracts.o365_browser_pool.InstructionRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
-          getChannel(), getCreateVncTokenMethod(), getCallOptions(), request);
+          getChannel(), getPushInstructionMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.o365_browser_pool.InstructionResponse pushInstruction(com.jervis.contracts.o365_browser_pool.InstructionRequest request) throws io.grpc.StatusException {
-      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
-          getChannel(), getPushInstructionMethod(), getCallOptions(), request);
+    @io.grpc.ExperimentalApi("https://github.com/grpc/grpc-java/issues/10918")
+    public io.grpc.stub.BlockingClientCall<com.jervis.contracts.o365_browser_pool.VncFrame, com.jervis.contracts.o365_browser_pool.VncFrame>
+        streamVnc() {
+      return io.grpc.stub.ClientCalls.blockingBidiStreamingCall(
+          getChannel(), getStreamVncMethod(), getCallOptions());
     }
   }
 
@@ -485,9 +507,13 @@ public final class O365BrowserPoolServiceGrpc {
    * O365BrowserPoolService — typed wrapper over the per-client browser pod.
    * Replaces the former REST surface that was consumed by the Kotlin
    * server (/health, /session/{cid}, /session/{cid}/init,
-   * /session/{cid}/mfa, /vnc-token/{cid}, /instruction/{cid}). The VNC
-   * proxy routes (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing,
-   * not pod-to-pod.
+   * /session/{cid}/mfa, /instruction/{cid}).
+   * VNC flow: the browser talks HTTP/WS to the Kotlin server only (external
+   * boundary, guideline §10). The server validates a single-use token
+   * against MongoDB, opens a StreamVnc bidi stream to the pod, and pipes
+   * raw RFB bytes between the browser WebSocket and the gRPC stream.
+   * The pod never sees the token — the first client-&gt;server frame carries
+   * `client_id` to pick the Xvfb session, subsequent frames are raw bytes.
    * </pre>
    */
   public static final class O365BrowserPoolServiceBlockingStub
@@ -533,13 +559,6 @@ public final class O365BrowserPoolServiceGrpc {
 
     /**
      */
-    public com.jervis.contracts.o365_browser_pool.VncTokenResponse createVncToken(com.jervis.contracts.o365_browser_pool.SessionRef request) {
-      return io.grpc.stub.ClientCalls.blockingUnaryCall(
-          getChannel(), getCreateVncTokenMethod(), getCallOptions(), request);
-    }
-
-    /**
-     */
     public com.jervis.contracts.o365_browser_pool.InstructionResponse pushInstruction(com.jervis.contracts.o365_browser_pool.InstructionRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getPushInstructionMethod(), getCallOptions(), request);
@@ -552,9 +571,13 @@ public final class O365BrowserPoolServiceGrpc {
    * O365BrowserPoolService — typed wrapper over the per-client browser pod.
    * Replaces the former REST surface that was consumed by the Kotlin
    * server (/health, /session/{cid}, /session/{cid}/init,
-   * /session/{cid}/mfa, /vnc-token/{cid}, /instruction/{cid}). The VNC
-   * proxy routes (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing,
-   * not pod-to-pod.
+   * /session/{cid}/mfa, /instruction/{cid}).
+   * VNC flow: the browser talks HTTP/WS to the Kotlin server only (external
+   * boundary, guideline §10). The server validates a single-use token
+   * against MongoDB, opens a StreamVnc bidi stream to the pod, and pipes
+   * raw RFB bytes between the browser WebSocket and the gRPC stream.
+   * The pod never sees the token — the first client-&gt;server frame carries
+   * `client_id` to pick the Xvfb session, subsequent frames are raw bytes.
    * </pre>
    */
   public static final class O365BrowserPoolServiceFutureStub
@@ -604,14 +627,6 @@ public final class O365BrowserPoolServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_browser_pool.VncTokenResponse> createVncToken(
-        com.jervis.contracts.o365_browser_pool.SessionRef request) {
-      return io.grpc.stub.ClientCalls.futureUnaryCall(
-          getChannel().newCall(getCreateVncTokenMethod(), getCallOptions()), request);
-    }
-
-    /**
-     */
     public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.o365_browser_pool.InstructionResponse> pushInstruction(
         com.jervis.contracts.o365_browser_pool.InstructionRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
@@ -623,8 +638,8 @@ public final class O365BrowserPoolServiceGrpc {
   private static final int METHODID_GET_SESSION = 1;
   private static final int METHODID_INIT_SESSION = 2;
   private static final int METHODID_SUBMIT_MFA = 3;
-  private static final int METHODID_CREATE_VNC_TOKEN = 4;
-  private static final int METHODID_PUSH_INSTRUCTION = 5;
+  private static final int METHODID_PUSH_INSTRUCTION = 4;
+  private static final int METHODID_STREAM_VNC = 5;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -659,10 +674,6 @@ public final class O365BrowserPoolServiceGrpc {
           serviceImpl.submitMfa((com.jervis.contracts.o365_browser_pool.SubmitMfaRequest) request,
               (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.InitSessionResponse>) responseObserver);
           break;
-        case METHODID_CREATE_VNC_TOKEN:
-          serviceImpl.createVncToken((com.jervis.contracts.o365_browser_pool.SessionRef) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.VncTokenResponse>) responseObserver);
-          break;
         case METHODID_PUSH_INSTRUCTION:
           serviceImpl.pushInstruction((com.jervis.contracts.o365_browser_pool.InstructionRequest) request,
               (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.InstructionResponse>) responseObserver);
@@ -677,6 +688,9 @@ public final class O365BrowserPoolServiceGrpc {
     public io.grpc.stub.StreamObserver<Req> invoke(
         io.grpc.stub.StreamObserver<Resp> responseObserver) {
       switch (methodId) {
+        case METHODID_STREAM_VNC:
+          return (io.grpc.stub.StreamObserver<Req>) serviceImpl.streamVnc(
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.o365_browser_pool.VncFrame>) responseObserver);
         default:
           throw new AssertionError();
       }
@@ -714,19 +728,19 @@ public final class O365BrowserPoolServiceGrpc {
               com.jervis.contracts.o365_browser_pool.InitSessionResponse>(
                 service, METHODID_SUBMIT_MFA)))
         .addMethod(
-          getCreateVncTokenMethod(),
-          io.grpc.stub.ServerCalls.asyncUnaryCall(
-            new MethodHandlers<
-              com.jervis.contracts.o365_browser_pool.SessionRef,
-              com.jervis.contracts.o365_browser_pool.VncTokenResponse>(
-                service, METHODID_CREATE_VNC_TOKEN)))
-        .addMethod(
           getPushInstructionMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.o365_browser_pool.InstructionRequest,
               com.jervis.contracts.o365_browser_pool.InstructionResponse>(
                 service, METHODID_PUSH_INSTRUCTION)))
+        .addMethod(
+          getStreamVncMethod(),
+          io.grpc.stub.ServerCalls.asyncBidiStreamingCall(
+            new MethodHandlers<
+              com.jervis.contracts.o365_browser_pool.VncFrame,
+              com.jervis.contracts.o365_browser_pool.VncFrame>(
+                service, METHODID_STREAM_VNC)))
         .build();
   }
 
@@ -779,8 +793,8 @@ public final class O365BrowserPoolServiceGrpc {
               .addMethod(getGetSessionMethod())
               .addMethod(getInitSessionMethod())
               .addMethod(getSubmitMfaMethod())
-              .addMethod(getCreateVncTokenMethod())
               .addMethod(getPushInstructionMethod())
+              .addMethod(getStreamVncMethod())
               .build();
         }
       }

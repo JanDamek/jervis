@@ -4,8 +4,13 @@ import com.jervis.dto.chat.AttachmentDto
 import com.jervis.dto.chat.ChatHistoryDto
 import com.jervis.dto.chat.ChatMessageDto
 import com.jervis.dto.chat.ChatResponseDto
+import com.jervis.dto.chat.SiriQueryResponse
+import com.jervis.dto.chat.TtsChunkEvent
 import com.jervis.dto.chat.VoiceAudioChunk
 import com.jervis.dto.chat.VoiceChatEvent
+import com.jervis.dto.chat.VoiceSessionChunk
+import com.jervis.dto.chat.VoiceSessionConfig
+import com.jervis.dto.chat.VoiceSessionEvent
 import kotlinx.coroutines.flow.Flow
 import kotlinx.rpc.annotations.Rpc
 
@@ -131,4 +136,42 @@ interface IChatService {
      * so response comes ~2-3s after user stops speaking.
      */
     fun streamVoiceChat(audioChunks: Flow<VoiceAudioChunk>): Flow<VoiceChatEvent>
+
+    /**
+     * Stream TTS audio for a text — used by the chat bubble play button.
+     *
+     * Server bridges this kRPC stream to the TTS gRPC service. Emits one
+     * HEADER event with the PCM sampleRate, followed by PCM events with
+     * base64-encoded raw audio, terminating in DONE (or ERROR on failure).
+     */
+    fun streamTts(text: String): Flow<TtsChunkEvent>
+
+    /**
+     * One-shot text query from Siri / Google Assistant / Wear quick action.
+     *
+     * Creates a USER_TASK and polls until it reaches a terminal state (or timeout),
+     * returning the response text. Voice assistants don't support streaming, so
+     * this stays unary — but runs over kRPC same as any other RPC (no public REST).
+     */
+    suspend fun sendSiriQuery(
+        query: String,
+        source: String = "siri",
+        clientId: String? = null,
+        projectId: String? = null,
+    ): SiriQueryResponse
+
+    /**
+     * Bidirectional live voice session — meeting live assist, helper hints.
+     *
+     * Client opens the session with config, then streams WAV chunks via `chunks`.
+     * Server emits SESSION_STARTED (with sessionId), CHUNK_TRANSCRIBED partials,
+     * HINT (knowledge-base suggestions), TOKEN / RESPONSE / TTS_AUDIO (if config.tts),
+     * and terminates with DONE (or ERROR).
+     *
+     * Replaces legacy `/api/v1/voice/session` + `/voice/session/chunk` + `/voice/session/stop`.
+     */
+    fun streamVoiceSession(
+        config: VoiceSessionConfig,
+        chunks: Flow<VoiceSessionChunk>,
+    ): Flow<VoiceSessionEvent>
 }

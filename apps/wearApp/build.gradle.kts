@@ -59,4 +59,10 @@ dependencies {
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+
+    // kRPC to Jervis server (ephemeral calls only — Wear battery budget forbids
+    // long-lived streams). Pull in the Android artifacts of the KMP modules.
+    implementation(project(":shared:common-dto"))
+    implementation(project(":shared:common-api"))
+    implementation(project(":shared:domain"))
 }

@@ -62,11 +62,6 @@ public final class O365BrowserPoolProto extends com.google.protobuf.GeneratedFil
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_jervis_o365_browser_pool_SubmitMfaRequest_fieldAccessorTable;
   static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_jervis_o365_browser_pool_VncTokenResponse_descriptor;
-  static final 
-    com.google.protobuf.GeneratedMessage.FieldAccessorTable
-      internal_static_jervis_o365_browser_pool_VncTokenResponse_fieldAccessorTable;
-  static final com.google.protobuf.Descriptors.Descriptor
     internal_static_jervis_o365_browser_pool_InstructionRequest_descriptor;
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
@@ -76,6 +71,11 @@ public final class O365BrowserPoolProto extends com.google.protobuf.GeneratedFil
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_jervis_o365_browser_pool_InstructionResponse_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_o365_browser_pool_VncFrame_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_o365_browser_pool_VncFrame_fieldAccessorTable;
 
   public static com.google.protobuf.Descriptors.FileDescriptor
       getDescriptor() {
@@ -113,32 +113,33 @@ public final class O365BrowserPoolProto extends com.google.protobuf.GeneratedFil
       "\022\024\n\005error\030\005 \001(\tR\005error\"t\n\020SubmitMfaReque" +
       "st\022/\n\003ctx\030\001 \001(\0132\035.jervis.common.RequestC" +
       "ontextR\003ctx\022\033\n\tclient_id\030\002 \001(\tR\010clientId" +
-      "\022\022\n\004code\030\003 \001(\tR\004code\"E\n\020VncTokenResponse" +
-      "\022\024\n\005token\030\001 \001(\tR\005token\022\033\n\tclient_id\030\002 \001(" +
-      "\tR\010clientId\"\204\001\n\022InstructionRequest\022/\n\003ct" +
-      "x\030\001 \001(\0132\035.jervis.common.RequestContextR\003" +
-      "ctx\022\033\n\tclient_id\030\002 \001(\tR\010clientId\022 \n\013inst" +
-      "ruction\030\003 \001(\tR\013instruction\"`\n\023Instructio" +
-      "nResponse\022\026\n\006status\030\001 \001(\tR\006status\022\033\n\tcli" +
-      "ent_id\030\002 \001(\tR\010clientId\022\024\n\005error\030\003 \001(\tR\005e" +
-      "rror2\372\004\n\026O365BrowserPoolService\022[\n\006Healt" +
-      "h\022\'.jervis.o365_browser_pool.HealthReque" +
-      "st\032(.jervis.o365_browser_pool.HealthResp" +
-      "onse\022[\n\nGetSession\022$.jervis.o365_browser" +
-      "_pool.SessionRef\032\'.jervis.o365_browser_p" +
-      "ool.SessionStatus\022j\n\013InitSession\022,.jervi" +
-      "s.o365_browser_pool.InitSessionRequest\032-" +
-      ".jervis.o365_browser_pool.InitSessionRes" +
-      "ponse\022f\n\tSubmitMfa\022*.jervis.o365_browser" +
-      "_pool.SubmitMfaRequest\032-.jervis.o365_bro" +
-      "wser_pool.InitSessionResponse\022b\n\016CreateV" +
-      "ncToken\022$.jervis.o365_browser_pool.Sessi" +
-      "onRef\032*.jervis.o365_browser_pool.VncToke" +
-      "nResponse\022n\n\017PushInstruction\022,.jervis.o3" +
-      "65_browser_pool.InstructionRequest\032-.jer" +
-      "vis.o365_browser_pool.InstructionRespons" +
-      "eB@\n&com.jervis.contracts.o365_browser_p" +
-      "oolB\024O365BrowserPoolProtoP\001b\006proto3"
+      "\022\022\n\004code\030\003 \001(\tR\004code\"\204\001\n\022InstructionRequ" +
+      "est\022/\n\003ctx\030\001 \001(\0132\035.jervis.common.Request" +
+      "ContextR\003ctx\022\033\n\tclient_id\030\002 \001(\tR\010clientI" +
+      "d\022 \n\013instruction\030\003 \001(\tR\013instruction\"`\n\023I" +
+      "nstructionResponse\022\026\n\006status\030\001 \001(\tR\006stat" +
+      "us\022\033\n\tclient_id\030\002 \001(\tR\010clientId\022\024\n\005error" +
+      "\030\003 \001(\tR\005error\"l\n\010VncFrame\022/\n\003ctx\030\001 \001(\0132\035" +
+      ".jervis.common.RequestContextR\003ctx\022\033\n\tcl" +
+      "ient_id\030\002 \001(\tR\010clientId\022\022\n\004data\030\003 \001(\014R\004d" +
+      "ata2\357\004\n\026O365BrowserPoolService\022[\n\006Health" +
+      "\022\'.jervis.o365_browser_pool.HealthReques" +
+      "t\032(.jervis.o365_browser_pool.HealthRespo" +
+      "nse\022[\n\nGetSession\022$.jervis.o365_browser_" +
+      "pool.SessionRef\032\'.jervis.o365_browser_po" +
+      "ol.SessionStatus\022j\n\013InitSession\022,.jervis" +
+      ".o365_browser_pool.InitSessionRequest\032-." +
+      "jervis.o365_browser_pool.InitSessionResp" +
+      "onse\022f\n\tSubmitMfa\022*.jervis.o365_browser_" +
+      "pool.SubmitMfaRequest\032-.jervis.o365_brow" +
+      "ser_pool.InitSessionResponse\022n\n\017PushInst" +
+      "ruction\022,.jervis.o365_browser_pool.Instr" +
+      "uctionRequest\032-.jervis.o365_browser_pool" +
+      ".InstructionResponse\022W\n\tStreamVnc\022\".jerv" +
+      "is.o365_browser_pool.VncFrame\032\".jervis.o" +
+      "365_browser_pool.VncFrame(\0010\001B@\n&com.jer" +
+      "vis.contracts.o365_browser_poolB\024O365Bro" +
+      "wserPoolProtoP\001b\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
@@ -187,24 +188,24 @@ public final class O365BrowserPoolProto extends com.google.protobuf.GeneratedFil
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_browser_pool_SubmitMfaRequest_descriptor,
         new java.lang.String[] { "Ctx", "ClientId", "Code", });
-    internal_static_jervis_o365_browser_pool_VncTokenResponse_descriptor =
-      getDescriptor().getMessageType(7);
-    internal_static_jervis_o365_browser_pool_VncTokenResponse_fieldAccessorTable = new
-      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-        internal_static_jervis_o365_browser_pool_VncTokenResponse_descriptor,
-        new java.lang.String[] { "Token", "ClientId", });
     internal_static_jervis_o365_browser_pool_InstructionRequest_descriptor =
-      getDescriptor().getMessageType(8);
+      getDescriptor().getMessageType(7);
     internal_static_jervis_o365_browser_pool_InstructionRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_browser_pool_InstructionRequest_descriptor,
         new java.lang.String[] { "Ctx", "ClientId", "Instruction", });
     internal_static_jervis_o365_browser_pool_InstructionResponse_descriptor =
-      getDescriptor().getMessageType(9);
+      getDescriptor().getMessageType(8);
     internal_static_jervis_o365_browser_pool_InstructionResponse_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_o365_browser_pool_InstructionResponse_descriptor,
         new java.lang.String[] { "Status", "ClientId", "Error", });
+    internal_static_jervis_o365_browser_pool_VncFrame_descriptor =
+      getDescriptor().getMessageType(9);
+    internal_static_jervis_o365_browser_pool_VncFrame_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_o365_browser_pool_VncFrame_descriptor,
+        new java.lang.String[] { "Ctx", "ClientId", "Data", });
     descriptor.resolveAllFeaturesImmutable();
     com.jervis.contracts.common.TypesProto.getDescriptor();
   }

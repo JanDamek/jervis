@@ -3,17 +3,19 @@ package com.jervis.wear.presentation
 import android.app.Activity
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
+import com.jervis.di.NetworkModule
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.net.HttpURLConnection
-import java.net.URL
 import java.util.Locale
 
 /**
- * Lightweight Activity for handling Google Assistant voice queries on Wear OS.
- * Receives text query, sends to Jervis backend, speaks the response via TTS.
+ * Wear OS Activity invoked by Google Assistant voice actions. Forwards a text
+ * query to Jervis over kRPC (IChatService.sendSiriQuery) and speaks the
+ * response back via local TTS. One-shot only — Wear OS battery budget forbids
+ * long-lived WebSocket streams, so the connection opens on intent and closes
+ * as soon as the reply arrives.
  */
 class VoiceQueryActivity : Activity(), TextToSpeech.OnInitListener {
 
@@ -40,29 +42,12 @@ class VoiceQueryActivity : Activity(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun sendQuery(query: String): String {
-        return try {
-            val url = URL("https://jervis.damek-soft.eu/api/v1/chat/siri")
-            val conn = url.openConnection() as HttpURLConnection
-            conn.requestMethod = "POST"
-            conn.setRequestProperty("Content-Type", "application/json")
-            conn.doOutput = true
-            conn.connectTimeout = 15_000
-            conn.readTimeout = 30_000
-
-            val body = """{"query":"${query.replace("\"", "\\\"")}","source":"google_assistant_wear"}"""
-            conn.outputStream.use { it.write(body.toByteArray()) }
-
-            if (conn.responseCode == 200) {
-                val responseText = conn.inputStream.bufferedReader().readText()
-                val responseMatch = Regex(""""response"\s*:\s*"([^"]+)"""").find(responseText)
-                responseMatch?.groupValues?.get(1) ?: responseText
-            } else {
-                "Jervis neodpovida."
-            }
-        } catch (e: Exception) {
-            "Chyba pripojeni: ${e.message}"
+    private suspend fun sendQuery(query: String): String = try {
+        NetworkModule.withEphemeralServices(SERVER_URL) { services ->
+            services.chatService.sendSiriQuery(query, source = "google_assistant_wear").response
         }
+    } catch (e: Exception) {
+        "Chyba pripojeni: ${e.message ?: "neznama"}"
     }
 
     private fun speakAndFinish(text: String) {
@@ -86,5 +71,9 @@ class VoiceQueryActivity : Activity(), TextToSpeech.OnInitListener {
     override fun onDestroy() {
         tts?.shutdown()
         super.onDestroy()
+    }
+
+    private companion object {
+        const val SERVER_URL = "https://jervis.damek-soft.eu"
     }
 }

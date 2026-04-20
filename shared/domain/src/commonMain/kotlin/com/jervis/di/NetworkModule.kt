@@ -133,6 +133,36 @@ object NetworkModule {
     }
 
     /**
+     * One-shot kRPC call bundle — opens a fresh WebSocket connection, runs the
+     * suspend block against freshly-created service stubs, then tears everything
+     * down. Used by Android intent Activities (Google Assistant app actions) and
+     * similar out-of-band entry points that don't have access to the long-lived
+     * [RpcConnectionManager] singleton.
+     *
+     * The caller only sees [Services] — the [KtorRpcClient] and [HttpClient]
+     * types don't leak across module boundaries, so consumers don't need to
+     * depend on Ktor artifacts directly.
+     */
+    suspend fun <T> withEphemeralServices(
+        baseUrl: String,
+        block: suspend (Services) -> T,
+    ): T {
+        val http = createHttpClient()
+        val rpc = try {
+            createRpcClient(baseUrl, http)
+        } catch (e: Throwable) {
+            http.close()
+            throw e
+        }
+        return try {
+            block(createServices(rpc))
+        } finally {
+            runCatching { rpc.close() }
+            runCatching { http.close() }
+        }
+    }
+
+    /**
      * Create all service stubs from an RPC client.
      */
     fun createServices(rpcClient: KtorRpcClient): Services =

@@ -1981,52 +1981,40 @@ class ChatViewModel(
         _isTtsPlaying.value = true
         ttsJob = scope.launch {
             try {
-                val serverUrl = connectionManager.baseUrl.trimEnd('/')
-                println("TTS: streaming text=${text.take(50)}")
-
-                val jsonBody = """{"text":"${text.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ")}"}"""
-                val ttsUrl = "$serverUrl/api/v1/tts/stream"
-                println("TTS: POST $ttsUrl body=${jsonBody.take(80)}")
-
-                postSseStream(
-                    url = ttsUrl,
-                    bodyBytes = jsonBody.encodeToByteArray(),
-                    contentType = "application/json",
-                ) { event ->
-                    when (event.event) {
-                        "tts_header" -> {
-                            // Open continuous audio stream with sample rate from server
-                            val json = try { Json.parseToJsonElement(event.data).jsonObject } catch (_: Exception) { null }
-                            val sampleRate = json?.get("sample_rate")?.jsonPrimitive?.content?.toIntOrNull() ?: 24000
+                println("TTS: streamTts via kRPC text=${text.take(50)}")
+                connectionManager.resilientFlow { services ->
+                    services.chatService.streamTts(text)
+                }.collect { event ->
+                    when (event.type) {
+                        com.jervis.dto.chat.TtsChunkEventType.HEADER -> {
+                            val sampleRate = if (event.sampleRate > 0) event.sampleRate else 24000
                             println("TTS: opening audio stream, sampleRate=$sampleRate")
                             withContext(Dispatchers.Default) {
                                 ttsPlayer.startStream(sampleRate)
                             }
                         }
-                        "tts_pcm" -> {
-                            // Write raw PCM chunk to continuous audio stream (gapless)
-                            val json = try { Json.parseToJsonElement(event.data).jsonObject } catch (_: Exception) { null }
-                            val audioB64 = json?.get("data")?.jsonPrimitive?.content
-                            if (!audioB64.isNullOrBlank()) {
+                        com.jervis.dto.chat.TtsChunkEventType.PCM -> {
+                            val audioB64 = event.audioData
+                            if (audioB64.isNotBlank()) {
                                 val pcmBytes = Base64.decode(audioB64)
-                                // streamPcm blocks if buffer full — natural backpressure
                                 withContext(Dispatchers.Default) {
                                     ttsPlayer.streamPcm(pcmBytes)
                                 }
                             }
                         }
-                        "done" -> {
+                        com.jervis.dto.chat.TtsChunkEventType.DONE -> {
                             println("TTS: stream done, draining audio")
                             withContext(Dispatchers.Default) {
                                 ttsPlayer.finishStream()
                             }
+                            return@collect
                         }
-                        "error" -> {
-                            val json = try { Json.parseToJsonElement(event.data).jsonObject } catch (_: Exception) { null }
-                            println("TTS stream error: ${json?.get("text")?.jsonPrimitive?.content}")
+                        com.jervis.dto.chat.TtsChunkEventType.ERROR -> {
+                            println("TTS stream error: ${event.errorMessage}")
                             withContext(Dispatchers.Default) {
                                 ttsPlayer.stopStream()
                             }
+                            return@collect
                         }
                     }
                 }

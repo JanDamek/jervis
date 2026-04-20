@@ -9,6 +9,7 @@ import com.jervis.dto.task.TaskStateEnum
 import com.jervis.dto.task.TaskTypeEnum
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.ProjectId
+import com.jervis.common.types.SourceUrn
 import com.jervis.common.types.TaskId
 import com.jervis.chat.ChatMessageDocument
 import com.jervis.chat.ChatMessageRepository
@@ -16,6 +17,9 @@ import com.jervis.chat.MessageRole
 import com.jervis.client.ClientRepository
 import com.jervis.project.ProjectRepository
 import com.jervis.task.TaskRepository
+import com.jervis.task.TaskService
+import com.jervis.infrastructure.config.properties.TtsProperties
+import com.jervis.infrastructure.grpc.TtsGrpcClient
 import com.jervis.infrastructure.llm.CloudModelPolicyResolver
 import com.jervis.service.chat.IChatService
 import com.jervis.task.BackgroundEngine
@@ -56,6 +60,9 @@ class ChatRpcImpl(
     private val preferenceService: com.jervis.preferences.PreferenceService,
     private val agentQuestionRepository: com.jervis.agent.PendingAgentQuestionRepository,
     private val agentQuestionService: com.jervis.agent.AgentQuestionService,
+    private val ttsGrpcClient: TtsGrpcClient,
+    private val ttsProperties: TtsProperties,
+    private val taskService: TaskService,
 ) : IChatService {
     private val logger = KotlinLogging.logger {}
     private val backgroundScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -933,6 +940,131 @@ class ChatRpcImpl(
     ): kotlinx.coroutines.flow.Flow<com.jervis.dto.chat.VoiceChatEvent> {
         return kotlinx.coroutines.flow.flow {
             emit(com.jervis.dto.chat.VoiceChatEvent(type = com.jervis.dto.chat.VoiceChatEventType.ERROR, text = "Voice chat not yet implemented via kRPC"))
+        }
+    }
+
+    companion object {
+        // Jervis self-project defaults for Siri / Assistant queries without
+        // explicit client/project context (KB: Jervis project memory).
+        private const val SIRI_DEFAULT_CLIENT_ID = "68a332361b04695a243e5ae8"
+        private const val SIRI_DEFAULT_PROJECT_ID = "68a3318f1b04695a243e5adf"
+    }
+
+    override suspend fun sendSiriQuery(
+        query: String,
+        source: String,
+        clientId: String?,
+        projectId: String?,
+    ): com.jervis.dto.chat.SiriQueryResponse {
+        if (query.isBlank()) {
+            return com.jervis.dto.chat.SiriQueryResponse(
+                response = "Nerozuměl jsem dotazu. Zkuste to znovu.",
+            )
+        }
+        val effectiveClientId = ClientId(ObjectId(clientId ?: SIRI_DEFAULT_CLIENT_ID))
+        val effectiveProjectId = ProjectId(ObjectId(projectId ?: SIRI_DEFAULT_PROJECT_ID))
+        logger.info { "SIRI_QUERY | source=$source | query=${query.take(100)}" }
+
+        val task = taskService.createTask(
+            taskType = TaskTypeEnum.INSTANT,
+            content = query,
+            clientId = effectiveClientId,
+            correlationId = "siri-${java.util.UUID.randomUUID().toString().take(8)}",
+            sourceUrn = SourceUrn("siri://$source"),
+            projectId = effectiveProjectId,
+            state = TaskStateEnum.QUEUED,
+            taskName = "Siri: ${query.take(80)}",
+        )
+
+        // Poll until terminal state or 25s timeout. Voice assistants (Siri, Google Assistant)
+        // are inherently one-shot, so unary kRPC with a bounded poll is fine.
+        val maxPolls = 50
+        val pollInterval = 500L
+        var response: String? = null
+        for (i in 0 until maxPolls) {
+            kotlinx.coroutines.delay(pollInterval)
+            val current = taskRepository.getById(task.id) ?: break
+            when (current.state) {
+                TaskStateEnum.DONE -> { response = extractSiriResponse(current.content, query); break }
+                TaskStateEnum.ERROR -> { response = current.errorMessage ?: "Došlo k chybě při zpracování."; break }
+                TaskStateEnum.USER_TASK -> {
+                    response = current.pendingUserQuestion
+                        ?: "Jervis se ptá — otevřete aplikaci pro odpověď."
+                    break
+                }
+                else -> continue
+            }
+        }
+
+        val finalState = taskRepository.getById(task.id)?.state ?: TaskStateEnum.PROCESSING
+        return com.jervis.dto.chat.SiriQueryResponse(
+            response = response ?: "Jervis zpracovává váš dotaz na pozadí. Výsledek najdete v aplikaci.",
+            taskId = task.id.toString(),
+            state = finalState.name,
+        )
+    }
+
+    private fun extractSiriResponse(content: String, originalQuery: String): String {
+        val trimmed = content.trim()
+        if (trimmed == originalQuery.trim()) return "Dotaz byl zpracován."
+        val markers = listOf("[Agent response]:", "[Odpověď]:", "Výsledek:", "Odpověď:")
+        for (marker in markers) {
+            val idx = trimmed.lastIndexOf(marker)
+            if (idx >= 0) return trimmed.substring(idx + marker.length).trim()
+        }
+        if (trimmed.length > originalQuery.length + 10) {
+            val afterQuery = trimmed.removePrefix(originalQuery).trim()
+            if (afterQuery.isNotBlank()) return afterQuery
+        }
+        return trimmed
+    }
+
+    override fun streamVoiceSession(
+        config: com.jervis.dto.chat.VoiceSessionConfig,
+        chunks: Flow<com.jervis.dto.chat.VoiceSessionChunk>,
+    ): Flow<com.jervis.dto.chat.VoiceSessionEvent> = flow {
+        // TODO: full live-assist kRPC implementation — delegates to VoiceSessionService
+        // which bridges WhisperRestClient + OrchestratorVoiceGrpcClient + MeetingHelperGrpcClient.
+        // Until the service is extracted, clients keep using the legacy REST route.
+        emit(com.jervis.dto.chat.VoiceSessionEvent(
+            type = com.jervis.dto.chat.VoiceSessionEventType.ERROR,
+            text = "streamVoiceSession not yet implemented via kRPC",
+        ))
+    }
+
+    override fun streamTts(text: String): Flow<com.jervis.dto.chat.TtsChunkEvent> = flow {
+        if (text.isBlank()) {
+            emit(com.jervis.dto.chat.TtsChunkEvent(
+                type = com.jervis.dto.chat.TtsChunkEventType.ERROR,
+                errorMessage = "empty text",
+            ))
+            return@flow
+        }
+        // Upstream AudioChunk has no sample_rate field; XTTS emits 24kHz PCM.
+        // TODO: propagate sample_rate via proto once tts.AudioChunk is extended.
+        emit(com.jervis.dto.chat.TtsChunkEvent(
+            type = com.jervis.dto.chat.TtsChunkEventType.HEADER,
+            sampleRate = 24000,
+        ))
+        try {
+            ttsGrpcClient.speakStream(text, speed = ttsProperties.speed.toDouble()).collect { chunk ->
+                val bytes = chunk.data.toByteArray()
+                if (bytes.isNotEmpty()) {
+                    emit(com.jervis.dto.chat.TtsChunkEvent(
+                        type = com.jervis.dto.chat.TtsChunkEventType.PCM,
+                        audioData = java.util.Base64.getEncoder().encodeToString(bytes),
+                    ))
+                }
+                if (chunk.isLast) {
+                    emit(com.jervis.dto.chat.TtsChunkEvent(type = com.jervis.dto.chat.TtsChunkEventType.DONE))
+                }
+            }
+        } catch (e: Exception) {
+            logger.warn(e) { "streamTts failed: ${e.message}" }
+            emit(com.jervis.dto.chat.TtsChunkEvent(
+                type = com.jervis.dto.chat.TtsChunkEventType.ERROR,
+                errorMessage = e.message.orEmpty().take(200),
+            ))
         }
     }
 }
