@@ -1,4 +1,12 @@
-"""Cached gRPC stubs for Kotlin server contracts used by the o365 browser pool."""
+"""Cached gRPC stubs used by the o365 browser pool.
+
+Two channels:
+  * `kotlin_server` — Kotlin app server (session / meeting / resources).
+  * `ollama_router` — local LLM / VLM / embedding inference.
+
+Both dial port 5501 (h2c). Channel instances are created lazily + cached
+for the pod's lifetime.
+"""
 
 from __future__ import annotations
 
@@ -8,6 +16,7 @@ from typing import Optional
 import grpc.aio
 
 from app.config import settings
+from jervis.router import inference_pb2_grpc
 from jervis.server import (
     meeting_attend_pb2_grpc,
     meeting_recording_bridge_pb2_grpc,
@@ -94,3 +103,45 @@ def server_meeting_recording_stub() -> (
             )
         )
     return _meeting_recording_stub
+
+
+# ── Ollama-router inference channel ──────────────────────────────────
+
+_router_channel: Optional[grpc.aio.Channel] = None
+_router_inference_stub: Optional[inference_pb2_grpc.RouterInferenceServiceStub] = None
+
+
+def _router_grpc_target() -> str:
+    """Strip scheme / port from OLLAMA_ROUTER_URL and target :5501 gRPC."""
+    url = settings.ollama_router_url.rstrip("/")
+    if "://" in url:
+        url = url.split("://", 1)[1]
+    host = url.split("/")[0].split(":")[0]
+    return f"{host}:5501"
+
+
+def _get_router_channel() -> grpc.aio.Channel:
+    global _router_channel
+    if _router_channel is None:
+        target = _router_grpc_target()
+        _router_channel = grpc.aio.insecure_channel(
+            target,
+            options=[
+                ("grpc.max_send_message_length", _GRPC_MAX_MSG_BYTES),
+                ("grpc.max_receive_message_length", _GRPC_MAX_MSG_BYTES),
+                ("grpc.keepalive_time_ms", 30_000),
+                ("grpc.keepalive_timeout_ms", 10_000),
+                ("grpc.keepalive_permit_without_calls", 1),
+            ],
+        )
+        logger.debug("ollama-router gRPC channel opened to %s", target)
+    return _router_channel
+
+
+def router_inference_stub() -> inference_pb2_grpc.RouterInferenceServiceStub:
+    global _router_inference_stub
+    if _router_inference_stub is None:
+        _router_inference_stub = inference_pb2_grpc.RouterInferenceServiceStub(
+            _get_router_channel(),
+        )
+    return _router_inference_stub

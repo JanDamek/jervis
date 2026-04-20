@@ -45,20 +45,20 @@ Tool signatures carry only semantic arguments.
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 import logging
 import time
 from typing import Literal
 
-import httpx
 from langchain_core.tools import tool
 
 from app.agent import _dom_query, work_hours
 from app.agent.context import get_pod_context
-from app.agent.llm import RouterChatModel
-from app.config import settings
+from app.grpc_clients import router_inference_stub
 from app.pod_state import PodState
+from jervis.common import enums_pb2, types_pb2
+from jervis.router import inference_pb2
+from jervis_contracts.interceptors import prepare_context
 
 logger = logging.getLogger("o365-browser-pool.tools")
 
@@ -158,59 +158,31 @@ async def look_at_screen(
         + (f"\nFocused question: {ask}\nPut the focused answer into detected_text." if ask else "")
     )
 
-    vlm = RouterChatModel(client_id=ctx.connection_id, capability="visual")
-    try:
-        route = await vlm._decide(estimated_tokens=2000)
-    except Exception as e:
-        return {"app_state": "unknown", "summary": f"router decide failed: {e}",
-                "visible_actions": [], "detected_text": {}}
-    target = route.get("target", "local")
-    model = route.get("model", "")
-    api_base = route.get("api_base", settings.ollama_router_url)
-    image_b64 = base64.b64encode(shot).decode()
+    req_ctx = types_pb2.RequestContext(
+        scope=types_pb2.Scope(client_id=ctx.client_id),
+        priority=enums_pb2.PRIORITY_BACKGROUND,
+        capability=enums_pb2.CAPABILITY_VISUAL,
+        intent="o365-pod-vlm-observe",
+    )
+    prepare_context(req_ctx)
+    request = inference_pb2.GenerateRequest(
+        ctx=req_ctx,
+        model_hint="qwen3-vl-tool:latest",
+        prompt=prompt,
+        images=[shot],
+        options=inference_pb2.ChatOptions(temperature=0.0, num_predict=1024),
+    )
 
+    body_parts: list[str] = []
     try:
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(connect=10, read=None, write=10, pool=30),
-        ) as client:
-            if target == "openrouter":
-                resp = await client.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {route.get('api_key', settings.openrouter_api_key)}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "model": model,
-                        "messages": [{
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": prompt},
-                                {"type": "image_url", "image_url": {
-                                    "url": f"data:image/jpeg;base64,{image_b64}",
-                                }},
-                            ],
-                        }],
-                        "stream": False,
-                        "temperature": 0,
-                    },
-                )
-                resp.raise_for_status()
-                body = resp.json()["choices"][0]["message"]["content"]
-            else:
-                resp = await client.post(
-                    f"{api_base}/api/generate",
-                    json={
-                        "model": model, "prompt": prompt,
-                        "images": [image_b64], "stream": False,
-                    },
-                )
-                resp.raise_for_status()
-                body = resp.json().get("response", "")
+        async for chunk in router_inference_stub().Generate(request):
+            if chunk.response_delta:
+                body_parts.append(chunk.response_delta)
     except Exception as e:
         return {"app_state": "unknown", "summary": f"vlm call failed: {e}",
                 "visible_actions": [], "detected_text": {}}
 
+    body = "".join(body_parts)
     parsed = _try_parse_vlm_json(body)
     ctx.last_observation_kind = "vlm"
     ctx.last_observation_at = _utcnow_iso()

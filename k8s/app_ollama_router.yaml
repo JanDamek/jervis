@@ -23,7 +23,10 @@ spec:
           image: registry.damek-soft.eu/jandamek/jervis-ollama-router:latest
           imagePullPolicy: Always
           ports:
-            - containerPort: 11430
+            - name: ollama-http
+              containerPort: 11430
+            - name: grpc
+              containerPort: 5501
           envFrom:
             - configMapRef:
                 name: jervis-config
@@ -65,9 +68,14 @@ spec:
   selector:
     app: jervis-ollama-router
   ports:
-    - protocol: TCP
+    - name: ollama-http
+      protocol: TCP
       port: 11430
       targetPort: 11430
+    - name: grpc
+      protocol: TCP
+      port: 5501
+      targetPort: 5501
   type: ClusterIP
 ---
 # Ingress for local access from GPU VM (whisper → router coordination).

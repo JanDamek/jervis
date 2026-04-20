@@ -1,13 +1,13 @@
-"""Router-backed LangChain chat model.
+"""Router-backed LangChain chat model — gRPC RouterInferenceService.
 
-Dispatches through `jervis-ollama-router`:
-  1. POST /router/admin/decide → { target, model, api_base, api_key? }
-  2. If target=openrouter → POST OpenRouter /v1/chat/completions
-     If target=local     → POST {api_base}/api/chat (Ollama native)
-  3. Normalize reply to LangChain AIMessage.
+The agent dispatches every LLM call through `jervis-ollama-router:5501`
+via gRPC. The server-side service (`RouterInferenceService.Chat`) owns
+the routing policy (local GPU vs cloud OpenRouter, model selection, queue
+priority, tier resolution). We translate LangChain messages + bound tool
+schemas to proto and drain the server stream into a single AIMessage —
+LangChain's `_agenerate` is unary, so we accumulate chunks internally.
 
-No `langchain-ollama`. No LiteLLM. Same pattern as
-`backend/service-orchestrator/app/llm/provider.py`.
+No HTTP. No `/api/chat` POST. No custom wire format.
 """
 
 from __future__ import annotations
@@ -16,7 +16,8 @@ import json
 import logging
 from typing import Any, Iterator, List, Optional
 
-import httpx
+from google.protobuf import struct_pb2
+from google.protobuf.json_format import MessageToDict, ParseDict
 from langchain_core.callbacks import AsyncCallbackManagerForLLMRun, CallbackManagerForLLMRun
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import (
@@ -31,120 +32,96 @@ from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
 
-from app.config import settings
+from app.grpc_clients import router_inference_stub
+from jervis.common import enums_pb2, types_pb2
+from jervis.router import inference_pb2
+from jervis_contracts.interceptors import prepare_context
 
 logger = logging.getLogger("o365-browser-pool.llm")
 
 
-def _message_to_dict(msg: BaseMessage, *, ollama_native: bool) -> dict:
-    """Convert a LangChain message to wire format.
+_CAPABILITY_TO_ENUM = {
+    "chat": enums_pb2.CAPABILITY_CHAT,
+    "thinking": enums_pb2.CAPABILITY_THINKING,
+    "coding": enums_pb2.CAPABILITY_CODING,
+    "extraction": enums_pb2.CAPABILITY_EXTRACTION,
+    "embedding": enums_pb2.CAPABILITY_EMBEDDING,
+    "visual": enums_pb2.CAPABILITY_VISUAL,
+    "vision": enums_pb2.CAPABILITY_VISUAL,
+}
 
-    Ollama native `/api/chat` and OpenAI `/v1/chat/completions` mostly agree,
-    but differ on:
-      - Ollama assistant messages carrying tool_calls: Ollama's validator
-        rejects `id` + `type` wrappers on each tool call → emit only
-        `function: { name, arguments }` (arguments as dict, not stringified).
-      - Ollama tool messages: no `tool_call_id`, no `name` — Ollama matches
-        tool replies positionally with the preceding tool_calls array.
-    OpenAI (OpenRouter) expects the full `id`/`type` wrappers and
-    `tool_call_id`.
-    """
+
+def _dict_to_struct(d: dict) -> struct_pb2.Struct:
+    out = struct_pb2.Struct()
+    if d:
+        ParseDict(d, out)
+    return out
+
+
+def _struct_to_dict(s: struct_pb2.Struct) -> dict:
+    if not s or not s.fields:
+        return {}
+    return MessageToDict(s, preserving_proto_field_name=True)
+
+
+def _message_to_proto(msg: BaseMessage) -> inference_pb2.ChatMessage:
     if isinstance(msg, SystemMessage):
-        return {"role": "system", "content": msg.content}
+        return inference_pb2.ChatMessage(role="system", content=msg.content or "")
     if isinstance(msg, HumanMessage):
-        return {"role": "user", "content": msg.content}
+        return inference_pb2.ChatMessage(role="user", content=msg.content or "")
     if isinstance(msg, AIMessage):
-        tc = getattr(msg, "tool_calls", None) or []
-        base: dict[str, Any] = {"role": "assistant", "content": msg.content or ""}
-        if tc:
-            if ollama_native:
-                base["tool_calls"] = [
-                    {"function": {
-                        "name": t["name"],
-                        "arguments": t.get("args") or {},
-                    }}
-                    for t in tc
-                ]
-            else:
-                base["tool_calls"] = [
-                    {
-                        "id": t.get("id") or f"call_{i}",
-                        "type": "function",
-                        "function": {
-                            "name": t["name"],
-                            "arguments": json.dumps(t.get("args") or {}),
-                        },
-                    }
-                    for i, t in enumerate(tc)
-                ]
-        return base
+        tc_list: list[inference_pb2.ToolCall] = []
+        for i, t in enumerate(getattr(msg, "tool_calls", None) or []):
+            args = t.get("args") or {}
+            tc_list.append(
+                inference_pb2.ToolCall(
+                    id=t.get("id") or f"call_{i}",
+                    name=t.get("name", ""),
+                    args=_dict_to_struct(args if isinstance(args, dict) else {}),
+                )
+            )
+        return inference_pb2.ChatMessage(
+            role="assistant",
+            content=msg.content or "",
+            tool_calls=tc_list,
+        )
     if isinstance(msg, ToolMessage):
-        content = msg.content if isinstance(msg.content, str) else json.dumps(msg.content, default=str)
-        if ollama_native:
-            return {"role": "tool", "content": content}
-        return {
-            "role": "tool",
-            "content": content,
-            "tool_call_id": msg.tool_call_id,
-        }
-    return {"role": "user", "content": str(msg.content)}
+        content = msg.content if isinstance(msg.content, str) else json.dumps(
+            msg.content, default=str,
+        )
+        return inference_pb2.ChatMessage(
+            role="tool",
+            content=content,
+            tool_call_id=msg.tool_call_id or "",
+        )
+    return inference_pb2.ChatMessage(role="user", content=str(msg.content))
 
 
-def _parse_ai_reply(data: dict) -> AIMessage:
-    """Turn an Ollama /api/chat or OpenAI chat response into AIMessage."""
-    # Ollama shape
-    if "message" in data and "choices" not in data:
-        msg = data["message"] or {}
-        content = msg.get("content", "") or ""
-        tool_calls = []
-        for i, tc in enumerate(msg.get("tool_calls") or []):
-            fn = tc.get("function") or {}
-            args = fn.get("arguments")
-            if isinstance(args, str):
-                try:
-                    args = json.loads(args)
-                except Exception:
-                    args = {"_raw": args}
-            tool_calls.append({
-                "id": tc.get("id") or f"call_{i}",
-                "name": fn.get("name", ""),
-                "args": args or {},
-                "type": "tool_call",
-            })
-        return AIMessage(content=content, tool_calls=tool_calls)
-
-    # OpenAI shape (OpenRouter)
-    choice = (data.get("choices") or [{}])[0]
-    msg = choice.get("message") or {}
-    content = msg.get("content", "") or ""
-    tool_calls = []
-    for i, tc in enumerate(msg.get("tool_calls") or []):
-        fn = tc.get("function") or {}
-        raw_args = fn.get("arguments")
-        try:
-            args = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
-        except Exception:
-            args = {"_raw": raw_args}
-        tool_calls.append({
-            "id": tc.get("id") or f"call_{i}",
-            "name": fn.get("name", ""),
-            "args": args,
-            "type": "tool_call",
-        })
-    return AIMessage(content=content, tool_calls=tool_calls)
+def _tool_to_proto(t: dict) -> inference_pb2.Tool:
+    """Accepts an OpenAI-style tool schema (`{type, function: {name, description,
+    parameters}}`) — the format produced by `convert_to_openai_tool`.
+    """
+    fn = t.get("function") or {}
+    return inference_pb2.Tool(
+        name=fn.get("name", ""),
+        description=fn.get("description", ""),
+        parameters=_dict_to_struct(fn.get("parameters") or {}),
+    )
 
 
 class RouterChatModel(BaseChatModel):
-    """LangChain chat model that goes through jervis-ollama-router.
+    """LangChain chat model backed by RouterInferenceService.Chat.
 
     Attributes:
-        client_id: passed to /router/admin/decide so the router can resolve tier.
-        capability: one of chat/thinking/coding/extraction/visual. Default "chat"
-            which in pod context means tool-calling LLM (qwen3-coder-tool).
-        processing_mode: BACKGROUND | INTERACTIVE | BATCH — influences queue
-            priority. BACKGROUND is the pod default.
+        client_id: passed via RequestContext.scope.client_id — lets the
+            router resolve tier + quota from CloudModelPolicy.
+        capability: one of chat/thinking/coding/extraction/visual. Default
+            "chat" maps to the tool-calling LLM.
+        processing_mode: BACKGROUND | FOREGROUND — influences queue
+            priority (router treats BACKGROUND as NORMAL, FOREGROUND as
+            CRITICAL). Pod default is BACKGROUND.
         temperature: 0 → deterministic.
-        max_tokens: soft cap for completion tokens.
+        max_tokens: soft cap on completion tokens.
     """
 
     client_id: str
@@ -152,10 +129,11 @@ class RouterChatModel(BaseChatModel):
     processing_mode: str = "BACKGROUND"
     temperature: float = 0.0
     max_tokens: int = 4096
+    intent: str = ""
 
     @property
     def _llm_type(self) -> str:
-        return "jervis-router-chat"
+        return "jervis-router-chat-grpc"
 
     def bind_tools(
         self,
@@ -164,13 +142,9 @@ class RouterChatModel(BaseChatModel):
         tool_choice: Any | None = None,
         **kwargs: Any,
     ) -> Runnable[list[BaseMessage], BaseMessage]:
-        """Bind OpenAI-style tool schemas so the router/Ollama sees them on /api/chat.
-
-        Accepts `@tool`-decorated functions, Pydantic models, or raw dicts.
-        Converts each to the OpenAI function-tool schema via
-        `convert_to_openai_tool`, then wraps this model with them via the
-        standard `Runnable.bind` mechanism. `_agenerate` reads them from
-        kwargs['tools'].
+        """Serialize each tool to the OpenAI function schema and bind via
+        LangChain's standard `.bind()`. The resulting list is read back in
+        `_agenerate` from kwargs['tools'].
         """
         formatted = [convert_to_openai_tool(t) for t in tools]
         bind_kwargs: dict[str, Any] = {"tools": formatted}
@@ -178,68 +152,41 @@ class RouterChatModel(BaseChatModel):
             bind_kwargs["tool_choice"] = tool_choice
         return self.bind(**bind_kwargs, **kwargs)
 
-    async def _decide(self, estimated_tokens: int = 0) -> dict:
-        """Synthetic pre-dispatch hint — the router is the single source of
-        truth (no separate /router/admin/decide endpoint). We always target
-        the router's /api/chat with the model hint; the router picks local
-        vs cloud internally based on capability + client tier. Mirrors
-        service-orchestrator/app/llm/router_client.route_request().
-        """
-        model = "qwen3-vl-tool:latest" if self.capability == "visual" else "qwen3-coder-tool:latest"
-        return {
-            "target": "local",
-            "model": model,
-            "api_base": settings.ollama_router_url,
-        }
+    def _build_request(
+        self,
+        messages: list[BaseMessage],
+        tools: list | None,
+    ) -> inference_pb2.ChatRequest:
+        ctx = types_pb2.RequestContext(
+            scope=types_pb2.Scope(client_id=self.client_id),
+            priority=(
+                enums_pb2.PRIORITY_FOREGROUND
+                if self.processing_mode == "FOREGROUND"
+                else enums_pb2.PRIORITY_BACKGROUND
+            ),
+            capability=_CAPABILITY_TO_ENUM.get(
+                self.capability.lower(), enums_pb2.CAPABILITY_CHAT,
+            ),
+            intent=self.intent or "",
+        )
+        prepare_context(ctx)
 
-    async def _dispatch(self, route: dict, messages: list[dict], tools: list | None) -> AIMessage:
-        target = route.get("target", "local")
-        model = route.get("model", "qwen3-coder-tool:latest")
-        api_base = route.get("api_base", settings.ollama_router_url)
+        proto_messages = [_message_to_proto(m) for m in messages]
+        proto_tools = [_tool_to_proto(t) for t in (tools or [])]
 
-        if target == "openrouter":
-            api_key = route.get("api_key", settings.openrouter_api_key)
-            if not api_key:
-                raise RuntimeError("OpenRouter selected but no api_key returned")
-            payload = {
-                "model": model,
-                "messages": messages,
-                "stream": False,
-                "temperature": self.temperature,
-                "max_tokens": self.max_tokens,
-            }
-            if tools:
-                payload["tools"] = tools
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(connect=10, read=None, write=10, pool=30),
-            ) as client:
-                resp = await client.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {api_key}",
-                        "HTTP-Referer": "https://jervis.app",
-                        "Content-Type": "application/json",
-                    },
-                    json=payload,
-                )
-                resp.raise_for_status()
-                return _parse_ai_reply(resp.json())
-
-        # local Ollama
-        payload = {
-            "model": model,
-            "messages": messages,
-            "stream": False,
-            "options": {"temperature": self.temperature},
-        }
-        if tools:
-            payload["tools"] = tools
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(connect=10, read=None, write=10, pool=30),
-        ) as client:
-            resp = await client.post(f"{api_base}/api/chat", json=payload)
-            resp.raise_for_status()
-            return _parse_ai_reply(resp.json())
+        return inference_pb2.ChatRequest(
+            ctx=ctx,
+            model_hint=(
+                "qwen3-vl-tool:latest" if self.capability == "visual"
+                else "qwen3-coder-tool:latest"
+            ),
+            messages=proto_messages,
+            tools=proto_tools,
+            options=inference_pb2.ChatOptions(
+                temperature=self.temperature,
+                num_predict=self.max_tokens,
+            ),
+        )
 
     async def _agenerate(
         self,
@@ -249,15 +196,78 @@ class RouterChatModel(BaseChatModel):
         **kwargs: Any,
     ) -> ChatResult:
         tools = kwargs.get("tools") or []
-        # Peek the router's first decision so we know whether to wire-format
-        # as Ollama native or OpenAI (OpenRouter). Passing messages twice is
-        # fine — the estimate only influences queue bucket, not messages shape.
-        rough_chars = sum(len(getattr(m, "content", "") or "") for m in messages)
-        estimated = rough_chars // 4 + 512
-        route = await self._decide(estimated)
-        ollama_native = route.get("target", "local") != "openrouter"
-        wire_messages = [_message_to_dict(m, ollama_native=ollama_native) for m in messages]
-        reply = await self._dispatch(route, wire_messages, tools or None)
+        request = self._build_request(messages, tools)
+
+        stub = router_inference_stub()
+        content_parts: list[str] = []
+        thinking_parts: list[str] = []
+        # OpenAI-style streaming splits a single tool_call across chunks:
+        # chunk N may carry only `id` + `name`, chunk N+1 only `args`. We
+        # accumulate by id when present, else by position — the model emits
+        # tool_calls in order, so the Kth tool_call across chunks targets
+        # slot K in the assembled list.
+        tool_call_slots: list[dict] = []
+        id_to_slot: dict[str, int] = {}
+        model_used = ""
+        finish_reason = ""
+        prompt_tokens = 0
+        completion_tokens = 0
+
+        async for chunk in stub.Chat(request):
+            if chunk.model_used and not model_used:
+                model_used = chunk.model_used
+            if chunk.content_delta:
+                content_parts.append(chunk.content_delta)
+            if chunk.thinking_delta:
+                thinking_parts.append(chunk.thinking_delta)
+            for idx_in_chunk, tc in enumerate(chunk.tool_calls):
+                args_delta = _struct_to_dict(tc.args)
+                if tc.id and tc.id in id_to_slot:
+                    slot = tool_call_slots[id_to_slot[tc.id]]
+                elif tc.id:
+                    slot = {"id": tc.id, "name": "", "args": {}, "type": "tool_call"}
+                    id_to_slot[tc.id] = len(tool_call_slots)
+                    tool_call_slots.append(slot)
+                elif idx_in_chunk < len(tool_call_slots):
+                    slot = tool_call_slots[idx_in_chunk]
+                else:
+                    slot = {"id": "", "name": "", "args": {}, "type": "tool_call"}
+                    tool_call_slots.append(slot)
+                if tc.name:
+                    slot["name"] = tc.name
+                if args_delta:
+                    slot["args"].update(args_delta)
+            if chunk.done:
+                finish_reason = chunk.finish_reason or finish_reason
+                prompt_tokens = int(chunk.prompt_tokens) or prompt_tokens
+                completion_tokens = int(chunk.completion_tokens) or completion_tokens
+
+        # Drop any empty slots that ended up without a name (malformed upstream).
+        tool_calls_by_id = {
+            (slot["id"] or f"tc_{i}"): slot
+            for i, slot in enumerate(tool_call_slots)
+            if slot["name"]
+        }
+
+        full_content = "".join(content_parts)
+        additional_kwargs: dict[str, Any] = {}
+        if thinking_parts:
+            additional_kwargs["thinking"] = "".join(thinking_parts)
+        if model_used:
+            additional_kwargs["model_used"] = model_used
+        if finish_reason:
+            additional_kwargs["finish_reason"] = finish_reason
+
+        reply = AIMessage(
+            content=full_content,
+            tool_calls=list(tool_calls_by_id.values()),
+            additional_kwargs=additional_kwargs,
+            usage_metadata={
+                "input_tokens": prompt_tokens,
+                "output_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            } if (prompt_tokens or completion_tokens) else None,
+        )
         return ChatResult(generations=[ChatGeneration(message=reply)])
 
     def _generate(
@@ -273,4 +283,7 @@ class RouterChatModel(BaseChatModel):
         )
 
     def _stream(self, *args, **kwargs) -> Iterator:
-        raise NotImplementedError("Use _agenerate — streaming not exposed by the router yet.")
+        raise NotImplementedError(
+            "Use _agenerate — streaming is folded into a single AIMessage "
+            "by the Chat stub consumer.",
+        )
