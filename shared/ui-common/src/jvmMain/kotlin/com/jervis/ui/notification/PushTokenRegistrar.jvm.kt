@@ -3,11 +3,18 @@ package com.jervis.ui.notification
 import com.jervis.dto.notification.DeviceContextDto
 import com.jervis.dto.notification.DeviceTokenDto
 import com.jervis.service.notification.IDeviceTokenService
+import kotlinx.coroutines.withTimeoutOrNull
 
 actual object PushTokenRegistrar {
-    // Desktop has no OS-level push token — we only register the device
-    // row so Meeting Helper / device registry sees it. The token field
-    // stays empty. Dedup once per process is enough.
+    // Desktop has no OS-level push token on Windows/Linux — we only
+    // register the device row so Meeting Helper / device registry sees
+    // it. The token field stays empty. Dedup once per process.
+    //
+    // On macOS we expect the apps/macApp Swift host to have spawned us
+    // with `JERVIS_MACAPP_SOCKET` pointing at a Unix socket that streams
+    // the APNs token + incoming push payloads. When present we register
+    // with platform="macos" and the real APNs token; otherwise we fall
+    // back to the bare desktop registration.
     private var tokenRegistered = false
 
     private fun desktopDeviceId(): String {
@@ -20,8 +27,52 @@ actual object PushTokenRegistrar {
         return "desktop-$hostname-$username"
     }
 
+    private fun isMacOs(): Boolean =
+        System.getProperty("os.name")?.lowercase()?.contains("mac") == true
+
     actual suspend fun registerTokenIfNeeded(deviceTokenService: IDeviceTokenService) {
         if (tokenRegistered) return
+
+        if (isMacOs()) {
+            val socket = System.getenv("JERVIS_MACAPP_SOCKET")
+            if (!socket.isNullOrBlank()) {
+                val bridge = MacAppSocketBridge.ensureStarted(socket)
+                val token = withTimeoutOrNull(15_000L) { bridge.awaitToken() }
+                if (token != null) {
+                    registerMacOs(token, deviceTokenService)
+                    return
+                }
+                println("macApp: APNs token not available after 15s, falling back to desktop registry")
+            }
+        }
+
+        registerPlainDesktop(deviceTokenService)
+    }
+
+    private suspend fun registerMacOs(
+        token: MacAppSocketBridge.TokenMessage,
+        deviceTokenService: IDeviceTokenService,
+    ) {
+        try {
+            val result = deviceTokenService.registerToken(
+                DeviceTokenDto(
+                    deviceId = token.deviceId,
+                    token = token.hexToken,
+                    platform = "macos",
+                ),
+            )
+            if (result.success) {
+                tokenRegistered = true
+                println("macOS APNs token registered, device ${token.deviceId}")
+            } else {
+                println("macOS APNs token registration failed: ${result.message}")
+            }
+        } catch (e: Exception) {
+            println("macOS APNs token registration error: ${e.message}")
+        }
+    }
+
+    private suspend fun registerPlainDesktop(deviceTokenService: IDeviceTokenService) {
         try {
             val deviceId = desktopDeviceId()
             val result = deviceTokenService.registerToken(
@@ -44,8 +95,13 @@ actual object PushTokenRegistrar {
 
     actual suspend fun announceContext(clientId: String, deviceTokenService: IDeviceTokenService) {
         try {
+            val deviceId = if (isMacOs()) {
+                MacAppSocketBridge.currentDeviceId() ?: desktopDeviceId()
+            } else {
+                desktopDeviceId()
+            }
             val result = deviceTokenService.setActiveContext(
-                DeviceContextDto(deviceId = desktopDeviceId(), clientId = clientId),
+                DeviceContextDto(deviceId = deviceId, clientId = clientId),
             )
             if (!result.success) {
                 println("Desktop context announce failed: ${result.message}")
