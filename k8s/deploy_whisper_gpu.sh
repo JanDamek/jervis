@@ -67,16 +67,19 @@ ssh_cmd "cat > $INSTALL_DIR/whisper_rest_server.py" < "$PROJECT_ROOT/backend/ser
 ssh_cmd "cat > $INSTALL_DIR/grpc_server.py" < "$PROJECT_ROOT/backend/service-whisper/grpc_server.py"
 
 # Copy jervis_contracts as an editable install so gRPC stubs are available.
-ssh_cmd "mkdir -p $INSTALL_DIR/libs"
-ssh_cmd "rm -rf $INSTALL_DIR/libs/jervis_contracts"
-(cd "$PROJECT_ROOT" && tar cf - libs/jervis_contracts) | ssh_cmd "tar xf - -C $INSTALL_DIR/libs-tar && mv $INSTALL_DIR/libs-tar/libs/jervis_contracts $INSTALL_DIR/libs/jervis_contracts && rm -rf $INSTALL_DIR/libs-tar" 2>/dev/null || true
-# Fallback: rsync-free scp-cat loop for the package contents.
-ssh_cmd "mkdir -p $INSTALL_DIR/libs/jervis_contracts"
-(cd "$PROJECT_ROOT/libs/jervis_contracts" && find . -type f) | while read -r f; do
-    ssh_cmd "mkdir -p $INSTALL_DIR/libs/jervis_contracts/\$(dirname $f)"
-    ssh_cmd "cat > $INSTALL_DIR/libs/jervis_contracts/$f" < "$PROJECT_ROOT/libs/jervis_contracts/$f"
-done
+# Previous tar-over-ssh + scp-cat fallbacks both failed silently and only
+# pip-registered the package metadata (jervis-contracts 0.1.0) while the
+# actual `jervis/` + `jervis_contracts/` Python packages never landed —
+# whisper then crashed at startup with
+# `ModuleNotFoundError: No module named 'jervis'`. scp -r is reliable.
+ssh_cmd "rm -rf $INSTALL_DIR/libs/jervis_contracts && mkdir -p $INSTALL_DIR/libs/jervis_contracts"
+scp_cmd -r \
+    "$PROJECT_ROOT/libs/jervis_contracts/jervis" \
+    "$PROJECT_ROOT/libs/jervis_contracts/jervis_contracts" \
+    "$PROJECT_ROOT/libs/jervis_contracts/pyproject.toml" \
+    "$GPU_USER@$GPU_HOST:$INSTALL_DIR/libs/jervis_contracts/"
 ssh_cmd "$INSTALL_DIR/venv/bin/pip install --no-cache-dir -q -e $INSTALL_DIR/libs/jervis_contracts"
+ssh_cmd "$INSTALL_DIR/venv/bin/python3 -c 'from jervis.whisper import transcribe_pb2' && echo '  jervis_contracts verified' || echo '  WARNING: jervis_contracts import still broken'"
 echo "  files copied"
 
 # Step 4: Pre-download whisper models (if not cached)
