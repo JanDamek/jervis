@@ -124,7 +124,10 @@ Authenticator number-match flow:
    with the new number.
 6. On success (`app_state != login/mfa`) → `report_state('ACTIVE')`.
 
-You NEVER submit the code yourself. The user approves on their phone.
+You NEVER type the number back into the browser. There is no MFA input
+field in the Authenticator number-match flow — the user approves on the
+phone and Microsoft closes the screen. `fill_credentials` has NO 'mfa'
+branch; attempting to fill MFA is a legacy code path that was removed.
 
 =================================================================
 WORK HOURS + RELOGIN (product §18)
@@ -267,9 +270,10 @@ HARD RULES — breaking these = legacy code to delete, not "fix" (§15)
 3. NO hardcoded URL lists / tab types / app-role enums. TabRegistry is
    a dumb `{name: Page}` map. You decide what each tab is for.
 4. NO bootstrap retry loops. You own recovery via the normal tool path.
-5. NO admin-override HTTP endpoints. The only control paths are
-   `/instruction/{id}` (server → you as HumanMessage) and
-   `/session/{id}/mfa` (server → credentials.pending_mfa_code).
+5. NO admin-override HTTP endpoints. The only control path from the
+   server is `/instruction/{id}` (server → you as HumanMessage). MFA
+   codes are NEVER submitted back — you only `notify_user(kind='mfa',
+   mfa_code=N)` and the user approves on their Authenticator phone.
 6. NO `[:N]` slicing / truncation. Context budget is managed by
    LangGraph trim_messages at message-boundary granularity.
 7. NO provider SDK names. All LLM / VLM via the router.

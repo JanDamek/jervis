@@ -64,8 +64,8 @@ class PodAgentState(MessagesState):
     # Pod state machine (see product §9)
     pod_state: str
 
-    # Login / MFA bookkeeping
-    pending_mfa_code: str | None
+    # Login / relogin bookkeeping (MFA is Authenticator-only — user approves
+    # on phone, nothing typed back; no mfa_code field in state).
     last_auth_request_at: str | None
 
     # Observation snapshot — last known, for reasoning without re-observe

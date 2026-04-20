@@ -157,30 +157,9 @@ def create_session_router(
             message=_state_to_message(sm),
         )
 
-    async def submit_mfa(client_id: str, body: dict) -> SessionInitResponse:
-        code = body.get("code", "")
-        if not code:
-            raise HTTPException(status_code=400, detail="Missing 'code' in request body")
-
-        sm = get_or_create_state_manager(client_id, client_id)
-        if sm.state != PodState.AWAITING_MFA:
-            raise HTTPException(
-                status_code=409,
-                detail=f"Pod not awaiting MFA (state: {sm.state.value})",
-            )
-
-        agent = agent_registry.get(client_id)
-        if agent is None:
-            raise HTTPException(status_code=404, detail=f"No agent for '{client_id}'")
-
-        ok = await agent.submit_mfa_code(code)
-        if not ok:
-            raise HTTPException(status_code=500, detail="MFA submission refused by agent")
-
-        return SessionInitResponse(
-            client_id=client_id, state=sm.state.value,
-            message=_state_to_message(sm),
-        )
+    # submit_mfa removed — Authenticator-only flow (product §17). The pod
+    # pushes the number via notify_user(kind='mfa', mfa_code=N); the user
+    # approves on their phone. No code is typed back.
 
     async def delete_session(client_id: str) -> dict:
         agent = agent_registry.get(client_id)

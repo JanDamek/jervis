@@ -5,8 +5,12 @@ Wraps the compiled graph in a long-running task:
   - drives the observe-decide-act loop via `graph.astream`
   - adaptive sleep between iterations based on PodState
   - handles push_instruction (appended as HumanMessage)
-  - handles submit_mfa_code (credentials.pending_mfa_code + nudge message)
   - survives LLM failures with exponential backoff
+
+MFA is Authenticator-only (product §17): the agent reads the 2–3 digit
+number from the screen and pushes it via `notify_user(kind='mfa',
+mfa_code=N)`. The user approves on their phone. Nothing is typed back
+into the browser — there is no `submit_mfa_code` path.
 """
 
 from __future__ import annotations
@@ -43,12 +47,11 @@ MAX_BACKOFF_S = 120.0
 
 
 class PodAgent:
-    """Public API for the pod agent — matches the old interface.
+    """Public API for the pod agent.
 
     Methods:
         start() / stop() — lifecycle
         push_instruction(text) — enqueue a HumanMessage for next turn
-        submit_mfa_code(code) — inject MFA code + nudge agent
     """
 
     def __init__(
@@ -128,14 +131,6 @@ class PodAgent:
         )
         logger.info("Agent: queued instruction (%d chars)", len(instruction))
 
-    async def submit_mfa_code(self, code: str) -> bool:
-        self.ctx.credentials["pending_mfa_code"] = code
-        self._pending_inputs.put_nowait(
-            "User supplied MFA code — call fill_credentials(selector=<code input>, field='mfa') "
-            "then press 'Enter'."
-        )
-        return True
-
     # ---- Internal --------------------------------------------------------
 
     def _adaptive_sleep(self) -> float:
@@ -183,7 +178,6 @@ class PodAgent:
             "login_url": self.login_url,
             "capabilities": self.capabilities,
             "pod_state": self.ctx.state_manager.state.value,
-            "pending_mfa_code": None,
             "last_auth_request_at": None,
             "last_url": "",
             "last_app_state": "unknown",

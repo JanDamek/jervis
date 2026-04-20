@@ -199,44 +199,29 @@ class O365BrowserPoolServicer(pool_pb2_grpc.O365BrowserPoolServiceServicer):
         request: pool_pb2.SubmitMfaRequest,
         context: grpc.aio.ServicerContext,
     ) -> pool_pb2.InitSessionResponse:
+        """MFA code submission is not supported.
+
+        Per product §17 the only allowed second factor is Microsoft
+        Authenticator number-match — the user taps the 2–3 digit number
+        on their phone, nothing is typed back into the browser. The pod
+        pushes the number via `notify_user(kind='mfa', mfa_code=N)` so
+        the UI surfaces it; this RPC is kept only to return a clear
+        error to any legacy caller.
+        """
         client_id = request.client_id
-        code = request.code
-
-        if not code:
-            return pool_pb2.InitSessionResponse(
-                client_id=client_id,
-                state="ERROR",
-                error="Missing MFA code",
-            )
-
         sm = get_or_create_state_manager(client_id, client_id)
-        if sm.state != PodState.AWAITING_MFA:
-            return pool_pb2.InitSessionResponse(
-                client_id=client_id,
-                state=sm.state.value,
-                error=f"Pod not awaiting MFA (state: {sm.state.value})",
-            )
-
-        agent = agent_registry.get(client_id)
-        if agent is None:
-            return pool_pb2.InitSessionResponse(
-                client_id=client_id,
-                state=sm.state.value,
-                error=f"No agent for '{client_id}'",
-            )
-
-        ok = await agent.submit_mfa_code(code)
-        if not ok:
-            return pool_pb2.InitSessionResponse(
-                client_id=client_id,
-                state=sm.state.value,
-                error="MFA submission refused by agent",
-            )
-
+        logger.info(
+            "SubmitMfa rejected (Authenticator-only mode) for %s state=%s",
+            client_id, sm.state.value,
+        )
         return pool_pb2.InitSessionResponse(
             client_id=client_id,
             state=sm.state.value,
-            message=_state_to_message(sm),
+            error=(
+                "MFA code submission is not supported. Approve the sign-in "
+                "in Microsoft Authenticator on your phone — the 2–3 digit "
+                "number is pushed as a notification."
+            ),
         )
 
     async def CreateVncToken(

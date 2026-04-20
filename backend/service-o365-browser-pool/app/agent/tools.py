@@ -432,7 +432,8 @@ async def click_visual(description: str, tab_name: str = "") -> dict:
 @tool
 async def fill(selector: str, value: str, tab_name: str = "") -> dict:
     """Fill a form field by CSS selector. NEVER pass credentials here —
-    use `fill_credentials` for password / email / mfa.
+    use `fill_credentials` for password / email. MFA codes are never
+    typed into the browser (Authenticator-only, product §17).
 
     Args:
         selector: CSS selector.
@@ -490,16 +491,19 @@ async def fill_visual(description: str, value: str, tab_name: str = "") -> dict:
 @tool
 async def fill_credentials(
     selector: str,
-    field: Literal["email", "password", "mfa"],
+    field: Literal["email", "password"],
     tab_name: str = "",
 ) -> dict:
     """Fill a credential field. The LLM NEVER sees the secret — the runtime
     pulls it from the pod's credentials at call time.
 
+    MFA codes are NEVER filled here. Per product §17 the only supported
+    second factor is Microsoft Authenticator number-match — the user taps
+    the number on their phone, nothing is typed back into the browser.
+
     Args:
         selector: CSS selector for the input.
-        field: 'email', 'password', or 'mfa'. 'mfa' reads the pending code
-            previously supplied via POST /session/{id}/mfa.
+        field: 'email' or 'password'.
         tab_name: Named tab.
     """
     ctx = get_pod_context()
@@ -510,8 +514,6 @@ async def fill_credentials(
         value = ctx.credentials.get("email", "")
     elif field == "password":
         value = ctx.credentials.get("password", "")
-    elif field == "mfa":
-        value = ctx.credentials.get("pending_mfa_code", "")
     else:
         return {"ok": False, "error": f"unknown credential field: {field}"}
     if not value:
