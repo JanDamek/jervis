@@ -256,13 +256,29 @@ class OrchestratorControlServicer(control_pb2_grpc.OrchestratorControlServiceSer
             return control_pb2.InterruptAck(interrupted=False, detail=str(e))
 
 
+def _enum_str(value) -> str:
+    """Render a value as the wire string.
+
+    The graph vertices/edges arrive as dicts where a few fields can hold
+    str-based `Enum` instances (VertexType, VertexStatus, EdgeType).
+    Python 3.11+ changed `str(Enum.MEMBER)` from `"member_value"` back to
+    `"EnumClass.MEMBER"`, which breaks the Kotlin UI's lowercase-keyed
+    `when { "client" -> ... }` dispatch — it started throwing
+    `Unknown vertex type: VertexType.CLIENT` after the 3.12 bump.
+    `.value` keeps the stable lowercase wire form across Python versions.
+    """
+    if value is None:
+        return ""
+    return str(getattr(value, "value", value))
+
+
 def _vertex_to_proto(vid: str, v: dict) -> graph_pb2.GraphVertex:
     return graph_pb2.GraphVertex(
         id=str(v.get("id") or vid),
         title=str(v.get("title") or ""),
         description=str(v.get("description") or ""),
-        vertex_type=str(v.get("vertex_type") or ""),
-        status=str(v.get("status") or ""),
+        vertex_type=_enum_str(v.get("vertex_type")),
+        status=_enum_str(v.get("status")),
         agent_name=str(v.get("agent_name") or ""),
         input_request=str(v.get("input_request") or ""),
         result=str(v.get("result") or ""),
@@ -294,7 +310,7 @@ def _edge_to_proto(e: dict) -> graph_pb2.GraphEdge:
         id=str(e.get("id") or ""),
         source_id=str(e.get("source_id") or ""),
         target_id=str(e.get("target_id") or ""),
-        edge_type=str(e.get("edge_type") or ""),
+        edge_type=_enum_str(e.get("edge_type")),
         payload=payload_proto,
     )
 
@@ -318,8 +334,8 @@ def _agent_graph_to_proto(payload: dict, hidden: bool = False) -> graph_pb2.Agen
         task_id=str(payload.get("task_id") or ""),
         client_id=str(payload.get("client_id") or ""),
         project_id=str(payload.get("project_id") or ""),
-        status=str(payload.get("status") or ""),
-        graph_type=str(payload.get("graph_type") or ""),
+        status=_enum_str(payload.get("status")),
+        graph_type=_enum_str(payload.get("graph_type")),
         root_vertex_id=str(payload.get("root_vertex_id") or ""),
         synthesis_vertex_id=str(payload.get("synthesis_vertex_id") or ""),
         vertices=vertices,
