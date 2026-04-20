@@ -100,16 +100,19 @@ fun MeetingsScreen(
         viewModel.loadUnclassifiedMeetings()
     }
 
-    // Load meetings + projects when global selection changes.
-    // Global scope ("__global__" or null) loads cross-client timeline —
-    // server `getMeetingTimeline(null, null)` returns meetings from all clients.
-    // Trash view and project loading still require a real client.
+    // Subscribe to the push-only timeline stream when the selection
+    // changes. Global scope ("__global__" or null) subscribes to the
+    // cross-client feed. Replay=1 delivers the current snapshot
+    // immediately, and every server-side mutation (finalize,
+    // transcription done, classify, merge…) re-emits without a
+    // re-subscribe. Trash view still uses a one-shot pull because
+    // "Koš" isn't a live-streamed surface today.
     LaunchedEffect(selectedClientId, selectedProjectId, showTrash) {
         val realClientId = selectedClientId?.takeIf { it != "__global__" }
         if (showTrash) {
             realClientId?.let { viewModel.loadDeletedMeetings(it, selectedProjectId) }
         } else {
-            viewModel.loadTimeline(realClientId, selectedProjectId)
+            viewModel.observeTimeline(realClientId, selectedProjectId)
         }
         realClientId?.let { viewModel.loadProjects(it) }
     }

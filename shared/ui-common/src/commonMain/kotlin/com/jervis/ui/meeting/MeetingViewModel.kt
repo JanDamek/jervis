@@ -190,6 +190,7 @@ class MeetingViewModel(
     private var chunkUploadJob: Job? = null
     private var playbackMonitorJob: Job? = null
     private var eventSubscriptionJob: Job? = null
+    private var timelineSubscriptionJob: Job? = null
     private var chunkIndex = 0
 
     private var lastClientId: String? = null
@@ -255,6 +256,28 @@ class MeetingViewModel(
                 _error.value = "Nepodařilo se načíst schůzky: ${e.message}"
             } finally {
                 if (!silent) _isLoading.value = false
+            }
+        }
+    }
+
+    /**
+     * Push-only timeline subscription — server emits a fresh
+     * [MeetingTimelineDto] on every mutation (finalize, transcription
+     * done, classify, merge, delete, restore…). Replay=1 delivers the
+     * current snapshot on subscribe, so the screen is never empty. See
+     * `docs/guidelines.md` §9.
+     */
+    fun observeTimeline(clientId: String?, projectId: String? = null) {
+        lastClientId = clientId
+        lastProjectId = projectId
+        timelineSubscriptionJob?.cancel()
+        timelineSubscriptionJob = scope.launch {
+            connectionManager.resilientFlow { services ->
+                services.meetingService.subscribeTimeline(clientId, projectId)
+            }.collect { timeline ->
+                _currentWeekMeetings.value = timeline.currentWeek
+                _olderGroups.value = timeline.olderGroups
+                _isLoading.value = false
             }
         }
     }
@@ -955,8 +978,8 @@ class MeetingViewModel(
             try {
                 repository.meetings.restoreMeeting(meetingId)
                 _deletedMeetings.value = _deletedMeetings.value.filter { it.id != meetingId }
-                // Refresh timeline to show restored item
-                lastClientId?.let { loadTimeline(it, lastProjectId, silent = true) }
+                // Timeline refresh arrives automatically via subscribeTimeline push.
+                // (subscribeTimeline push stream delivers the update)
             } catch (e: Exception) {
                 _error.value = "Nepodařilo se obnovit schůzku: ${e.message}"
             }
@@ -1009,7 +1032,7 @@ class MeetingViewModel(
                 // Remove from unclassified list and refresh both lists
                 _unclassifiedMeetings.value = _unclassifiedMeetings.value.filter { it.id != meetingId }
                 loadUnclassifiedMeetings()
-                lastClientId?.let { loadTimeline(it, lastProjectId, silent = true) }
+                // (subscribeTimeline push stream delivers the update)
             } catch (e: Exception) {
                 _error.value = "Nepodařilo se klasifikovat nahrávku: ${e.message}"
             }
@@ -1039,7 +1062,7 @@ class MeetingViewModel(
                 _selectedMeeting.value = updated
                 // Refresh both lists in case client/project changed
                 loadUnclassifiedMeetings()
-                lastClientId?.let { loadTimeline(it, lastProjectId, silent = true) }
+                // (subscribeTimeline push stream delivers the update)
             } catch (e: Exception) {
                 _error.value = "Nepodařilo se aktualizovat meeting: ${e.message}"
             }

@@ -10,6 +10,7 @@ import com.jervis.dto.meeting.MeetingFinalizeDto
 import com.jervis.dto.meeting.MeetingSummaryDto
 import com.jervis.dto.meeting.MeetingTimelineDto
 import com.jervis.dto.meeting.MeetingUploadStateDto
+import kotlinx.coroutines.flow.Flow
 import kotlinx.rpc.annotations.Rpc
 
 /**
@@ -79,6 +80,15 @@ interface IMeetingService {
         clientId: String?,
         projectId: String?,
     ): MeetingTimelineDto
+
+    /**
+     * Push-only timeline stream. Server emits a fresh [MeetingTimelineDto]
+     * snapshot on every MeetingDocument write (finalize, classify, merge,
+     * retranscribe, delete, restore…). Replay=1, so a newly-connected UI
+     * gets the current snapshot immediately. UI never pulls — the stream
+     * IS the refresh. See `docs/guidelines.md` §9.
+     */
+    fun subscribeTimeline(clientId: String?, projectId: String?): Flow<MeetingTimelineDto>
 
     suspend fun mergeMeetings(request: MeetingMergeDto): MeetingDto
 

@@ -45,7 +45,28 @@ class MeetingRpcImpl(
     private val notificationRpc: com.jervis.rpc.NotificationRpcImpl,
     private val speakerRepository: SpeakerRepository,
     private val taskRepository: com.jervis.task.TaskRepository,
+    @org.springframework.context.annotation.Lazy
+    private val timelineStream: MeetingTimelineStreamService,
 ) : IMeetingService {
+
+    override fun subscribeTimeline(clientId: String?, projectId: String?) =
+        timelineStream.subscribe(clientId, projectId)
+
+    /** Push a fresh snapshot after any MeetingDocument mutation. */
+    private fun publishTimeline(document: MeetingDocument) {
+        timelineStream.invalidate(document.clientId, document.projectId)
+    }
+
+    /**
+     * Save + emit on the timeline stream in one step. Every write path
+     * in this class goes through this helper so the UI's replay=1
+     * subscription sees the change instantly — no pull, no polling.
+     */
+    private suspend fun saveAndPublish(document: MeetingDocument): MeetingDocument {
+        val saved = meetingRepository.save(document)
+        publishTimeline(saved)
+        return saved
+    }
 
     /**
      * UI sends "__global__" sentinel when user picks Global scope (all clients).
@@ -89,7 +110,7 @@ class MeetingRpcImpl(
             deviceSessionId = request.deviceSessionId,
         )
 
-        val saved = meetingRepository.save(document)
+        val saved = saveAndPublish(document)
         logger.info { "Started meeting recording: ${saved.id} at $audioFilePath (clientId=${clientId ?: "unclassified"})" }
         return saved.toDto()
     }
@@ -102,7 +123,7 @@ class MeetingRpcImpl(
         if (meeting.state != MeetingStateEnum.RECORDING && meeting.state != MeetingStateEnum.UPLOADING) {
             // Re-open meeting for additional data — mobile may send delayed chunks after transcription started
             logger.info { "Meeting ${chunk.meetingId} is ${meeting.state}, re-opening to UPLOADING for additional audio data" }
-            meetingRepository.save(meeting.copy(state = MeetingStateEnum.UPLOADING))
+            saveAndPublish(meeting.copy(state = MeetingStateEnum.UPLOADING))
         }
 
         // Idempotency: skip chunks already received (prevents duplicates on retry)
@@ -126,7 +147,7 @@ class MeetingRpcImpl(
 
         // Update chunk count and size
         val newChunkCount = meeting.chunkCount + 1
-        meetingRepository.save(
+        saveAndPublish(
             meeting.copy(
                 state = MeetingStateEnum.UPLOADING,
                 chunkCount = newChunkCount,
@@ -170,7 +191,7 @@ class MeetingRpcImpl(
             stoppedAt = Instant.now(),
         )
 
-        val saved = meetingRepository.save(updated)
+        val saved = saveAndPublish(updated)
         logger.info { "Finalized meeting ${request.meetingId}: type=${request.meetingType}, duration=${fileDuration}s (file-based)" }
         return saved.toDto()
     }
@@ -254,7 +275,7 @@ class MeetingRpcImpl(
         }
 
         // Soft delete — move to trash
-        meetingRepository.save(meeting.copy(deleted = true, deletedAt = Instant.now()))
+        saveAndPublish(meeting.copy(deleted = true, deletedAt = Instant.now()))
         logger.info { "Soft-deleted meeting: $meetingId (moved to trash)" }
         return true
     }
@@ -265,7 +286,7 @@ class MeetingRpcImpl(
             ?: throw IllegalStateException("Meeting not found: $meetingId")
         require(meeting.deleted) { "Meeting $meetingId is not in trash" }
 
-        val restored = meetingRepository.save(meeting.copy(deleted = false, deletedAt = null))
+        val restored = saveAndPublish(meeting.copy(deleted = false, deletedAt = null))
         logger.info { "Restored meeting from trash: $meetingId" }
         return restored.toDto()
     }
@@ -341,7 +362,7 @@ class MeetingRpcImpl(
             }
         }
 
-        meetingRepository.save(
+        saveAndPublish(
             meeting.copy(
                 state = MeetingStateEnum.UPLOADED,
                 transcriptText = null,
@@ -369,7 +390,7 @@ class MeetingRpcImpl(
             throw IllegalStateException("Cannot re-correct meeting in state ${meeting.state}")
         }
 
-        meetingRepository.save(
+        saveAndPublish(
             meeting.copy(
                 state = MeetingStateEnum.TRANSCRIBED,
                 correctedTranscriptText = null,
@@ -406,7 +427,7 @@ class MeetingRpcImpl(
         val purged = knowledgeService.purge(sourceUrn.toString())
         logger.info { "Purged KB data for meeting $meetingId: success=$purged" }
 
-        meetingRepository.save(meeting.copy(state = MeetingStateEnum.CORRECTED))
+        saveAndPublish(meeting.copy(state = MeetingStateEnum.CORRECTED))
         logger.info { "Reset meeting $meetingId to CORRECTED for re-indexing" }
         return true
     }
@@ -428,7 +449,7 @@ class MeetingRpcImpl(
             else -> MeetingStateEnum.TRANSCRIBED
         }
 
-        meetingRepository.save(
+        saveAndPublish(
             meeting.copy(
                 state = targetState,
                 errorMessage = null,
@@ -482,7 +503,7 @@ class MeetingRpcImpl(
 
         val updatedText = updatedSegments.joinToString(" ") { it.text.trim() }
 
-        val saved = meetingRepository.save(
+        val saved = saveAndPublish(
             meeting.copy(
                 correctedTranscriptSegments = updatedSegments,
                 correctedTranscriptText = updatedText,
@@ -516,7 +537,7 @@ class MeetingRpcImpl(
         }
 
         // Reset to UPLOADED for re-transcription
-        meetingRepository.save(
+        saveAndPublish(
             meeting.copy(
                 state = MeetingStateEnum.UPLOADED,
                 stateChangedAt = Instant.now(),
@@ -579,7 +600,7 @@ class MeetingRpcImpl(
             stateChangedAt = if (needsReindex) Instant.now() else meeting.stateChangedAt,
         )
 
-        val saved = meetingRepository.save(updated)
+        val saved = saveAndPublish(updated)
         if (needsReindex) {
             logger.info { "Meeting ${request.meetingId} classified and reset to TRANSCRIBED for KB indexing" }
         }
@@ -650,7 +671,7 @@ class MeetingRpcImpl(
             stateChangedAt = if (newState != meeting.state) Instant.now() else meeting.stateChangedAt,
         )
 
-        val saved = meetingRepository.save(updated)
+        val saved = saveAndPublish(updated)
         if (firstClassification && meeting.state == MeetingStateEnum.INDEXED) {
             logger.info { "Meeting ${request.meetingId} first classified, reset to TRANSCRIBED for KB indexing" }
         }
@@ -731,7 +752,7 @@ class MeetingRpcImpl(
             stateChangedAt = Instant.now(),
             fullyProcessed = false,
         )
-        val saved = meetingRepository.save(merged)
+        val saved = saveAndPublish(merged)
 
         // Purge source KB entry and soft-delete source
         try {
@@ -742,7 +763,7 @@ class MeetingRpcImpl(
         } catch (e: Exception) {
             logger.warn(e) { "Failed to purge KB for merged source meeting ${source.id}" }
         }
-        meetingRepository.save(source.copy(deleted = true, deletedAt = Instant.now()))
+        saveAndPublish(source.copy(deleted = true, deletedAt = Instant.now()))
 
         logger.info { "Merged meeting ${source.id} into ${target.id}" }
         return saved.toDto()
@@ -785,7 +806,7 @@ class MeetingRpcImpl(
             text = instruction,
         )
         val chatHistory = meeting.correctionChatHistory + userMessage
-        meetingRepository.save(meeting.copy(correctionChatHistory = chatHistory))
+        saveAndPublish(meeting.copy(correctionChatHistory = chatHistory))
 
         val requestSegments = segments.mapIndexed { i, seg ->
             CorrectionSegment.newBuilder()
@@ -812,7 +833,7 @@ class MeetingRpcImpl(
                 status = "error",
             )
             val updatedMeeting = meetingRepository.findById(id)!!
-            meetingRepository.save(updatedMeeting.copy(
+            saveAndPublish(updatedMeeting.copy(
                 correctionChatHistory = updatedMeeting.correctionChatHistory + errorMessage,
             ))
             throw e
@@ -840,7 +861,7 @@ class MeetingRpcImpl(
 
         // Re-read to get latest chat history (includes user message saved earlier)
         val latestMeeting = meetingRepository.findById(id)!!
-        val saved = meetingRepository.save(
+        val saved = saveAndPublish(
             latestMeeting.copy(
                 correctedTranscriptSegments = correctedSegments,
                 correctedTranscriptText = correctedText,
