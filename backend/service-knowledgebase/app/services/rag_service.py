@@ -1,24 +1,58 @@
 import asyncio
 import logging
 import uuid
-import httpx
+from typing import Optional
+
+import grpc.aio
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from app.core.config import settings
 from app.db.weaviate import get_weaviate_client
 from app.api.models import IngestRequest, RetrievalRequest, EvidenceItem, EvidencePack
+from jervis.common import enums_pb2, types_pb2
+from jervis.router import inference_pb2, inference_pb2_grpc
+from jervis_contracts.interceptors import prepare_context
 import weaviate.classes.config as wvc
 import weaviate.classes.query as wvq
 
 logger = logging.getLogger(__name__)
 
 
+_GRPC_MAX_MSG_BYTES = 32 * 1024 * 1024
+_router_channel: Optional[grpc.aio.Channel] = None
+_router_stub: Optional[inference_pb2_grpc.RouterInferenceServiceStub] = None
+
+
+def _router_target() -> str:
+    url = settings.OLLAMA_EMBEDDING_BASE_URL.rstrip("/")
+    if "://" in url:
+        url = url.split("://", 1)[1]
+    host = url.split("/")[0].split(":")[0]
+    return f"{host}:5501"
+
+
+def _get_router_stub() -> inference_pb2_grpc.RouterInferenceServiceStub:
+    global _router_channel, _router_stub
+    if _router_stub is None:
+        _router_channel = grpc.aio.insecure_channel(
+            _router_target(),
+            options=[
+                ("grpc.max_send_message_length", _GRPC_MAX_MSG_BYTES),
+                ("grpc.max_receive_message_length", _GRPC_MAX_MSG_BYTES),
+                ("grpc.keepalive_time_ms", 30_000),
+                ("grpc.keepalive_timeout_ms", 10_000),
+                ("grpc.keepalive_permit_without_calls", 1),
+            ],
+        )
+        _router_stub = inference_pb2_grpc.RouterInferenceServiceStub(_router_channel)
+    return _router_stub
+
+
 class RagService:
 
     def __init__(self):
-        # Default: no priority header (NORMAL). Callers pass explicit priority via header.
+        # Embedding goes via RouterInferenceService.Embed (unary gRPC).
         self.embedding_priority = None
-        self.http_client = httpx.AsyncClient(timeout=httpx.Timeout(connect=10.0, read=None, write=10.0, pool=30.0))
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=2000,
             chunk_overlap=400
@@ -97,53 +131,74 @@ class RagService:
                 pass
 
     async def _embed_with_priority(self, text: str | list[str], priority: int | None = None) -> list[float] | list[list[float]]:
-        """Embed text through the router.
+        """Embed text via RouterInferenceService.Embed (gRPC).
 
-        Caller contract is minimal — `X-Capability: embedding` + payload.
-        The `priority` arg is kept for backward compatibility and logging;
-        the router now manages queue priority internally based on capability
-        (embedding runs in its own queue, separate from LLM/VLM).
+        The router places embedding requests in their own queue group
+        (separate from LLM/VLM) so ingest traffic doesn't block user
+        chat. Legacy `priority` arg is accepted for call-site
+        compatibility but no longer mapped — capability + queue group
+        on the router side drives concurrency.
 
-        Uses a semaphore (MAX_CONCURRENT_EMBEDDINGS=5) to prevent GPU starvation
-        when many ingest requests arrive simultaneously.
+        Uses a semaphore (MAX_CONCURRENT_EMBEDDINGS=5) to prevent GPU
+        starvation when many ingest requests arrive simultaneously.
         """
         is_batch = isinstance(text, list)
-        prompt = text if is_batch else [text]
+        inputs = text if is_batch else [text]
 
-        url = f"{settings.OLLAMA_EMBEDDING_BASE_URL}/api/embed"
-        payload = {
-            "model": settings.EMBEDDING_MODEL,
-            "input": prompt,
-        }
-        headers = {"Content-Type": "application/json", "X-Capability": "embedding"}
+        ctx = types_pb2.RequestContext(
+            scope=types_pb2.Scope(),
+            priority=enums_pb2.PRIORITY_BACKGROUND,
+            capability=enums_pb2.CAPABILITY_EMBEDDING,
+            intent="kb-embed",
+        )
+        prepare_context(ctx)
 
-        logger.info("RAG: EMBEDDING model=%s semaphore_free=%d/%d",
-                    settings.EMBEDDING_MODEL,
-                    self._embedding_semaphore._value, self._max_concurrent)
+        request = inference_pb2.EmbedRequest(
+            ctx=ctx,
+            model_hint=settings.EMBEDDING_MODEL,
+            inputs=list(inputs),
+        )
 
+        logger.info(
+            "RAG: EMBEDDING model=%s n=%d semaphore_free=%d/%d",
+            settings.EMBEDDING_MODEL, len(inputs),
+            self._embedding_semaphore._value, self._max_concurrent,
+        )
+
+        stub = _get_router_stub()
         max_retries = 2
+        last_err: Exception | None = None
         for attempt in range(1 + max_retries):
             try:
                 async with self._embedding_semaphore:
-                    resp = await self.http_client.post(url, json=payload, headers=headers)
-                    resp.raise_for_status()
-                    data = resp.json()
-                    embeddings = data.get("embeddings", [])
-                    return embeddings if is_batch else embeddings[0]
-            except (httpx.ConnectError, httpx.RemoteProtocolError, httpx.HTTPStatusError, OSError) as e:
-                if attempt < max_retries:
+                    resp = await stub.Embed(request)
+                embeddings = [list(e.vector) for e in resp.embeddings]
+                return embeddings if is_batch else (embeddings[0] if embeddings else [])
+            except grpc.aio.AioRpcError as e:
+                last_err = e
+                if e.code() in (
+                    grpc.StatusCode.UNAVAILABLE,
+                    grpc.StatusCode.DEADLINE_EXCEEDED,
+                    grpc.StatusCode.RESOURCE_EXHAUSTED,
+                ) and attempt < max_retries:
                     wait = 2 ** (attempt + 1)
                     logger.warning(
                         "Embedding failed (attempt %d/%d): %s, retrying in %ds",
-                        attempt + 1, max_retries + 1, e, wait,
+                        attempt + 1, max_retries + 1, e.code(), wait,
                     )
                     await asyncio.sleep(wait)
-                else:
-                    logger.error("Embedding failed after %d attempts: %s", max_retries + 1, e)
-                    raise
+                    continue
+                logger.error(
+                    "Embedding failed after %d attempts: %s",
+                    max_retries + 1, e.code(),
+                )
+                raise
             except Exception as e:
+                last_err = e
                 logger.error("Embedding failed: %s", e)
                 raise
+
+        raise RuntimeError(f"Embedding exhausted retries: {last_err}")
 
     async def _generate_contextual_prefix(self, request: IngestRequest) -> str:
         """

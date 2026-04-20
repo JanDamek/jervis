@@ -1,127 +1,177 @@
 """LLM wrapper for KB service — thin pass-through to ollama-router.
 
-The router owns all routing decisions. KB simply posts to `/api/generate`
-(or `/api/chat` for vision) with the minimal contract:
+Dials `jervis-ollama-router:5501` over gRPC (`RouterInferenceService`).
+The router owns routing (local GPU vs cloud, model selection, queue
+priority); KB passes `capability` via RequestContext and drains the
+server-stream into a single string.
 
-  X-Capability  extraction | visual
-  X-Client-Id   tenant (router resolves tier from CloudModelPolicy)
-
-The router returns the response — local Ollama or OpenRouter, picked by
-capability + client tier. Legacy `max_tier`, `model`, `priority`,
-`route_decision` params are accepted but ignored so existing callers keep
-compiling.
+Legacy positional params (`max_tier`, `model`, `priority`,
+`route_decision`) are accepted but ignored — the router resolves them
+from client tier + request metadata.
 """
 
 from __future__ import annotations
 
-import base64
+import asyncio
 import logging
+from typing import Optional
 
-import httpx
+import grpc.aio
 
 from app.core.config import settings
+from jervis.common import enums_pb2, types_pb2
+from jervis.router import inference_pb2, inference_pb2_grpc
+from jervis_contracts.interceptors import prepare_context
 
 logger = logging.getLogger(__name__)
 
-# Reuse a single httpx client for LLM calls — žádný read timeout (LLM trvá jak trvá)
-_llm_http = httpx.AsyncClient(
-    timeout=httpx.Timeout(connect=10.0, read=None, write=10.0, pool=30.0),
-)
+_GRPC_MAX_MSG_BYTES = 32 * 1024 * 1024
+
+_channel: Optional[grpc.aio.Channel] = None
+_stub: Optional[inference_pb2_grpc.RouterInferenceServiceStub] = None
 
 
-def _router_base_url() -> str:
-    return settings.OLLAMA_INGEST_BASE_URL.rstrip("/")
+def _router_target() -> str:
+    url = settings.OLLAMA_INGEST_BASE_URL.rstrip("/")
+    if "://" in url:
+        url = url.split("://", 1)[1]
+    host = url.split("/")[0].split(":")[0]
+    return f"{host}:5501"
 
 
-def _headers(capability: str, client_id: str | None) -> dict[str, str]:
-    h = {"Content-Type": "application/json", "X-Capability": capability}
-    if client_id:
-        h["X-Client-Id"] = client_id
-    return h
+def _get_stub() -> inference_pb2_grpc.RouterInferenceServiceStub:
+    global _channel, _stub
+    if _stub is None:
+        _channel = grpc.aio.insecure_channel(
+            _router_target(),
+            options=[
+                ("grpc.max_send_message_length", _GRPC_MAX_MSG_BYTES),
+                ("grpc.max_receive_message_length", _GRPC_MAX_MSG_BYTES),
+                ("grpc.keepalive_time_ms", 30_000),
+                ("grpc.keepalive_timeout_ms", 10_000),
+                ("grpc.keepalive_permit_without_calls", 1),
+            ],
+        )
+        _stub = inference_pb2_grpc.RouterInferenceServiceStub(_channel)
+        logger.info("RouterInferenceService gRPC channel opened to %s", _router_target())
+    return _stub
+
+
+def _build_ctx(
+    capability: int,
+    intent: str,
+    client_id: str | None,
+) -> types_pb2.RequestContext:
+    ctx = types_pb2.RequestContext(
+        scope=types_pb2.Scope(client_id=client_id or ""),
+        priority=enums_pb2.PRIORITY_BACKGROUND,
+        capability=capability,
+        intent=intent,
+    )
+    prepare_context(ctx)
+    return ctx
 
 
 async def llm_generate(
     prompt: str,
-    max_tier: str = "NONE",           # Ignored — router resolves from client tier.
-    model: str | None = None,         # Ignored — router picks the model.
+    max_tier: str = "NONE",           # ignored — router resolves from client tier
+    model: str | None = None,         # ignored — router picks model
     num_ctx: int = 8192,
-    priority: int | None = None,      # Ignored — router manages queue priority.
+    priority: int | None = None,      # ignored — router manages queue priority
     temperature: float = 0,
     format_json: bool = True,
     client_id: str | None = None,
 ) -> str:
     """Background extraction call (KB indexing, graph build, summarisation).
 
-    Capability is always `extraction` for text prompts.
+    `format_json` is honored by adding an instruction to the prompt. The
+    router's native Ollama/OpenRouter path doesn't carry the Ollama-only
+    `format` flag through proto — we inline the requirement instead.
     """
-    url = f"{_router_base_url()}/api/generate"
-    payload: dict = {
-        "prompt": prompt,
-        "stream": False,
-        "options": {"temperature": temperature, "num_ctx": num_ctx},
-    }
+    final_prompt = prompt
     if format_json:
-        payload["format"] = "json"
-
-    max_retries = 3
-    import asyncio
-    for attempt in range(1 + max_retries):
-        resp = await _llm_http.post(
-            url, json=payload, headers=_headers("extraction", client_id),
+        final_prompt = (
+            prompt.rstrip() + "\n\nRespond with ONLY a single valid JSON object. "
+            "No prose, no code fences."
         )
-        if resp.status_code == 499 and attempt < max_retries:
-            wait = 5 * (attempt + 1)
-            logger.warning(
-                "LLM_ROUTER: 499 GPU busy (attempt %d/%d), retrying in %ds",
-                attempt + 1, max_retries + 1, wait,
-            )
-            await asyncio.sleep(wait)
-            continue
-        resp.raise_for_status()
-        data = resp.json()
-        # Router may return either Ollama-style {"response": "..."} or
-        # OpenAI-style {"choices": [{"message": {"content": "..."}}]}
-        if "response" in data:
-            return data["response"]
-        if "choices" in data:
-            return data["choices"][0]["message"]["content"]
-        return ""
 
-    raise RuntimeError("llm_generate: exhausted retries (499 GPU busy)")
+    request = inference_pb2.GenerateRequest(
+        ctx=_build_ctx(
+            enums_pb2.CAPABILITY_EXTRACTION, "kb-extract", client_id,
+        ),
+        prompt=final_prompt,
+        options=inference_pb2.ChatOptions(
+            temperature=temperature,
+            num_ctx=num_ctx,
+            num_predict=8192,
+        ),
+    )
+
+    stub = _get_stub()
+    max_retries = 3
+    last_err: Exception | None = None
+    for attempt in range(1 + max_retries):
+        try:
+            parts: list[str] = []
+            async for chunk in stub.Generate(request):
+                if chunk.response_delta:
+                    parts.append(chunk.response_delta)
+            return "".join(parts)
+        except grpc.aio.AioRpcError as e:
+            last_err = e
+            if e.code() in (
+                grpc.StatusCode.UNAVAILABLE,
+                grpc.StatusCode.DEADLINE_EXCEEDED,
+                grpc.StatusCode.RESOURCE_EXHAUSTED,
+            ) and attempt < max_retries:
+                wait = 5 * (attempt + 1)
+                logger.warning(
+                    "llm_generate: %s (attempt %d/%d), retrying in %ds",
+                    e.code(), attempt + 1, max_retries + 1, wait,
+                )
+                await asyncio.sleep(wait)
+                continue
+            raise
+
+    raise RuntimeError(f"llm_generate exhausted retries: {last_err}")
 
 
 async def llm_generate_vision(
     image_bytes: bytes,
     prompt: str,
-    max_tier: str = "NONE",           # Ignored — router resolves from client tier.
-    priority: int | None = None,      # Ignored.
+    max_tier: str = "NONE",
+    priority: int | None = None,
     client_id: str | None = None,
 ) -> str:
     """VLM call for image understanding. Capability is `visual`."""
-    image_b64 = base64.b64encode(image_bytes).decode("utf-8")
-    url = f"{_router_base_url()}/api/generate"
-    payload = {
-        "prompt": prompt,
-        "images": [image_b64],
-        "stream": False,
-    }
+    request = inference_pb2.GenerateRequest(
+        ctx=_build_ctx(
+            enums_pb2.CAPABILITY_VISUAL, "kb-vlm", client_id,
+        ),
+        prompt=prompt,
+        images=[image_bytes],
+        options=inference_pb2.ChatOptions(temperature=0.0, num_predict=4096),
+    )
 
-    import asyncio
-    last_error: Exception | None = None
+    stub = _get_stub()
+    last_err: Exception | None = None
     for attempt in range(3):
         try:
-            resp = await _llm_http.post(
-                url, json=payload, headers=_headers("visual", client_id),
+            parts: list[str] = []
+            async for chunk in stub.Generate(request):
+                if chunk.response_delta:
+                    parts.append(chunk.response_delta)
+            return "".join(parts)
+        except grpc.aio.AioRpcError as e:
+            last_err = e
+            backoff = 5 * (2 ** attempt)
+            logger.warning(
+                "VLM call failed (attempt %d/3): %s — retrying in %ds",
+                attempt + 1, e.code(), backoff,
             )
-            resp.raise_for_status()
-            data = resp.json()
-            if "response" in data:
-                return data["response"]
-            if "choices" in data:
-                return data["choices"][0]["message"]["content"]
-            return ""
+            await asyncio.sleep(backoff)
         except Exception as e:
-            last_error = e
+            last_err = e
             backoff = 5 * (2 ** attempt)
             logger.warning(
                 "VLM call failed (attempt %d/3): %s — retrying in %ds",
@@ -129,4 +179,4 @@ async def llm_generate_vision(
             )
             await asyncio.sleep(backoff)
 
-    raise RuntimeError(f"VLM failed after 3 attempts: {last_error}")
+    raise RuntimeError(f"VLM failed after 3 attempts: {last_err}")
