@@ -863,41 +863,64 @@ class DocumentExtractor:
         return ExtractedDocument(text=text, method="vlm", metadata={"type": "image"})
 
     async def _call_vlm(self, image_bytes: bytes, max_tier: str) -> str:
-        """Extract text + visual description via router VLM.
+        """Extract text + visual description via router VLM (gRPC).
 
-        The caller contract is minimal — capability `visual` tells the router
-        it's a VLM call; the router picks the concrete model. The legacy
-        `max_tier` arg is kept on the signature for backward compatibility
-        with higher-level code paths that still thread it through, but it
-        isn't sent to the router (the router resolves tier from client_id —
-        `X-Client-Id` can be added here once the extract API surfaces it).
+        Calls `RouterInferenceService.Generate` on `jervis-ollama-router:5501`.
+        The router resolves tier + model via RequestContext (capability =
+        VISUAL). `max_tier` is kept on the signature for call-site
+        compatibility but isn't propagated — tier is client-based on the
+        router side, surfaced here later when the extract API carries
+        client_id.
         """
-        b64 = base64.b64encode(image_bytes).decode("ascii")
+        import grpc.aio
+        from jervis.common import enums_pb2, types_pb2
+        from jervis.router import inference_pb2, inference_pb2_grpc
+        from jervis_contracts.interceptors import prepare_context
 
         prompt = ("Extract all text, data, and describe all visual elements "
                   "(diagrams, charts, tables, images) from this document. "
                   "Preserve the original language. Output plain text.")
 
-        payload = {
-            "prompt": prompt,
-            "images": [b64],
-            "stream": False,
-        }
-        headers = {
-            "Content-Type": "application/json",
-            "X-Capability": "visual",
-        }
-
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.post(
-                f"{self.router_url}/api/generate",
-                json=payload, headers=headers,
+        target = self._router_grpc_target()
+        async with grpc.aio.insecure_channel(
+            target,
+            options=[
+                ("grpc.max_send_message_length", 32 * 1024 * 1024),
+                ("grpc.max_receive_message_length", 32 * 1024 * 1024),
+                ("grpc.keepalive_time_ms", 30_000),
+                ("grpc.keepalive_timeout_ms", 10_000),
+                ("grpc.keepalive_permit_without_calls", 1),
+            ],
+        ) as channel:
+            stub = inference_pb2_grpc.RouterInferenceServiceStub(channel)
+            ctx = types_pb2.RequestContext(
+                scope=types_pb2.Scope(),
+                priority=enums_pb2.PRIORITY_BACKGROUND,
+                capability=enums_pb2.CAPABILITY_VISUAL,
+                intent="document-extraction-vlm",
             )
-            resp.raise_for_status()
-            data = resp.json()
+            prepare_context(ctx)
+            request = inference_pb2.GenerateRequest(
+                ctx=ctx,
+                model_hint="qwen3-vl-tool:latest",
+                prompt=prompt,
+                images=[image_bytes],
+                options=inference_pb2.ChatOptions(temperature=0.0, num_predict=4096),
+            )
 
-        text = data.get("response") or ""
-        if not text and "choices" in data:
-            text = data["choices"][0]["message"]["content"]
+            parts: list[str] = []
+            async for chunk in stub.Generate(request):
+                if chunk.response_delta:
+                    parts.append(chunk.response_delta)
+
+        text = "".join(parts)
         logger.info("VLM response: %d chars", len(text))
         return text
+
+    def _router_grpc_target(self) -> str:
+        """Strip scheme/port from configured router URL and target :5501."""
+        u = self.router_url.rstrip("/")
+        if "://" in u:
+            u = u.split("://", 1)[1]
+        host = u.split("/")[0].split(":")[0]
+        return f"{host}:5501"

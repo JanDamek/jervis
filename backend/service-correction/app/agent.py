@@ -18,12 +18,15 @@ import logging
 import re
 import time
 import uuid
-from typing import Any
+from typing import Any, Optional
 
-import httpx
+import grpc.aio
 import tiktoken
 
 from app.config import settings
+from jervis.common import enums_pb2, types_pb2
+from jervis.router import inference_pb2, inference_pb2_grpc
+from jervis_contracts.interceptors import prepare_context
 
 _tokenizer = tiktoken.get_encoding("cl100k_base")
 
@@ -60,13 +63,45 @@ CATEGORY_LABELS = {
 }
 
 
+def _router_grpc_target(url: str) -> str:
+    """Strip scheme/port from OLLAMA_ROUTER_URL and target :5501 gRPC."""
+    u = url.rstrip("/")
+    if "://" in u:
+        u = u.split("://", 1)[1]
+    host = u.split("/")[0].split(":")[0]
+    return f"{host}:5501"
+
+
+_GRPC_MAX_MSG_BYTES = 32 * 1024 * 1024
+_router_channel: Optional[grpc.aio.Channel] = None
+_router_stub: Optional[inference_pb2_grpc.RouterInferenceServiceStub] = None
+
+
+def _get_router_stub() -> inference_pb2_grpc.RouterInferenceServiceStub:
+    global _router_channel, _router_stub
+    if _router_stub is None:
+        target = _router_grpc_target(settings.ollama_url)
+        _router_channel = grpc.aio.insecure_channel(
+            target,
+            options=[
+                ("grpc.max_send_message_length", _GRPC_MAX_MSG_BYTES),
+                ("grpc.max_receive_message_length", _GRPC_MAX_MSG_BYTES),
+                ("grpc.keepalive_time_ms", 30_000),
+                ("grpc.keepalive_timeout_ms", 10_000),
+                ("grpc.keepalive_permit_without_calls", 1),
+            ],
+        )
+        _router_stub = inference_pb2_grpc.RouterInferenceServiceStub(_router_channel)
+        logger.info("RouterInferenceService gRPC channel opened to %s", target)
+    return _router_stub
+
+
 class CorrectionAgent:
-    """Transcript correction agent backed by KB + Ollama."""
+    """Transcript correction agent backed by KB + RouterInferenceService gRPC."""
 
     def __init__(self):
-        # KB read/write paths now go through jervis_contracts.kb_client (gRPC);
-        # Ollama is external HTTP (allowed) for transcription correction LLM calls.
-        self.ollama_url = settings.ollama_url
+        # KB read/write paths go through jervis_contracts.kb_client (gRPC);
+        # LLM correction calls go through RouterInferenceService.Chat (gRPC).
         self.model = settings.default_correction_model  # qwen3-coder-tool:30b (num_ctx overridden dynamically)
 
     async def submit_correction(
@@ -830,142 +865,111 @@ class CorrectionAgent:
         chunk_idx: int = 0,
         total_chunks: int = 1,
     ) -> str:
-        """Call Ollama chat API with streaming + token-arrival timeout."""
-        # Count input tokens with tiktoken (fast, ~1ms)
+        """Call RouterInferenceService.Chat via gRPC with streaming."""
         input_tokens = len(_tokenizer.encode(system_prompt)) + len(_tokenizer.encode(user_prompt))
-        # num_ctx = input + output budget (JSON corrections for chunk)
         num_ctx = input_tokens + OUTPUT_BUDGET
-        # Round up to nearest 4k, cap at GPU VRAM limit
         num_ctx = min(((num_ctx + 4095) // 4096) * 4096, GPU_CTX_CAP)
         num_predict = OUTPUT_BUDGET
 
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
+        req_ctx = types_pb2.RequestContext(
+            scope=types_pb2.Scope(client_id=client_id or ""),
+            priority=enums_pb2.PRIORITY_BACKGROUND,
+            capability=enums_pb2.CAPABILITY_EXTRACTION,
+            intent="correction",
+        )
+        prepare_context(req_ctx)
+
+        request = inference_pb2.ChatRequest(
+            ctx=req_ctx,
+            model_hint=self.model,
+            messages=[
+                inference_pb2.ChatMessage(role="system", content=system_prompt),
+                inference_pb2.ChatMessage(role="user", content=user_prompt),
             ],
-            "stream": True,
-            "options": {
-                "num_predict": num_predict,
-                "num_ctx": num_ctx,
-                "temperature": 0.3,
-            },
-        }
+            options=inference_pb2.ChatOptions(
+                temperature=0.3,
+                num_predict=num_predict,
+                num_ctx=num_ctx,
+            ),
+        )
         logger.info(
-            "Calling Ollama %s streaming (num_ctx=%d, num_predict=%d, input_tokens=%d)",
+            "Calling RouterInferenceService.Chat model=%s (num_ctx=%d, num_predict=%d, input_tokens=%d)",
             self.model, num_ctx, num_predict, input_tokens,
         )
 
-        # Retry on connection errors (router restart, network blip)
+        # Retry on transient gRPC errors (UNAVAILABLE from router restart etc.).
         max_retries = 2
         for attempt in range(1 + max_retries):
             try:
-                return await self._call_ollama_stream(
-                    payload, meeting_id, client_id, chunk_idx, total_chunks,
+                return await self._stream_chat_rpc(
+                    request, num_predict, meeting_id, client_id, chunk_idx, total_chunks,
                 )
-            except (httpx.ConnectError, httpx.RemoteProtocolError, OSError) as e:
-                if attempt < max_retries:
+            except grpc.aio.AioRpcError as e:
+                if e.code() in (
+                    grpc.StatusCode.UNAVAILABLE,
+                    grpc.StatusCode.DEADLINE_EXCEEDED,
+                ) and attempt < max_retries:
                     wait = 2 ** (attempt + 1)
                     logger.warning(
-                        "Ollama call failed (attempt %d/%d): %s, retrying in %ds",
-                        attempt + 1, max_retries + 1, e, wait,
+                        "Router Chat call failed (attempt %d/%d): %s, retrying in %ds",
+                        attempt + 1, max_retries + 1, e.code(), wait,
                     )
                     await asyncio.sleep(wait)
                 else:
                     raise
-        # Unreachable — loop always returns or raises
         raise RuntimeError("retry loop exited unexpectedly")
 
-    async def _call_ollama_stream(
+    async def _stream_chat_rpc(
         self,
-        payload: dict,
+        request: inference_pb2.ChatRequest,
+        num_predict: int,
         meeting_id: str | None,
         client_id: str | None,
         chunk_idx: int,
         total_chunks: int,
     ) -> str:
-        """Stream Ollama chat response. Separated for retry wrapper."""
-        num_predict = payload["options"]["num_predict"]
+        """Drain RouterInferenceService.Chat server-stream into a single string."""
         content_parts: list[str] = []
         token_count = 0
-        done_reason = "?"
-        eval_count = "?"
+        finish_reason = "?"
+        completion_tokens = 0
         last_progress_emit = time.monotonic()
 
-        async with httpx.AsyncClient(timeout=None) as http_client:
-            async with http_client.stream(
-                "POST",
-                f"{self.ollama_url}/api/chat",
-                json=payload,
-                headers={"X-Capability": "extraction"},
-            ) as response:
-                response.raise_for_status()
+        stub = _get_router_stub()
+        async for chunk in stub.Chat(request):
+            if chunk.content_delta:
+                content_parts.append(chunk.content_delta)
+                token_count += 1
+            if chunk.done:
+                finish_reason = chunk.finish_reason or finish_reason
+                completion_tokens = int(chunk.completion_tokens) or completion_tokens
 
-                async for raw_line in self._iter_lines_with_timeout(response):
-                    if not raw_line.strip():
-                        continue
-                    try:
-                        data = json.loads(raw_line)
-                    except json.JSONDecodeError:
-                        logger.debug("Non-JSON streaming line: %s", raw_line[:200])
-                        continue
-
-                    chunk_content = data.get("message", {}).get("content", "")
-                    if chunk_content:
-                        content_parts.append(chunk_content)
-                        token_count += 1
-
-                    if data.get("done"):
-                        done_reason = data.get("done_reason", "?")
-                        eval_count = data.get("eval_count", "?")
-
-                    now = time.monotonic()
-                    if meeting_id and client_id and (now - last_progress_emit) >= PROGRESS_EMIT_INTERVAL:
-                        last_progress_emit = now
-                        chunk_base = (chunk_idx / total_chunks) * 100
-                        intra = min(token_count / OUTPUT_BUDGET, 1.0)
-                        percent = chunk_base + (1.0 / total_chunks) * 100 * intra * 0.9
-                        await self._emit_correction_progress(
-                            meeting_id, client_id,
-                            chunk_idx, total_chunks,
-                            f"Chunk {chunk_idx + 1}/{total_chunks}: generuji... {token_count} tokenů",
-                            percent_override=percent,
-                            tokens_generated=token_count,
-                        )
+            now = time.monotonic()
+            if meeting_id and client_id and (now - last_progress_emit) >= PROGRESS_EMIT_INTERVAL:
+                last_progress_emit = now
+                chunk_base = (chunk_idx / total_chunks) * 100
+                intra = min(token_count / OUTPUT_BUDGET, 1.0)
+                percent = chunk_base + (1.0 / total_chunks) * 100 * intra * 0.9
+                await self._emit_correction_progress(
+                    meeting_id, client_id,
+                    chunk_idx, total_chunks,
+                    f"Chunk {chunk_idx + 1}/{total_chunks}: generuji... {token_count} tokenů",
+                    percent_override=percent,
+                    tokens_generated=token_count,
+                )
 
         content = "".join(content_parts)
         logger.info(
-            "Ollama streaming complete: %d chars, %d tokens, eval_count=%s, done_reason=%s",
-            len(content), token_count, eval_count, done_reason,
+            "Chat stream complete: %d chars, %d tokens, finish=%s, completion_tokens=%s",
+            len(content), token_count, finish_reason, completion_tokens,
         )
-        if done_reason == "length":
+        if finish_reason == "length":
             logger.warning(
                 "OUTPUT TRUNCATED: model hit num_predict=%d limit. "
                 "Response may be incomplete (raw=%d chars). First 500 chars: %s",
                 num_predict, len(content), content.strip()[:500],
             )
         return content
-
-    async def _iter_lines_with_timeout(self, response: httpx.Response):
-        """
-        Iterate over streaming response lines with token-arrival timeout.
-        Raises TokenTimeoutError if no data arrives for TOKEN_TIMEOUT_SECONDS.
-        """
-        aiter = response.aiter_lines().__aiter__()
-        while True:
-            try:
-                line = await asyncio.wait_for(
-                    aiter.__anext__(),
-                    timeout=TOKEN_TIMEOUT_SECONDS,
-                )
-                yield line
-            except asyncio.TimeoutError:
-                raise TokenTimeoutError(
-                    f"Ollama stopped sending tokens for {TOKEN_TIMEOUT_SECONDS}s"
-                )
-            except StopAsyncIteration:
-                return
 
     # --- Prompt building ---
 

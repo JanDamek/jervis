@@ -1,24 +1,61 @@
-"""VLM client — calls vision language model via ollama-router.
+"""VLM client — RouterInferenceService.Generate gRPC.
 
-The legacy `/router/admin/decide` HTTP endpoint has been removed; this
-client now defaults to the local Ollama VLM and lets the router's
-`/api/generate` proxy handle any cloud/OpenRouter routing transparently
-based on the request (model name, RequestContext).
+Sends screenshots to the VLM via `jervis-ollama-router:5501` gRPC. No
+REST. The router picks local VLM vs cloud based on RequestContext
+(capability=VISUAL, client tier, priority).
 """
 
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
+from typing import Optional
 
-import httpx
+import grpc.aio
 
 from app.config import settings
+from jervis.common import enums_pb2, types_pb2
+from jervis.router import inference_pb2, inference_pb2_grpc
+from jervis_contracts.interceptors import prepare_context
 
 logger = logging.getLogger("whatsapp-browser.vlm")
 
 _RETRY_DELAYS = [5, 10, 20]
+_GRPC_MAX_MSG_BYTES = 32 * 1024 * 1024
+
+_channel: Optional[grpc.aio.Channel] = None
+_stub: Optional[inference_pb2_grpc.RouterInferenceServiceStub] = None
+
+
+def _router_target() -> str:
+    url = settings.ollama_router_url.rstrip("/")
+    if "://" in url:
+        url = url.split("://", 1)[1]
+    host = url.split("/")[0].split(":")[0]
+    return f"{host}:5501"
+
+
+def _get_stub() -> inference_pb2_grpc.RouterInferenceServiceStub:
+    global _channel, _stub
+    if _stub is None:
+        _channel = grpc.aio.insecure_channel(
+            _router_target(),
+            options=[
+                ("grpc.max_send_message_length", _GRPC_MAX_MSG_BYTES),
+                ("grpc.max_receive_message_length", _GRPC_MAX_MSG_BYTES),
+                ("grpc.keepalive_time_ms", 30_000),
+                ("grpc.keepalive_timeout_ms", 10_000),
+                ("grpc.keepalive_permit_without_calls", 1),
+            ],
+        )
+        _stub = inference_pb2_grpc.RouterInferenceServiceStub(_channel)
+    return _stub
+
+
+_PRIORITY_TO_ENUM = {
+    "FOREGROUND": enums_pb2.PRIORITY_FOREGROUND,
+    "BACKGROUND": enums_pb2.PRIORITY_BACKGROUND,
+}
 
 
 async def analyze_screenshot(
@@ -27,81 +64,52 @@ async def analyze_screenshot(
     *,
     processing_mode: str,
     max_tier: str,
+    client_id: str = "",
 ) -> str:
     """Send a screenshot to VLM and return the text analysis.
-
-    Routes through ollama-router for model selection.
 
     Args:
         image_bytes: JPEG/PNG image content.
         prompt: VLM prompt.
-        processing_mode: REQUIRED. "FOREGROUND" or "BACKGROUND".
-        max_tier: REQUIRED. "NONE", "FREE", "PAID", or "PREMIUM".
-            Determined by client/project tier policy on Kotlin server side
-            and passed via scrape trigger request body.
+        processing_mode: "FOREGROUND" or "BACKGROUND" — priority hint.
+        max_tier: "NONE", "FREE", "PAID", or "PREMIUM" — passed through
+            RequestContext for the router's tier-based routing.
+        client_id: tenant — lets the router resolve cloud tier via the
+            CloudModelPolicy cache. Empty string = router default.
     """
-    image_b64 = base64.b64encode(image_bytes).decode()
-    estimated_tokens = 1500 + len(prompt) // 4  # ~1k for image + prompt tokens
+    stub = _get_stub()
 
-    route = await _get_route_decision(
-        capability="visual",
-        estimated_tokens=estimated_tokens,
-        processing_mode=processing_mode,
-        max_tier=max_tier,
+    ctx = types_pb2.RequestContext(
+        scope=types_pb2.Scope(client_id=client_id or ""),
+        priority=_PRIORITY_TO_ENUM.get(processing_mode, enums_pb2.PRIORITY_BACKGROUND),
+        capability=enums_pb2.CAPABILITY_VISUAL,
+        intent="whatsapp-pod-vlm",
+    )
+    prepare_context(ctx)
+
+    request = inference_pb2.GenerateRequest(
+        ctx=ctx,
+        model_hint="qwen3-vl-tool:latest",
+        prompt=prompt,
+        images=[image_bytes],
+        options=inference_pb2.ChatOptions(temperature=0.0, num_predict=2048),
     )
 
     for attempt, delay in enumerate(_RETRY_DELAYS):
         try:
-            return await _call_ollama(route, image_b64, prompt)
+            response_parts: list[str] = []
+            async for chunk in stub.Generate(request):
+                if chunk.response_delta:
+                    response_parts.append(chunk.response_delta)
+            result = "".join(response_parts)
+            logger.info("VLM: response_len=%d", len(result))
+            return result
         except Exception as e:
             logger.warning(
-                "VLM call attempt %d failed: %s: %s (route=%s)",
-                attempt + 1, type(e).__name__, str(e) or repr(e), route,
+                "VLM call attempt %d failed: %s: %s",
+                attempt + 1, type(e).__name__, str(e) or repr(e),
             )
             if attempt < len(_RETRY_DELAYS) - 1:
                 await asyncio.sleep(delay)
 
     raise RuntimeError("VLM call failed after all retries")
-
-
-async def _get_route_decision(
-    capability: str,
-    estimated_tokens: int,
-    processing_mode: str,
-    max_tier: str,
-) -> dict:
-    """Return the local-ollama route (decide endpoint removed)."""
-    return {
-        "target": "local",
-        "api_base": settings.ollama_router_url,
-    }
-
-
-async def _call_ollama(route: dict, image_b64: str, prompt: str) -> str:
-    """Call Ollama VLM via router."""
-    api_base = route.get("api_base", settings.ollama_router_url)
-    model = route.get("model", "")
-
-    request_body = {
-        "prompt": prompt,
-        "images": [image_b64],
-        "stream": False,
-    }
-    # Only include model if router specified one
-    if model:
-        request_body["model"] = model
-
-    # No timeout — router controls concurrency, never hard-timeout VLM calls
-    async with httpx.AsyncClient(timeout=httpx.Timeout(None, connect=10.0)) as client:
-        resp = await client.post(
-            f"{api_base}/api/generate",
-            json=request_body,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        result = data.get("response", "")
-        logger.info(
-            "Ollama VLM: model=%s, response_len=%d",
-            route.get("model", "router-selected"), len(result),
-        )
-        return result
