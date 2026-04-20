@@ -14,10 +14,14 @@ import java.nio.file.Paths
 private val logger = KotlinLogging.logger {}
 
 /**
- * Whisper transcription client — calls GPU REST server on Ollama VM.
+ * Whisper transcription client — dials the gRPC server on the Ollama VM.
  *
- * Sends audio via HTTP multipart, reads SSE stream for progress + result.
- * Server runs at ollama.lan.mazlusek.com:8786 (deployed via deploy_whisper_gpu.sh).
+ * Audio bytes ride inline inside `TranscribeRequest` (up to 256 MiB);
+ * progress + result events stream back as `TranscribeEvent` oneofs.
+ * The class name kept its legacy "Rest" suffix purely so the Spring
+ * bean graph + call sites don't churn — the wire format has been gRPC
+ * since commit 95c8f1d1a. Server at ollama.lan.mazlusek.com:5502
+ * (deployed via deploy_whisper_gpu.sh).
  */
 @Service
 class WhisperTranscriptionClient(

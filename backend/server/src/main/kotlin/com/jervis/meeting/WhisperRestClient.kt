@@ -56,10 +56,11 @@ class WhisperRestClient {
         val normalized = if (baseUrl.contains("://")) baseUrl else "http://$baseUrl"
         val uri = URI(normalized)
         val host = uri.host ?: baseUrl.substringBefore(":")
-        // REST used variable ports (8786 default); gRPC is always 5501 on
-        // the whisper pod. Override at call time via `grpc.whisper.port`
-        // if a different deployment moves the port.
-        return host to 5501
+        // XTTS owns :5501 on the VD (jervis-tts-gpu systemd); Whisper
+        // takes :5502 so both can coexist on the same host. If a future
+        // deployment splits them apart, wire a `grpc.whisper.port`
+        // Spring property instead of hard-coding.
+        return host to 5502
     }
 
     private fun ctx(): RequestContext =

@@ -371,7 +371,11 @@ async def lifespan(app: FastAPI):
     # routes were removed — every consumer dials WhisperService directly.
     from grpc_server import start_grpc_server
 
-    grpc_port = int(os.getenv("WHISPER_GRPC_PORT", "5501"))
+    # XTTS already owns :5501 on the VD (jervis-tts-gpu systemd), so Whisper
+    # takes :5502. If both services ran on 5501 the second one to start would
+    # silently fail to bind and the Kotlin gRPC client would land on the
+    # wrong service.
+    grpc_port = int(os.getenv("WHISPER_GRPC_PORT", "5502"))
     grpc_server = await start_grpc_server(port=grpc_port)
     app.state.grpc_server = grpc_server
     try:

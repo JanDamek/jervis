@@ -117,7 +117,9 @@ Environment=WHISPER_DEVICE=cuda
 Environment=WHISPER_COMPUTE_TYPE=int8_float32
 Environment=WHISPER_DEFAULT_MODEL=medium
 Environment=WHISPER_REST_PORT=8786
-Environment=WHISPER_GRPC_PORT=5501
+# XTTS owns :5501 on the VD — Whisper takes :5502 to avoid the port
+# collision that silently dropped Whisper gRPC at boot.
+Environment=WHISPER_GRPC_PORT=5502
 Environment=WHISPER_REST_HOST=0.0.0.0
 Environment=WHISPER_REST_WORKERS=1
 Environment=ROUTER_URL=http://jervis-router.lan.mazlusek.com
