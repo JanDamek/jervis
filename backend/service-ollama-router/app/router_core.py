@@ -452,10 +452,19 @@ class OllamaRouter:
             )
 
         # Local path — substitute model from decision and queue-dispatch.
+        # `priority_header=None` lets route_request resolve the default via
+        # `_resolve_priority(model, None)` (NORMAL unless the caller set
+        # `x-ollama-priority` on the inbound HTTP request, in which case
+        # route_request itself will still pick it up via the http_request).
+        # The previous `int(priority)` referenced an undefined local —
+        # every /api/chat call from the Teams browser pod crashed with
+        # `NameError: name 'priority' is not defined`, which is what the
+        # user saw as "Teams VNC down" (the pod agent couldn't observe
+        # its own browser tab).
         local_model = decision.get("model")
         if local_model:
             body["model"] = local_model
-        return await self.route_request(api_path, body, int(priority), http_request=http_request)
+        return await self.route_request(api_path, body, http_request=http_request)
 
     # ── Instant cascade routing ────────────────────────────────────────
 
