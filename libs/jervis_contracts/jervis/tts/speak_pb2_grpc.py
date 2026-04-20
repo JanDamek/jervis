@@ -5,7 +5,7 @@ import warnings
 
 from jervis.tts import speak_pb2 as jervis_dot_tts_dot_speak__pb2
 
-GRPC_GENERATED_VERSION = '1.80.0'
+GRPC_GENERATED_VERSION = '1.78.0'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 

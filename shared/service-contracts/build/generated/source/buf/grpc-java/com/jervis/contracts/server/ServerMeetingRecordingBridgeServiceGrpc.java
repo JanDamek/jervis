@@ -111,6 +111,68 @@ public final class ServerMeetingRecordingBridgeServiceGrpc {
     return getFinalizeRecordingMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.VideoChunkRequest,
+      com.jervis.contracts.server.VideoChunkAck> getUploadVideoChunkMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "UploadVideoChunk",
+      requestType = com.jervis.contracts.server.VideoChunkRequest.class,
+      responseType = com.jervis.contracts.server.VideoChunkAck.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.server.VideoChunkRequest,
+      com.jervis.contracts.server.VideoChunkAck> getUploadVideoChunkMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.VideoChunkRequest, com.jervis.contracts.server.VideoChunkAck> getUploadVideoChunkMethod;
+    if ((getUploadVideoChunkMethod = ServerMeetingRecordingBridgeServiceGrpc.getUploadVideoChunkMethod) == null) {
+      synchronized (ServerMeetingRecordingBridgeServiceGrpc.class) {
+        if ((getUploadVideoChunkMethod = ServerMeetingRecordingBridgeServiceGrpc.getUploadVideoChunkMethod) == null) {
+          ServerMeetingRecordingBridgeServiceGrpc.getUploadVideoChunkMethod = getUploadVideoChunkMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.VideoChunkRequest, com.jervis.contracts.server.VideoChunkAck>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "UploadVideoChunk"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.VideoChunkRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.VideoChunkAck.getDefaultInstance()))
+              .setSchemaDescriptor(new ServerMeetingRecordingBridgeServiceMethodDescriptorSupplier("UploadVideoChunk"))
+              .build();
+        }
+      }
+    }
+    return getUploadVideoChunkMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.FinalizeVideoRequest,
+      com.jervis.contracts.server.FinalizeVideoResponse> getFinalizeVideoMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "FinalizeVideo",
+      requestType = com.jervis.contracts.server.FinalizeVideoRequest.class,
+      responseType = com.jervis.contracts.server.FinalizeVideoResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.server.FinalizeVideoRequest,
+      com.jervis.contracts.server.FinalizeVideoResponse> getFinalizeVideoMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.FinalizeVideoRequest, com.jervis.contracts.server.FinalizeVideoResponse> getFinalizeVideoMethod;
+    if ((getFinalizeVideoMethod = ServerMeetingRecordingBridgeServiceGrpc.getFinalizeVideoMethod) == null) {
+      synchronized (ServerMeetingRecordingBridgeServiceGrpc.class) {
+        if ((getFinalizeVideoMethod = ServerMeetingRecordingBridgeServiceGrpc.getFinalizeVideoMethod) == null) {
+          ServerMeetingRecordingBridgeServiceGrpc.getFinalizeVideoMethod = getFinalizeVideoMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.FinalizeVideoRequest, com.jervis.contracts.server.FinalizeVideoResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "FinalizeVideo"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.FinalizeVideoRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.FinalizeVideoResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new ServerMeetingRecordingBridgeServiceMethodDescriptorSupplier("FinalizeVideo"))
+              .build();
+        }
+      }
+    }
+    return getFinalizeVideoMethod;
+  }
+
   /**
    * Creates a new async stub that supports all call types for the service
    */
@@ -210,6 +272,31 @@ public final class ServerMeetingRecordingBridgeServiceGrpc {
         io.grpc.stub.StreamObserver<com.jervis.contracts.server.FinalizeRecordingResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getFinalizeRecordingMethod(), responseObserver);
     }
+
+    /**
+     * <pre>
+     * Video pipeline — o365-browser-pool streams raw WebM chunks from the
+     * browser-pod recorder. Channel is configured for 64 MiB inbound so a
+     * multi-MiB chunk fits inline; semantics mirror the REST endpoint they
+     * replaced (idempotent per chunk_index, count maintained on server).
+     * </pre>
+     */
+    default void uploadVideoChunk(com.jervis.contracts.server.VideoChunkRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.VideoChunkAck> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getUploadVideoChunkMethod(), responseObserver);
+    }
+
+    /**
+     * <pre>
+     * Closes the WebM upload session: sets state=UPLOADED, records webm_path,
+     * stamps videoRetentionUntil (365 d), and flips joinedByAgent based on the
+     * caller.
+     * </pre>
+     */
+    default void finalizeVideo(com.jervis.contracts.server.FinalizeVideoRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.FinalizeVideoResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getFinalizeVideoMethod(), responseObserver);
+    }
   }
 
   /**
@@ -284,6 +371,33 @@ public final class ServerMeetingRecordingBridgeServiceGrpc {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getFinalizeRecordingMethod(), getCallOptions()), request, responseObserver);
     }
+
+    /**
+     * <pre>
+     * Video pipeline — o365-browser-pool streams raw WebM chunks from the
+     * browser-pod recorder. Channel is configured for 64 MiB inbound so a
+     * multi-MiB chunk fits inline; semantics mirror the REST endpoint they
+     * replaced (idempotent per chunk_index, count maintained on server).
+     * </pre>
+     */
+    public void uploadVideoChunk(com.jervis.contracts.server.VideoChunkRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.VideoChunkAck> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getUploadVideoChunkMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     * <pre>
+     * Closes the WebM upload session: sets state=UPLOADED, records webm_path,
+     * stamps videoRetentionUntil (365 d), and flips joinedByAgent based on the
+     * caller.
+     * </pre>
+     */
+    public void finalizeVideo(com.jervis.contracts.server.FinalizeVideoRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.FinalizeVideoResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getFinalizeVideoMethod(), getCallOptions()), request, responseObserver);
+    }
   }
 
   /**
@@ -338,6 +452,31 @@ public final class ServerMeetingRecordingBridgeServiceGrpc {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getFinalizeRecordingMethod(), getCallOptions(), request);
     }
+
+    /**
+     * <pre>
+     * Video pipeline — o365-browser-pool streams raw WebM chunks from the
+     * browser-pod recorder. Channel is configured for 64 MiB inbound so a
+     * multi-MiB chunk fits inline; semantics mirror the REST endpoint they
+     * replaced (idempotent per chunk_index, count maintained on server).
+     * </pre>
+     */
+    public com.jervis.contracts.server.VideoChunkAck uploadVideoChunk(com.jervis.contracts.server.VideoChunkRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getUploadVideoChunkMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * Closes the WebM upload session: sets state=UPLOADED, records webm_path,
+     * stamps videoRetentionUntil (365 d), and flips joinedByAgent based on the
+     * caller.
+     * </pre>
+     */
+    public com.jervis.contracts.server.FinalizeVideoResponse finalizeVideo(com.jervis.contracts.server.FinalizeVideoRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getFinalizeVideoMethod(), getCallOptions(), request);
+    }
   }
 
   /**
@@ -391,6 +530,31 @@ public final class ServerMeetingRecordingBridgeServiceGrpc {
     public com.jervis.contracts.server.FinalizeRecordingResponse finalizeRecording(com.jervis.contracts.server.FinalizeRecordingRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getFinalizeRecordingMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * Video pipeline — o365-browser-pool streams raw WebM chunks from the
+     * browser-pod recorder. Channel is configured for 64 MiB inbound so a
+     * multi-MiB chunk fits inline; semantics mirror the REST endpoint they
+     * replaced (idempotent per chunk_index, count maintained on server).
+     * </pre>
+     */
+    public com.jervis.contracts.server.VideoChunkAck uploadVideoChunk(com.jervis.contracts.server.VideoChunkRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getUploadVideoChunkMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * Closes the WebM upload session: sets state=UPLOADED, records webm_path,
+     * stamps videoRetentionUntil (365 d), and flips joinedByAgent based on the
+     * caller.
+     * </pre>
+     */
+    public com.jervis.contracts.server.FinalizeVideoResponse finalizeVideo(com.jervis.contracts.server.FinalizeVideoRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getFinalizeVideoMethod(), getCallOptions(), request);
     }
   }
 
@@ -449,11 +613,40 @@ public final class ServerMeetingRecordingBridgeServiceGrpc {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getFinalizeRecordingMethod(), getCallOptions()), request);
     }
+
+    /**
+     * <pre>
+     * Video pipeline — o365-browser-pool streams raw WebM chunks from the
+     * browser-pod recorder. Channel is configured for 64 MiB inbound so a
+     * multi-MiB chunk fits inline; semantics mirror the REST endpoint they
+     * replaced (idempotent per chunk_index, count maintained on server).
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.VideoChunkAck> uploadVideoChunk(
+        com.jervis.contracts.server.VideoChunkRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getUploadVideoChunkMethod(), getCallOptions()), request);
+    }
+
+    /**
+     * <pre>
+     * Closes the WebM upload session: sets state=UPLOADED, records webm_path,
+     * stamps videoRetentionUntil (365 d), and flips joinedByAgent based on the
+     * caller.
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.FinalizeVideoResponse> finalizeVideo(
+        com.jervis.contracts.server.FinalizeVideoRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getFinalizeVideoMethod(), getCallOptions()), request);
+    }
   }
 
   private static final int METHODID_START_RECORDING = 0;
   private static final int METHODID_UPLOAD_CHUNK = 1;
   private static final int METHODID_FINALIZE_RECORDING = 2;
+  private static final int METHODID_UPLOAD_VIDEO_CHUNK = 3;
+  private static final int METHODID_FINALIZE_VIDEO = 4;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -483,6 +676,14 @@ public final class ServerMeetingRecordingBridgeServiceGrpc {
         case METHODID_FINALIZE_RECORDING:
           serviceImpl.finalizeRecording((com.jervis.contracts.server.FinalizeRecordingRequest) request,
               (io.grpc.stub.StreamObserver<com.jervis.contracts.server.FinalizeRecordingResponse>) responseObserver);
+          break;
+        case METHODID_UPLOAD_VIDEO_CHUNK:
+          serviceImpl.uploadVideoChunk((com.jervis.contracts.server.VideoChunkRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.VideoChunkAck>) responseObserver);
+          break;
+        case METHODID_FINALIZE_VIDEO:
+          serviceImpl.finalizeVideo((com.jervis.contracts.server.FinalizeVideoRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.FinalizeVideoResponse>) responseObserver);
           break;
         default:
           throw new AssertionError();
@@ -523,6 +724,20 @@ public final class ServerMeetingRecordingBridgeServiceGrpc {
               com.jervis.contracts.server.FinalizeRecordingRequest,
               com.jervis.contracts.server.FinalizeRecordingResponse>(
                 service, METHODID_FINALIZE_RECORDING)))
+        .addMethod(
+          getUploadVideoChunkMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.server.VideoChunkRequest,
+              com.jervis.contracts.server.VideoChunkAck>(
+                service, METHODID_UPLOAD_VIDEO_CHUNK)))
+        .addMethod(
+          getFinalizeVideoMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.server.FinalizeVideoRequest,
+              com.jervis.contracts.server.FinalizeVideoResponse>(
+                service, METHODID_FINALIZE_VIDEO)))
         .build();
   }
 
@@ -574,6 +789,8 @@ public final class ServerMeetingRecordingBridgeServiceGrpc {
               .addMethod(getStartRecordingMethod())
               .addMethod(getUploadChunkMethod())
               .addMethod(getFinalizeRecordingMethod())
+              .addMethod(getUploadVideoChunkMethod())
+              .addMethod(getFinalizeVideoMethod())
               .build();
         }
       }

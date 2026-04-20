@@ -56,6 +56,26 @@ public final class ServerMeetingRecordingBridgeProto extends com.google.protobuf
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_jervis_server_FinalizeRecordingResponse_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_VideoChunkRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_VideoChunkRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_VideoChunkAck_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_VideoChunkAck_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_FinalizeVideoRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_FinalizeVideoRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_FinalizeVideoResponse_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_FinalizeVideoResponse_fieldAccessorTable;
 
   public static com.google.protobuf.Descriptors.FileDescriptor
       getDescriptor() {
@@ -92,17 +112,37 @@ public final class ServerMeetingRecordingBridgeProto extends com.google.protobuf
       "son\030\006 \001(\tR\nstopReason\"l\n\031FinalizeRecordi" +
       "ngResponse\022\016\n\002id\030\001 \001(\tR\002id\022\024\n\005state\030\002 \001(" +
       "\tR\005state\022)\n\020duration_seconds\030\003 \001(\003R\017dura" +
-      "tionSeconds2\302\002\n#ServerMeetingRecordingBr" +
-      "idgeService\022]\n\016StartRecording\022$.jervis.s" +
-      "erver.StartRecordingRequest\032%.jervis.ser" +
-      "ver.StartRecordingResponse\022T\n\013UploadChun" +
-      "k\022!.jervis.server.UploadChunkRequest\032\".j" +
-      "ervis.server.UploadChunkResponse\022f\n\021Fina" +
-      "lizeRecording\022\'.jervis.server.FinalizeRe" +
-      "cordingRequest\032(.jervis.server.FinalizeR" +
-      "ecordingResponseBB\n\033com.jervis.contracts" +
-      ".serverB!ServerMeetingRecordingBridgePro" +
-      "toP\001b\006proto3"
+      "tionSeconds\"\230\001\n\021VideoChunkRequest\022/\n\003ctx" +
+      "\030\001 \001(\0132\035.jervis.common.RequestContextR\003c" +
+      "tx\022\035\n\nmeeting_id\030\002 \001(\tR\tmeetingId\022\037\n\013chu" +
+      "nk_index\030\003 \001(\005R\nchunkIndex\022\022\n\004data\030\004 \001(\014" +
+      "R\004data\"\250\001\n\rVideoChunkAck\022\035\n\nmeeting_id\030\001" +
+      " \001(\tR\tmeetingId\022\037\n\013chunk_index\030\002 \001(\005R\nch" +
+      "unkIndex\022\030\n\007deduped\030\003 \001(\010R\007deduped\022\'\n\017ch" +
+      "unks_received\030\004 \001(\005R\016chunksReceived\022\024\n\005b" +
+      "ytes\030\005 \001(\005R\005bytes\"\203\001\n\024FinalizeVideoReque" +
+      "st\022/\n\003ctx\030\001 \001(\0132\035.jervis.common.RequestC" +
+      "ontextR\003ctx\022\035\n\nmeeting_id\030\002 \001(\tR\tmeeting" +
+      "Id\022\033\n\tjoined_by\030\003 \001(\tR\010joinedBy\"\273\001\n\025Fina" +
+      "lizeVideoResponse\022\035\n\nmeeting_id\030\001 \001(\tR\tm" +
+      "eetingId\022\024\n\005state\030\002 \001(\tR\005state\022\'\n\017chunks" +
+      "_received\030\003 \001(\005R\016chunksReceived\022\033\n\twebm_" +
+      "path\030\004 \001(\tR\010webmPath\022\'\n\017retention_until\030" +
+      "\005 \001(\tR\016retentionUntil2\362\003\n#ServerMeetingR" +
+      "ecordingBridgeService\022]\n\016StartRecording\022" +
+      "$.jervis.server.StartRecordingRequest\032%." +
+      "jervis.server.StartRecordingResponse\022T\n\013" +
+      "UploadChunk\022!.jervis.server.UploadChunkR" +
+      "equest\032\".jervis.server.UploadChunkRespon" +
+      "se\022f\n\021FinalizeRecording\022\'.jervis.server." +
+      "FinalizeRecordingRequest\032(.jervis.server" +
+      ".FinalizeRecordingResponse\022R\n\020UploadVide" +
+      "oChunk\022 .jervis.server.VideoChunkRequest" +
+      "\032\034.jervis.server.VideoChunkAck\022Z\n\rFinali" +
+      "zeVideo\022#.jervis.server.FinalizeVideoReq" +
+      "uest\032$.jervis.server.FinalizeVideoRespon" +
+      "seBB\n\033com.jervis.contracts.serverB!Serve" +
+      "rMeetingRecordingBridgeProtoP\001b\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
@@ -145,6 +185,30 @@ public final class ServerMeetingRecordingBridgeProto extends com.google.protobuf
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_server_FinalizeRecordingResponse_descriptor,
         new java.lang.String[] { "Id", "State", "DurationSeconds", });
+    internal_static_jervis_server_VideoChunkRequest_descriptor =
+      getDescriptor().getMessageType(6);
+    internal_static_jervis_server_VideoChunkRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_VideoChunkRequest_descriptor,
+        new java.lang.String[] { "Ctx", "MeetingId", "ChunkIndex", "Data", });
+    internal_static_jervis_server_VideoChunkAck_descriptor =
+      getDescriptor().getMessageType(7);
+    internal_static_jervis_server_VideoChunkAck_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_VideoChunkAck_descriptor,
+        new java.lang.String[] { "MeetingId", "ChunkIndex", "Deduped", "ChunksReceived", "Bytes", });
+    internal_static_jervis_server_FinalizeVideoRequest_descriptor =
+      getDescriptor().getMessageType(8);
+    internal_static_jervis_server_FinalizeVideoRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_FinalizeVideoRequest_descriptor,
+        new java.lang.String[] { "Ctx", "MeetingId", "JoinedBy", });
+    internal_static_jervis_server_FinalizeVideoResponse_descriptor =
+      getDescriptor().getMessageType(9);
+    internal_static_jervis_server_FinalizeVideoResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_FinalizeVideoResponse_descriptor,
+        new java.lang.String[] { "MeetingId", "State", "ChunksReceived", "WebmPath", "RetentionUntil", });
     descriptor.resolveAllFeaturesImmutable();
     com.jervis.contracts.common.TypesProto.getDescriptor();
   }

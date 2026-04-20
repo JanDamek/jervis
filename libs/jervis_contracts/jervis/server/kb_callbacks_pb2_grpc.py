@@ -6,7 +6,7 @@ import warnings
 from jervis.server import kb_callbacks_pb2 as jervis_dot_server_dot_kb__callbacks__pb2
 from jervis.server import orchestrator_progress_pb2 as jervis_dot_server_dot_orchestrator__progress__pb2
 
-GRPC_GENERATED_VERSION = '1.80.0'
+GRPC_GENERATED_VERSION = '1.78.0'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 

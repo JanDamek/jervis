@@ -83,3 +83,53 @@ class FinalizeRecordingResponse(_message.Message):
     state: str
     duration_seconds: int
     def __init__(self, id: _Optional[str] = ..., state: _Optional[str] = ..., duration_seconds: _Optional[int] = ...) -> None: ...
+
+class VideoChunkRequest(_message.Message):
+    __slots__ = ("ctx", "meeting_id", "chunk_index", "data")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    MEETING_ID_FIELD_NUMBER: _ClassVar[int]
+    CHUNK_INDEX_FIELD_NUMBER: _ClassVar[int]
+    DATA_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    meeting_id: str
+    chunk_index: int
+    data: bytes
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., meeting_id: _Optional[str] = ..., chunk_index: _Optional[int] = ..., data: _Optional[bytes] = ...) -> None: ...
+
+class VideoChunkAck(_message.Message):
+    __slots__ = ("meeting_id", "chunk_index", "deduped", "chunks_received", "bytes")
+    MEETING_ID_FIELD_NUMBER: _ClassVar[int]
+    CHUNK_INDEX_FIELD_NUMBER: _ClassVar[int]
+    DEDUPED_FIELD_NUMBER: _ClassVar[int]
+    CHUNKS_RECEIVED_FIELD_NUMBER: _ClassVar[int]
+    BYTES_FIELD_NUMBER: _ClassVar[int]
+    meeting_id: str
+    chunk_index: int
+    deduped: bool
+    chunks_received: int
+    bytes: int
+    def __init__(self, meeting_id: _Optional[str] = ..., chunk_index: _Optional[int] = ..., deduped: bool = ..., chunks_received: _Optional[int] = ..., bytes: _Optional[int] = ...) -> None: ...
+
+class FinalizeVideoRequest(_message.Message):
+    __slots__ = ("ctx", "meeting_id", "joined_by")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    MEETING_ID_FIELD_NUMBER: _ClassVar[int]
+    JOINED_BY_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    meeting_id: str
+    joined_by: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., meeting_id: _Optional[str] = ..., joined_by: _Optional[str] = ...) -> None: ...
+
+class FinalizeVideoResponse(_message.Message):
+    __slots__ = ("meeting_id", "state", "chunks_received", "webm_path", "retention_until")
+    MEETING_ID_FIELD_NUMBER: _ClassVar[int]
+    STATE_FIELD_NUMBER: _ClassVar[int]
+    CHUNKS_RECEIVED_FIELD_NUMBER: _ClassVar[int]
+    WEBM_PATH_FIELD_NUMBER: _ClassVar[int]
+    RETENTION_UNTIL_FIELD_NUMBER: _ClassVar[int]
+    meeting_id: str
+    state: str
+    chunks_received: int
+    webm_path: str
+    retention_until: str
+    def __init__(self, meeting_id: _Optional[str] = ..., state: _Optional[str] = ..., chunks_received: _Optional[int] = ..., webm_path: _Optional[str] = ..., retention_until: _Optional[str] = ...) -> None: ...

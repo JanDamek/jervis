@@ -6,7 +6,7 @@ import warnings
 from jervis.knowledgebase import graph_pb2 as jervis_dot_knowledgebase_dot_graph__pb2
 from jervis.knowledgebase import retrieve_pb2 as jervis_dot_knowledgebase_dot_retrieve__pb2
 
-GRPC_GENERATED_VERSION = '1.80.0'
+GRPC_GENERATED_VERSION = '1.78.0'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 

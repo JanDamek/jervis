@@ -45,6 +45,14 @@ public object ServerMeetingRecordingBridgeServiceGrpcKt {
     @JvmStatic
     get() = ServerMeetingRecordingBridgeServiceGrpc.getFinalizeRecordingMethod()
 
+  public val uploadVideoChunkMethod: MethodDescriptor<VideoChunkRequest, VideoChunkAck>
+    @JvmStatic
+    get() = ServerMeetingRecordingBridgeServiceGrpc.getUploadVideoChunkMethod()
+
+  public val finalizeVideoMethod: MethodDescriptor<FinalizeVideoRequest, FinalizeVideoResponse>
+    @JvmStatic
+    get() = ServerMeetingRecordingBridgeServiceGrpc.getFinalizeVideoMethod()
+
   /**
    * A stub for issuing RPCs to a(n) jervis.server.ServerMeetingRecordingBridgeService service as suspending coroutines.
    */
@@ -114,6 +122,46 @@ public object ServerMeetingRecordingBridgeServiceGrpcKt {
       callOptions,
       headers
     )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun uploadVideoChunk(request: VideoChunkRequest, headers: Metadata = Metadata()): VideoChunkAck = unaryRpc(
+      channel,
+      ServerMeetingRecordingBridgeServiceGrpc.getUploadVideoChunkMethod(),
+      request,
+      callOptions,
+      headers
+    )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun finalizeVideo(request: FinalizeVideoRequest, headers: Metadata = Metadata()): FinalizeVideoResponse = unaryRpc(
+      channel,
+      ServerMeetingRecordingBridgeServiceGrpc.getFinalizeVideoMethod(),
+      request,
+      callOptions,
+      headers
+    )
   }
 
   /**
@@ -158,6 +206,30 @@ public object ServerMeetingRecordingBridgeServiceGrpcKt {
      */
     public open suspend fun finalizeRecording(request: FinalizeRecordingRequest): FinalizeRecordingResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerMeetingRecordingBridgeService.FinalizeRecording is unimplemented"))
 
+    /**
+     * Returns the response to an RPC for jervis.server.ServerMeetingRecordingBridgeService.UploadVideoChunk.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun uploadVideoChunk(request: VideoChunkRequest): VideoChunkAck = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerMeetingRecordingBridgeService.UploadVideoChunk is unimplemented"))
+
+    /**
+     * Returns the response to an RPC for jervis.server.ServerMeetingRecordingBridgeService.FinalizeVideo.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun finalizeVideo(request: FinalizeVideoRequest): FinalizeVideoResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerMeetingRecordingBridgeService.FinalizeVideo is unimplemented"))
+
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(
       context = this.context,
@@ -173,6 +245,16 @@ public object ServerMeetingRecordingBridgeServiceGrpcKt {
       context = this.context,
       descriptor = ServerMeetingRecordingBridgeServiceGrpc.getFinalizeRecordingMethod(),
       implementation = ::finalizeRecording
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = ServerMeetingRecordingBridgeServiceGrpc.getUploadVideoChunkMethod(),
+      implementation = ::uploadVideoChunk
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = ServerMeetingRecordingBridgeServiceGrpc.getFinalizeVideoMethod(),
+      implementation = ::finalizeVideo
     )).build()
   }
 }

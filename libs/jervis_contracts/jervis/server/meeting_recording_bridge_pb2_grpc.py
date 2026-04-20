@@ -5,7 +5,7 @@ import warnings
 
 from jervis.server import meeting_recording_bridge_pb2 as jervis_dot_server_dot_meeting__recording__bridge__pb2
 
-GRPC_GENERATED_VERSION = '1.80.0'
+GRPC_GENERATED_VERSION = '1.78.0'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 
@@ -53,6 +53,16 @@ class ServerMeetingRecordingBridgeServiceStub(object):
                 request_serializer=jervis_dot_server_dot_meeting__recording__bridge__pb2.FinalizeRecordingRequest.SerializeToString,
                 response_deserializer=jervis_dot_server_dot_meeting__recording__bridge__pb2.FinalizeRecordingResponse.FromString,
                 _registered_method=True)
+        self.UploadVideoChunk = channel.unary_unary(
+                '/jervis.server.ServerMeetingRecordingBridgeService/UploadVideoChunk',
+                request_serializer=jervis_dot_server_dot_meeting__recording__bridge__pb2.VideoChunkRequest.SerializeToString,
+                response_deserializer=jervis_dot_server_dot_meeting__recording__bridge__pb2.VideoChunkAck.FromString,
+                _registered_method=True)
+        self.FinalizeVideo = channel.unary_unary(
+                '/jervis.server.ServerMeetingRecordingBridgeService/FinalizeVideo',
+                request_serializer=jervis_dot_server_dot_meeting__recording__bridge__pb2.FinalizeVideoRequest.SerializeToString,
+                response_deserializer=jervis_dot_server_dot_meeting__recording__bridge__pb2.FinalizeVideoResponse.FromString,
+                _registered_method=True)
 
 
 class ServerMeetingRecordingBridgeServiceServicer(object):
@@ -84,6 +94,25 @@ class ServerMeetingRecordingBridgeServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def UploadVideoChunk(self, request, context):
+        """Video pipeline — o365-browser-pool streams raw WebM chunks from the
+        browser-pod recorder. Channel is configured for 64 MiB inbound so a
+        multi-MiB chunk fits inline; semantics mirror the REST endpoint they
+        replaced (idempotent per chunk_index, count maintained on server).
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def FinalizeVideo(self, request, context):
+        """Closes the WebM upload session: sets state=UPLOADED, records webm_path,
+        stamps videoRetentionUntil (365 d), and flips joinedByAgent based on the
+        caller.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ServerMeetingRecordingBridgeServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -101,6 +130,16 @@ def add_ServerMeetingRecordingBridgeServiceServicer_to_server(servicer, server):
                     servicer.FinalizeRecording,
                     request_deserializer=jervis_dot_server_dot_meeting__recording__bridge__pb2.FinalizeRecordingRequest.FromString,
                     response_serializer=jervis_dot_server_dot_meeting__recording__bridge__pb2.FinalizeRecordingResponse.SerializeToString,
+            ),
+            'UploadVideoChunk': grpc.unary_unary_rpc_method_handler(
+                    servicer.UploadVideoChunk,
+                    request_deserializer=jervis_dot_server_dot_meeting__recording__bridge__pb2.VideoChunkRequest.FromString,
+                    response_serializer=jervis_dot_server_dot_meeting__recording__bridge__pb2.VideoChunkAck.SerializeToString,
+            ),
+            'FinalizeVideo': grpc.unary_unary_rpc_method_handler(
+                    servicer.FinalizeVideo,
+                    request_deserializer=jervis_dot_server_dot_meeting__recording__bridge__pb2.FinalizeVideoRequest.FromString,
+                    response_serializer=jervis_dot_server_dot_meeting__recording__bridge__pb2.FinalizeVideoResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -188,6 +227,60 @@ class ServerMeetingRecordingBridgeService(object):
             '/jervis.server.ServerMeetingRecordingBridgeService/FinalizeRecording',
             jervis_dot_server_dot_meeting__recording__bridge__pb2.FinalizeRecordingRequest.SerializeToString,
             jervis_dot_server_dot_meeting__recording__bridge__pb2.FinalizeRecordingResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def UploadVideoChunk(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.server.ServerMeetingRecordingBridgeService/UploadVideoChunk',
+            jervis_dot_server_dot_meeting__recording__bridge__pb2.VideoChunkRequest.SerializeToString,
+            jervis_dot_server_dot_meeting__recording__bridge__pb2.VideoChunkAck.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def FinalizeVideo(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.server.ServerMeetingRecordingBridgeService/FinalizeVideo',
+            jervis_dot_server_dot_meeting__recording__bridge__pb2.FinalizeVideoRequest.SerializeToString,
+            jervis_dot_server_dot_meeting__recording__bridge__pb2.FinalizeVideoResponse.FromString,
             options,
             channel_credentials,
             insecure,

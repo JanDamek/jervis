@@ -27,16 +27,28 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import httpx
 from playwright.async_api import Page
 
 from app.browser_manager import BrowserManager
 from app.config import settings
+from app.grpc_clients import server_meeting_recording_stub
+from jervis.common.types_pb2 import RequestContext, Scope
+from jervis.server.meeting_recording_bridge_pb2 import (
+    FinalizeVideoRequest,
+    StartRecordingRequest,
+    VideoChunkRequest,
+)
 
 logger = logging.getLogger("o365-browser-pool.meeting")
 
 
-JERVIS_SERVER_URL = getattr(settings, "kotlin_server_url", "http://jervis-server:5500")
+def _ctx() -> RequestContext:
+    import uuid as _uuid
+    return RequestContext(
+        scope=Scope(),
+        request_id=str(_uuid.uuid4()),
+        issued_at_unix_ms=int(time.time() * 1000),
+    )
 
 
 @dataclass
@@ -64,7 +76,6 @@ class MeetingRecorder:
     def __init__(self, browser_manager: BrowserManager) -> None:
         self._bm = browser_manager
         self._sessions: dict[str, MeetingSession] = {}       # task_id → session
-        self._http = httpx.AsyncClient(timeout=30)
 
     # ---- Public API ------------------------------------------------------
 
@@ -175,17 +186,15 @@ class MeetingRecorder:
         self, *, client_id: str, title: str | None, joined_by: str,
     ) -> str | None:
         try:
-            resp = await self._http.post(
-                f"{JERVIS_SERVER_URL}/internal/meeting/start-recording",
-                json={
-                    "clientId": client_id,
-                    "title": title or "Ad-hoc meeting",
-                    "meetingType": "MEETING",
-                    "joinedBy": joined_by,
-                },
+            req = StartRecordingRequest(
+                ctx=_ctx(),
+                client_id=client_id,
+                title=title or "Ad-hoc meeting",
+                meeting_type="MEETING",
+                joined_by=joined_by,
             )
-            resp.raise_for_status()
-            meeting_id = resp.json().get("id")
+            resp = await server_meeting_recording_stub().StartRecording(req)
+            meeting_id = resp.id
             if not meeting_id:
                 logger.error("Ad-hoc meeting start: server returned no id")
                 return None
@@ -311,26 +320,20 @@ class MeetingRecorder:
     async def _upload_chunk(
         self, session: MeetingSession, path: Path, index: int,
     ) -> bool:
-        url = f"{JERVIS_SERVER_URL}/internal/meeting/{session.meeting_id}/video-chunk"
         try:
             data = path.read_bytes()
         except OSError as e:
             logger.warning("chunk read failed path=%s: %s", path, e)
             return False
         try:
-            resp = await self._http.post(
-                url,
-                params={"chunkIndex": str(index)},
-                content=data,
-                headers={"Content-Type": "video/webm"},
+            req = VideoChunkRequest(
+                ctx=_ctx(),
+                meeting_id=session.meeting_id,
+                chunk_index=index,
+                data=data,
             )
-            if resp.status_code < 300:
-                return True
-            logger.warning(
-                "chunk upload HTTP %d meeting=%s idx=%d body=%s",
-                resp.status_code, session.meeting_id, index, resp.text[:200],
-            )
-            return False
+            await server_meeting_recording_stub().UploadVideoChunk(req)
+            return True
         except Exception as e:
             logger.debug("chunk upload exception meeting=%s idx=%d: %s",
                          session.meeting_id, index, e)
@@ -388,20 +391,14 @@ class MeetingRecorder:
             except (asyncio.CancelledError, Exception):
                 pass
 
-        # 4. Post finalize.
+        # 4. gRPC finalize.
         try:
-            resp = await self._http.post(
-                f"{JERVIS_SERVER_URL}/internal/meeting/{session.meeting_id}/finalize",
-                json={
-                    "chunksUploaded": session.chunks_uploaded,
-                    "joinedBy": session.joined_by,
-                },
+            req = FinalizeVideoRequest(
+                ctx=_ctx(),
+                meeting_id=session.meeting_id,
+                joined_by=session.joined_by or "",
             )
-            if resp.status_code >= 400:
-                logger.warning(
-                    "finalize HTTP %d meeting=%s body=%s",
-                    resp.status_code, session.meeting_id, resp.text[:200],
-                )
+            await server_meeting_recording_stub().FinalizeVideo(req)
         except Exception as e:
             logger.warning("finalize failed meeting=%s: %s", session.meeting_id, e)
 

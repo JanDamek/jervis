@@ -5,7 +5,7 @@ import warnings
 
 from jervis.document_extraction import extract_pb2 as jervis_dot_document__extraction_dot_extract__pb2
 
-GRPC_GENERATED_VERSION = '1.80.0'
+GRPC_GENERATED_VERSION = '1.78.0'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 

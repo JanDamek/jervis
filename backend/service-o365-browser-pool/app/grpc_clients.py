@@ -10,17 +10,26 @@ import grpc.aio
 from app.config import settings
 from jervis.server import (
     meeting_attend_pb2_grpc,
+    meeting_recording_bridge_pb2_grpc,
     o365_resources_pb2_grpc,
     o365_session_pb2_grpc,
 )
 
 logger = logging.getLogger(__name__)
 
+# WebM video chunks are multi-MiB — bump the inbound/outbound caps to 64 MiB
+# so a single chunk fits in one request (matches the Kotlin server's Netty
+# channel configuration for ServerMeetingRecordingBridgeService).
+_GRPC_MAX_MSG_BYTES = 64 * 1024 * 1024
+
 _channel: Optional[grpc.aio.Channel] = None
 _user_activity_stub: Optional[o365_resources_pb2_grpc.ServerUserActivityServiceStub] = None
 _discovered_stub: Optional[o365_resources_pb2_grpc.ServerO365DiscoveredResourcesServiceStub] = None
 _meeting_attend_stub: Optional[meeting_attend_pb2_grpc.ServerMeetingAttendServiceStub] = None
 _o365_session_stub: Optional[o365_session_pb2_grpc.ServerO365SessionServiceStub] = None
+_meeting_recording_stub: Optional[
+    meeting_recording_bridge_pb2_grpc.ServerMeetingRecordingBridgeServiceStub
+] = None
 
 
 def _kotlin_server_grpc_target() -> str:
@@ -35,7 +44,13 @@ def _get_channel() -> grpc.aio.Channel:
     global _channel
     if _channel is None:
         target = _kotlin_server_grpc_target()
-        _channel = grpc.aio.insecure_channel(target)
+        _channel = grpc.aio.insecure_channel(
+            target,
+            options=[
+                ("grpc.max_send_message_length", _GRPC_MAX_MSG_BYTES),
+                ("grpc.max_receive_message_length", _GRPC_MAX_MSG_BYTES),
+            ],
+        )
         logger.debug("kotlin-server gRPC channel opened to %s", target)
     return _channel
 
@@ -66,3 +81,16 @@ def server_o365_session_stub() -> o365_session_pb2_grpc.ServerO365SessionService
     if _o365_session_stub is None:
         _o365_session_stub = o365_session_pb2_grpc.ServerO365SessionServiceStub(_get_channel())
     return _o365_session_stub
+
+
+def server_meeting_recording_stub() -> (
+    meeting_recording_bridge_pb2_grpc.ServerMeetingRecordingBridgeServiceStub
+):
+    global _meeting_recording_stub
+    if _meeting_recording_stub is None:
+        _meeting_recording_stub = (
+            meeting_recording_bridge_pb2_grpc.ServerMeetingRecordingBridgeServiceStub(
+                _get_channel()
+            )
+        )
+    return _meeting_recording_stub

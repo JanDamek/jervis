@@ -7,13 +7,8 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
  * WhatsAppBrowserService — typed wrapper over the jervis-whatsapp-browser
  * pod. Replaces the former REST surface consumed by the Kotlin server
  * (/session/{cid}, /session/{cid}/init, /scrape/{cid}/trigger,
- * /scrape/{cid}/latest).
- * VNC flow: the browser talks HTTP/WS to the Kotlin server only (external
- * boundary, guideline §10). The server validates a single-use token
- * against MongoDB, opens a StreamVnc bidi stream to the pod, and pipes
- * raw RFB bytes between the browser WebSocket and the gRPC stream.
- * The pod never sees the token — the first client-&gt;server frame carries
- * `client_id` to pick the Xvfb session, subsequent frames are raw bytes.
+ * /scrape/{cid}/latest, /vnc-token/{cid}). The VNC proxy routes
+ * (/vnc-login, /vnc-auth) stay HTTP — browser-facing, not pod-to-pod.
  * </pre>
  */
 @io.grpc.stub.annotations.GrpcGenerated
@@ -148,35 +143,35 @@ public final class WhatsAppBrowserServiceGrpc {
     return getGetLatestScrapeMethod;
   }
 
-  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.VncFrame,
-      com.jervis.contracts.whatsapp_browser.VncFrame> getStreamVncMethod;
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.SessionRef,
+      com.jervis.contracts.whatsapp_browser.VncTokenResponse> getCreateVncTokenMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
-      fullMethodName = SERVICE_NAME + '/' + "StreamVnc",
-      requestType = com.jervis.contracts.whatsapp_browser.VncFrame.class,
-      responseType = com.jervis.contracts.whatsapp_browser.VncFrame.class,
-      methodType = io.grpc.MethodDescriptor.MethodType.BIDI_STREAMING)
-  public static io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.VncFrame,
-      com.jervis.contracts.whatsapp_browser.VncFrame> getStreamVncMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.VncFrame, com.jervis.contracts.whatsapp_browser.VncFrame> getStreamVncMethod;
-    if ((getStreamVncMethod = WhatsAppBrowserServiceGrpc.getStreamVncMethod) == null) {
+      fullMethodName = SERVICE_NAME + '/' + "CreateVncToken",
+      requestType = com.jervis.contracts.whatsapp_browser.SessionRef.class,
+      responseType = com.jervis.contracts.whatsapp_browser.VncTokenResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.SessionRef,
+      com.jervis.contracts.whatsapp_browser.VncTokenResponse> getCreateVncTokenMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.whatsapp_browser.SessionRef, com.jervis.contracts.whatsapp_browser.VncTokenResponse> getCreateVncTokenMethod;
+    if ((getCreateVncTokenMethod = WhatsAppBrowserServiceGrpc.getCreateVncTokenMethod) == null) {
       synchronized (WhatsAppBrowserServiceGrpc.class) {
-        if ((getStreamVncMethod = WhatsAppBrowserServiceGrpc.getStreamVncMethod) == null) {
-          WhatsAppBrowserServiceGrpc.getStreamVncMethod = getStreamVncMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.whatsapp_browser.VncFrame, com.jervis.contracts.whatsapp_browser.VncFrame>newBuilder()
-              .setType(io.grpc.MethodDescriptor.MethodType.BIDI_STREAMING)
-              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "StreamVnc"))
+        if ((getCreateVncTokenMethod = WhatsAppBrowserServiceGrpc.getCreateVncTokenMethod) == null) {
+          WhatsAppBrowserServiceGrpc.getCreateVncTokenMethod = getCreateVncTokenMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.whatsapp_browser.SessionRef, com.jervis.contracts.whatsapp_browser.VncTokenResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "CreateVncToken"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.whatsapp_browser.VncFrame.getDefaultInstance()))
+                  com.jervis.contracts.whatsapp_browser.SessionRef.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.whatsapp_browser.VncFrame.getDefaultInstance()))
-              .setSchemaDescriptor(new WhatsAppBrowserServiceMethodDescriptorSupplier("StreamVnc"))
+                  com.jervis.contracts.whatsapp_browser.VncTokenResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new WhatsAppBrowserServiceMethodDescriptorSupplier("CreateVncToken"))
               .build();
         }
       }
     }
-    return getStreamVncMethod;
+    return getCreateVncTokenMethod;
   }
 
   /**
@@ -243,13 +238,8 @@ public final class WhatsAppBrowserServiceGrpc {
    * WhatsAppBrowserService — typed wrapper over the jervis-whatsapp-browser
    * pod. Replaces the former REST surface consumed by the Kotlin server
    * (/session/{cid}, /session/{cid}/init, /scrape/{cid}/trigger,
-   * /scrape/{cid}/latest).
-   * VNC flow: the browser talks HTTP/WS to the Kotlin server only (external
-   * boundary, guideline §10). The server validates a single-use token
-   * against MongoDB, opens a StreamVnc bidi stream to the pod, and pipes
-   * raw RFB bytes between the browser WebSocket and the gRPC stream.
-   * The pod never sees the token — the first client-&gt;server frame carries
-   * `client_id` to pick the Xvfb session, subsequent frames are raw bytes.
+   * /scrape/{cid}/latest, /vnc-token/{cid}). The VNC proxy routes
+   * (/vnc-login, /vnc-auth) stay HTTP — browser-facing, not pod-to-pod.
    * </pre>
    */
   public interface AsyncService {
@@ -284,9 +274,9 @@ public final class WhatsAppBrowserServiceGrpc {
 
     /**
      */
-    default io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.VncFrame> streamVnc(
-        io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.VncFrame> responseObserver) {
-      return io.grpc.stub.ServerCalls.asyncUnimplementedStreamingCall(getStreamVncMethod(), responseObserver);
+    default void createVncToken(com.jervis.contracts.whatsapp_browser.SessionRef request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.VncTokenResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getCreateVncTokenMethod(), responseObserver);
     }
   }
 
@@ -296,13 +286,8 @@ public final class WhatsAppBrowserServiceGrpc {
    * WhatsAppBrowserService — typed wrapper over the jervis-whatsapp-browser
    * pod. Replaces the former REST surface consumed by the Kotlin server
    * (/session/{cid}, /session/{cid}/init, /scrape/{cid}/trigger,
-   * /scrape/{cid}/latest).
-   * VNC flow: the browser talks HTTP/WS to the Kotlin server only (external
-   * boundary, guideline §10). The server validates a single-use token
-   * against MongoDB, opens a StreamVnc bidi stream to the pod, and pipes
-   * raw RFB bytes between the browser WebSocket and the gRPC stream.
-   * The pod never sees the token — the first client-&gt;server frame carries
-   * `client_id` to pick the Xvfb session, subsequent frames are raw bytes.
+   * /scrape/{cid}/latest, /vnc-token/{cid}). The VNC proxy routes
+   * (/vnc-login, /vnc-auth) stay HTTP — browser-facing, not pod-to-pod.
    * </pre>
    */
   public static abstract class WhatsAppBrowserServiceImplBase
@@ -319,13 +304,8 @@ public final class WhatsAppBrowserServiceGrpc {
    * WhatsAppBrowserService — typed wrapper over the jervis-whatsapp-browser
    * pod. Replaces the former REST surface consumed by the Kotlin server
    * (/session/{cid}, /session/{cid}/init, /scrape/{cid}/trigger,
-   * /scrape/{cid}/latest).
-   * VNC flow: the browser talks HTTP/WS to the Kotlin server only (external
-   * boundary, guideline §10). The server validates a single-use token
-   * against MongoDB, opens a StreamVnc bidi stream to the pod, and pipes
-   * raw RFB bytes between the browser WebSocket and the gRPC stream.
-   * The pod never sees the token — the first client-&gt;server frame carries
-   * `client_id` to pick the Xvfb session, subsequent frames are raw bytes.
+   * /scrape/{cid}/latest, /vnc-token/{cid}). The VNC proxy routes
+   * (/vnc-login, /vnc-auth) stay HTTP — browser-facing, not pod-to-pod.
    * </pre>
    */
   public static final class WhatsAppBrowserServiceStub
@@ -375,10 +355,10 @@ public final class WhatsAppBrowserServiceGrpc {
 
     /**
      */
-    public io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.VncFrame> streamVnc(
-        io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.VncFrame> responseObserver) {
-      return io.grpc.stub.ClientCalls.asyncBidiStreamingCall(
-          getChannel().newCall(getStreamVncMethod(), getCallOptions()), responseObserver);
+    public void createVncToken(com.jervis.contracts.whatsapp_browser.SessionRef request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.VncTokenResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getCreateVncTokenMethod(), getCallOptions()), request, responseObserver);
     }
   }
 
@@ -388,13 +368,8 @@ public final class WhatsAppBrowserServiceGrpc {
    * WhatsAppBrowserService — typed wrapper over the jervis-whatsapp-browser
    * pod. Replaces the former REST surface consumed by the Kotlin server
    * (/session/{cid}, /session/{cid}/init, /scrape/{cid}/trigger,
-   * /scrape/{cid}/latest).
-   * VNC flow: the browser talks HTTP/WS to the Kotlin server only (external
-   * boundary, guideline §10). The server validates a single-use token
-   * against MongoDB, opens a StreamVnc bidi stream to the pod, and pipes
-   * raw RFB bytes between the browser WebSocket and the gRPC stream.
-   * The pod never sees the token — the first client-&gt;server frame carries
-   * `client_id` to pick the Xvfb session, subsequent frames are raw bytes.
+   * /scrape/{cid}/latest, /vnc-token/{cid}). The VNC proxy routes
+   * (/vnc-login, /vnc-auth) stay HTTP — browser-facing, not pod-to-pod.
    * </pre>
    */
   public static final class WhatsAppBrowserServiceBlockingV2Stub
@@ -440,11 +415,9 @@ public final class WhatsAppBrowserServiceGrpc {
 
     /**
      */
-    @io.grpc.ExperimentalApi("https://github.com/grpc/grpc-java/issues/10918")
-    public io.grpc.stub.BlockingClientCall<com.jervis.contracts.whatsapp_browser.VncFrame, com.jervis.contracts.whatsapp_browser.VncFrame>
-        streamVnc() {
-      return io.grpc.stub.ClientCalls.blockingBidiStreamingCall(
-          getChannel(), getStreamVncMethod(), getCallOptions());
+    public com.jervis.contracts.whatsapp_browser.VncTokenResponse createVncToken(com.jervis.contracts.whatsapp_browser.SessionRef request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getCreateVncTokenMethod(), getCallOptions(), request);
     }
   }
 
@@ -454,13 +427,8 @@ public final class WhatsAppBrowserServiceGrpc {
    * WhatsAppBrowserService — typed wrapper over the jervis-whatsapp-browser
    * pod. Replaces the former REST surface consumed by the Kotlin server
    * (/session/{cid}, /session/{cid}/init, /scrape/{cid}/trigger,
-   * /scrape/{cid}/latest).
-   * VNC flow: the browser talks HTTP/WS to the Kotlin server only (external
-   * boundary, guideline §10). The server validates a single-use token
-   * against MongoDB, opens a StreamVnc bidi stream to the pod, and pipes
-   * raw RFB bytes between the browser WebSocket and the gRPC stream.
-   * The pod never sees the token — the first client-&gt;server frame carries
-   * `client_id` to pick the Xvfb session, subsequent frames are raw bytes.
+   * /scrape/{cid}/latest, /vnc-token/{cid}). The VNC proxy routes
+   * (/vnc-login, /vnc-auth) stay HTTP — browser-facing, not pod-to-pod.
    * </pre>
    */
   public static final class WhatsAppBrowserServiceBlockingStub
@@ -503,6 +471,13 @@ public final class WhatsAppBrowserServiceGrpc {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetLatestScrapeMethod(), getCallOptions(), request);
     }
+
+    /**
+     */
+    public com.jervis.contracts.whatsapp_browser.VncTokenResponse createVncToken(com.jervis.contracts.whatsapp_browser.SessionRef request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getCreateVncTokenMethod(), getCallOptions(), request);
+    }
   }
 
   /**
@@ -511,13 +486,8 @@ public final class WhatsAppBrowserServiceGrpc {
    * WhatsAppBrowserService — typed wrapper over the jervis-whatsapp-browser
    * pod. Replaces the former REST surface consumed by the Kotlin server
    * (/session/{cid}, /session/{cid}/init, /scrape/{cid}/trigger,
-   * /scrape/{cid}/latest).
-   * VNC flow: the browser talks HTTP/WS to the Kotlin server only (external
-   * boundary, guideline §10). The server validates a single-use token
-   * against MongoDB, opens a StreamVnc bidi stream to the pod, and pipes
-   * raw RFB bytes between the browser WebSocket and the gRPC stream.
-   * The pod never sees the token — the first client-&gt;server frame carries
-   * `client_id` to pick the Xvfb session, subsequent frames are raw bytes.
+   * /scrape/{cid}/latest, /vnc-token/{cid}). The VNC proxy routes
+   * (/vnc-login, /vnc-auth) stay HTTP — browser-facing, not pod-to-pod.
    * </pre>
    */
   public static final class WhatsAppBrowserServiceFutureStub
@@ -564,13 +534,21 @@ public final class WhatsAppBrowserServiceGrpc {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetLatestScrapeMethod(), getCallOptions()), request);
     }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.whatsapp_browser.VncTokenResponse> createVncToken(
+        com.jervis.contracts.whatsapp_browser.SessionRef request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getCreateVncTokenMethod(), getCallOptions()), request);
+    }
   }
 
   private static final int METHODID_GET_SESSION = 0;
   private static final int METHODID_INIT_SESSION = 1;
   private static final int METHODID_TRIGGER_SCRAPE = 2;
   private static final int METHODID_GET_LATEST_SCRAPE = 3;
-  private static final int METHODID_STREAM_VNC = 4;
+  private static final int METHODID_CREATE_VNC_TOKEN = 4;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -605,6 +583,10 @@ public final class WhatsAppBrowserServiceGrpc {
           serviceImpl.getLatestScrape((com.jervis.contracts.whatsapp_browser.SessionRef) request,
               (io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.LatestScrapeResponse>) responseObserver);
           break;
+        case METHODID_CREATE_VNC_TOKEN:
+          serviceImpl.createVncToken((com.jervis.contracts.whatsapp_browser.SessionRef) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.VncTokenResponse>) responseObserver);
+          break;
         default:
           throw new AssertionError();
       }
@@ -615,9 +597,6 @@ public final class WhatsAppBrowserServiceGrpc {
     public io.grpc.stub.StreamObserver<Req> invoke(
         io.grpc.stub.StreamObserver<Resp> responseObserver) {
       switch (methodId) {
-        case METHODID_STREAM_VNC:
-          return (io.grpc.stub.StreamObserver<Req>) serviceImpl.streamVnc(
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.whatsapp_browser.VncFrame>) responseObserver);
         default:
           throw new AssertionError();
       }
@@ -655,12 +634,12 @@ public final class WhatsAppBrowserServiceGrpc {
               com.jervis.contracts.whatsapp_browser.LatestScrapeResponse>(
                 service, METHODID_GET_LATEST_SCRAPE)))
         .addMethod(
-          getStreamVncMethod(),
-          io.grpc.stub.ServerCalls.asyncBidiStreamingCall(
+          getCreateVncTokenMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
-              com.jervis.contracts.whatsapp_browser.VncFrame,
-              com.jervis.contracts.whatsapp_browser.VncFrame>(
-                service, METHODID_STREAM_VNC)))
+              com.jervis.contracts.whatsapp_browser.SessionRef,
+              com.jervis.contracts.whatsapp_browser.VncTokenResponse>(
+                service, METHODID_CREATE_VNC_TOKEN)))
         .build();
   }
 
@@ -713,7 +692,7 @@ public final class WhatsAppBrowserServiceGrpc {
               .addMethod(getInitSessionMethod())
               .addMethod(getTriggerScrapeMethod())
               .addMethod(getGetLatestScrapeMethod())
-              .addMethod(getStreamVncMethod())
+              .addMethod(getCreateVncTokenMethod())
               .build();
         }
       }

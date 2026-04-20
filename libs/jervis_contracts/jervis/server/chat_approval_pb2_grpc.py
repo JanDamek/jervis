@@ -5,7 +5,7 @@ import warnings
 
 from jervis.server import chat_approval_pb2 as jervis_dot_server_dot_chat__approval__pb2
 
-GRPC_GENERATED_VERSION = '1.80.0'
+GRPC_GENERATED_VERSION = '1.78.0'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 

@@ -18,7 +18,6 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
-import com.jervis.rpc.internal.installInternalMeetingVideoApi
 import com.jervis.agent.AgentOrchestratorRpcImpl
 import com.jervis.agent.AgentQuestionRpcImpl
 import com.jervis.agent.AutoResponseSettingsRpcImpl
@@ -32,7 +31,6 @@ import com.jervis.git.rpc.GpgCertificateRpcImpl
 import com.jervis.git.rpc.JobLogsRpcImpl
 import com.jervis.guidelines.GuidelinesRpcImpl
 import com.jervis.meeting.installMeetingHelperApi
-import com.jervis.rpc.internal.installInternalAttachmentApi
 import com.jervis.meeting.installWatchMeetingApi
 import com.jervis.preferences.DeviceTokenRpcImpl
 import com.jervis.preferences.SystemConfigRpcImpl
@@ -113,7 +111,6 @@ class KtorRpcServer(
     private val timeTrackingRpcImpl: com.jervis.timetracking.TimeTrackingRpcImpl,
     private val timeTrackingService: com.jervis.timetracking.TimeTrackingService,
     private val proactiveScheduler: com.jervis.proactive.ProactiveScheduler,
-    private val emailMessageIndexRepository: com.jervis.email.EmailMessageIndexRepository,
     private val directoryStructureService: com.jervis.infrastructure.storage.DirectoryStructureService,
     private val connectionRepository: com.jervis.connection.ConnectionRepository,
     private val o365DiscoveredResourceRepository: com.jervis.teams.O365DiscoveredResourceRepository,
@@ -161,7 +158,6 @@ class KtorRpcServer(
                             // Finance surface migrated to gRPC (jervis.server.ServerFinanceService).
                             // Time tracking + proactive triggers migrated to gRPC
                             // (jervis.server.Server{TimeTracking,Proactive}Service).
-                            installInternalAttachmentApi(emailMessageIndexRepository, directoryStructureService)
 
                             // Internal REST API modules (Python orchestrator → Kotlin)
                             // Chat context migrated to gRPC (jervis.server.ServerChatContextService).
@@ -182,8 +178,7 @@ class KtorRpcServer(
                             // Meeting read surface migrated to gRPC (jervis.server.ServerMeetingsService).
                             // Meeting-attend approval + presence migrated to gRPC
                             // (jervis.server.ServerMeetingAttendService).
-                            // Meeting recording bridge migrated to gRPC (jervis.server.ServerMeetingRecordingBridgeService).
-                            installInternalMeetingVideoApi(meetingRepository, directoryStructureService)
+                            // Meeting recording bridge (audio + video) migrated to gRPC (jervis.server.ServerMeetingRecordingBridgeService).
                             // Meeting-alone leave/stay migrated to gRPC (jervis.server.ServerMeetingAloneService).
                             // Chat-approval broadcast + resolved migrated to gRPC
                             // (jervis.server.ServerChatApprovalService).

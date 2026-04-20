@@ -22,6 +22,17 @@ service ServerMeetingRecordingBridgeService {
 
   // Fixes the WAV header and transitions the meeting to UPLOADED.
   rpc FinalizeRecording(FinalizeRecordingRequest) returns (FinalizeRecordingResponse);
+
+  // Video pipeline — o365-browser-pool streams raw WebM chunks from the
+  // browser-pod recorder. Channel is configured for 64 MiB inbound so a
+  // multi-MiB chunk fits inline; semantics mirror the REST endpoint they
+  // replaced (idempotent per chunk_index, count maintained on server).
+  rpc UploadVideoChunk(VideoChunkRequest) returns (VideoChunkAck);
+
+  // Closes the WebM upload session: sets state=UPLOADED, records webm_path,
+  // stamps videoRetentionUntil (365 d), and flips joinedByAgent based on the
+  // caller.
+  rpc FinalizeVideo(FinalizeVideoRequest) returns (FinalizeVideoResponse);
 }
 
 message StartRecordingRequest {
@@ -70,4 +81,35 @@ message FinalizeRecordingResponse {
   string id = 1;
   string state = 2;
   int64 duration_seconds = 3;
+}
+
+// Video pipeline ---------------------------------------------------------
+
+message VideoChunkRequest {
+  jervis.common.RequestContext ctx = 1;
+  string meeting_id = 2;
+  int32 chunk_index = 3;
+  bytes data = 4;          // raw WebM bytes (multi-MiB, inline on 64 MiB channel)
+}
+
+message VideoChunkAck {
+  string meeting_id = 1;
+  int32 chunk_index = 2;
+  bool deduped = 3;         // true if chunk_index was already on disk
+  int32 chunks_received = 4;
+  int32 bytes = 5;
+}
+
+message FinalizeVideoRequest {
+  jervis.common.RequestContext ctx = 1;
+  string meeting_id = 2;
+  string joined_by = 3;     // "user" | "agent"
+}
+
+message FinalizeVideoResponse {
+  string meeting_id = 1;
+  string state = 2;          // MeetingStateEnum.name (expected UPLOADED)
+  int32 chunks_received = 3;
+  string webm_path = 4;
+  string retention_until = 5; // ISO-8601 instant
 }
