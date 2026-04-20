@@ -154,3 +154,23 @@ tasks.register<JavaExec>("runPublic") {
     mainClass.set("com.jervis.desktop.MainKt")
     systemProperty("jervis.server.url", serverUrls["public"]!!)
 }
+
+// macOS native wrapper — builds the Compose Desktop distribution, stages
+// it into apps/macApp/, generates the Xcode project via xcodegen, signs
+// and launches the .app. Delegates to run-mac.sh at the repo root so the
+// Bash + Gradle paths stay in sync.
+tasks.register<Exec>("runMac") {
+    group = "application"
+    description = "Build + launch apps/macApp (Swift host with APNs + embedded Compose Desktop)"
+    onlyIf { org.gradle.internal.os.OperatingSystem.current().isMacOsX }
+    workingDir = rootProject.projectDir
+    commandLine("./run-mac.sh")
+}
+
+tasks.register<Exec>("runMacClean") {
+    group = "application"
+    description = "Like runMac, but wipes the staged JVM runtime + generated xcodeproj first"
+    onlyIf { org.gradle.internal.os.OperatingSystem.current().isMacOsX }
+    workingDir = rootProject.projectDir
+    commandLine("./run-mac.sh", "clean")
+}

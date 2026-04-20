@@ -1,0 +1,47 @@
+name: macApp
+
+options:
+  bundleIdPrefix: com.jervis
+  developmentLanguage: cs
+  deploymentTarget:
+    macOS: "13.0"
+  xcodeVersion: "15.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    # Set via env when running xcodegen / xcodebuild — default empty lets
+    # Xcode pick the user's personal team on first open.
+    DEVELOPMENT_TEAM: ${DEVELOPMENT_TEAM}
+    CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.9"
+    ENABLE_HARDENED_RUNTIME: YES
+    CODE_SIGN_ENTITLEMENTS: macApp/macApp.entitlements
+
+targets:
+  macApp:
+    type: application
+    platform: macOS
+    deploymentTarget: "13.0"
+    sources:
+      - path: macApp
+        excludes:
+          - "Info.plist"
+          - "macApp.entitlements"
+    info:
+      path: macApp/Info.plist
+    entitlements:
+      path: macApp/macApp.entitlements
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.jervis.macApp
+        PRODUCT_NAME: Jervis
+        INFOPLIST_FILE: macApp/Info.plist
+        CODE_SIGN_ENTITLEMENTS: macApp/macApp.entitlements
+        GENERATE_INFOPLIST_FILE: NO
+    # Compose Desktop runtime is staged into
+    # macApp/Resources/JervisDesktop/ by run-mac.sh before xcodebuild, so
+    # the generic `sources: - macApp` entry below already picks it up as
+    # copied resources.

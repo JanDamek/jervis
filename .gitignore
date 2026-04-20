@@ -27,3 +27,9 @@ backend/service-knowledgebase/scripts/
 # uv workspace — keep uv.lock committed for reproducibility, ignore venv
 .venv/
 .python-version
+
+# IntelliJ — .run/ holds shared run/debug configurations (committed).
+# User's global ~/.gitignore_global ignores .run by default; re-include it
+# here so the repo can ship reproducible run configs for the team.
+!.run/
+!.run/**
