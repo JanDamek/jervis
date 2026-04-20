@@ -1029,7 +1029,7 @@ class OrchestratorChatServicer(chat_pb2_grpc.OrchestratorChatServiceServicer):
 
         try:
             async for event in handle_chat(chat_request, disconnect_event):
-                if context.cancelled() or await context.done():
+                if context.cancelled():
                     logger.info("CHAT_DISCONNECT | session=%s | grpc context cancelled", session_id)
                     disconnect_event.set()
                     break
