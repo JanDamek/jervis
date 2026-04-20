@@ -67,12 +67,19 @@ class WhatsAppBrowserServicer(whatsapp_pb2_grpc.WhatsAppBrowserServiceServicer):
         context: grpc.aio.ServicerContext,
     ) -> whatsapp_pb2.InitSessionResponse:
         client_id = request.client_id
-        init = SessionInitRequest(
-            login_url=request.login_url or "https://web.whatsapp.com",
-            user_agent=request.user_agent or None,
-            capabilities=list(request.capabilities) or ["CHAT_READ"],
-            phone_number=request.phone_number or None,
-        )
+        # Proto3 defaults empty string for scalar fields, which `or None` turns
+        # into an explicit None — but SessionInitRequest.user_agent is a `str`
+        # with its own default ("Mozilla/5.0 …"), so passing None fails
+        # Pydantic validation. Build kwargs conditionally so an unset field
+        # falls back to the model default instead of blowing up.
+        init_kwargs: dict = {
+            "login_url": request.login_url or "https://web.whatsapp.com",
+            "capabilities": list(request.capabilities) or ["CHAT_READ"],
+            "phone_number": request.phone_number or None,
+        }
+        if request.user_agent:
+            init_kwargs["user_agent"] = request.user_agent
+        init = SessionInitRequest(**init_kwargs)
 
         browser_context = await self._browser.get_or_create_context(
             client_id, user_agent=init.user_agent,
