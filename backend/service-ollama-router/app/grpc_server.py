@@ -276,8 +276,13 @@ class RouterInferenceServicer(inference_pb2_grpc.RouterInferenceServiceServicer)
         context: grpc.aio.ServicerContext,
     ):
         body = _chat_request_to_body(request)
-        async for chunk in self._dispatch_stream(request.ctx, "/api/chat", body, context):
-            yield _ollama_chunk_to_chat(chunk)
+        try:
+            async for chunk in self._dispatch_stream(request.ctx, "/api/chat", body, context):
+                yield _ollama_chunk_to_chat(chunk)
+        except QueueCancelled as e:
+            await context.abort(grpc.StatusCode.CANCELLED, str(e))
+        except ProxyError as e:
+            await _abort_from_proxy_error(context, e)
 
     async def Generate(
         self,
@@ -285,8 +290,13 @@ class RouterInferenceServicer(inference_pb2_grpc.RouterInferenceServiceServicer)
         context: grpc.aio.ServicerContext,
     ):
         body = _generate_request_to_body(request)
-        async for chunk in self._dispatch_stream(request.ctx, "/api/generate", body, context):
-            yield _ollama_chunk_to_generate(chunk)
+        try:
+            async for chunk in self._dispatch_stream(request.ctx, "/api/generate", body, context):
+                yield _ollama_chunk_to_generate(chunk)
+        except QueueCancelled as e:
+            await context.abort(grpc.StatusCode.CANCELLED, str(e))
+        except ProxyError as e:
+            await _abort_from_proxy_error(context, e)
 
     async def Embed(
         self,

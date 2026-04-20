@@ -23,12 +23,26 @@ OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 
 
 def _build_openai_body(body: dict, cloud_model: str) -> dict:
-    messages = body.get("messages", [])
-    if not messages and body.get("prompt"):
+    raw_messages = body.get("messages", [])
+    if not raw_messages and body.get("prompt"):
         # /api/generate-shape input — lift to a chat message.
-        messages = [{"role": "user", "content": body["prompt"]}]
+        raw_messages = [{"role": "user", "content": body["prompt"]}]
         if body.get("system"):
-            messages.insert(0, {"role": "system", "content": body["system"]})
+            raw_messages.insert(0, {"role": "system", "content": body["system"]})
+
+    messages: list[dict] = []
+    for m in raw_messages:
+        converted = dict(m)
+        tc_list = converted.get("tool_calls")
+        if isinstance(tc_list, list):
+            converted["tool_calls"] = [_ollama_tc_to_openai(tc) for tc in tc_list]
+        # Ollama `images` (list of base64 strings) → OpenAI multimodal content.
+        images = converted.pop("images", None)
+        if images and isinstance(images, list):
+            converted["content"] = _compose_openai_multimodal(
+                converted.get("content", ""), images,
+            )
+        messages.append(converted)
 
     openai_body: dict = {
         "model": cloud_model,
@@ -43,6 +57,37 @@ def _build_openai_body(body: dict, cloud_model: str) -> dict:
     if body.get("tools"):
         openai_body["tools"] = body["tools"]
     return openai_body
+
+
+def _ollama_tc_to_openai(tc: dict) -> dict:
+    """Convert an Ollama-shape tool_call (args: dict) to OpenAI (arguments:
+    JSON string). Leaves already-stringified arguments alone."""
+    fn = tc.get("function") or {}
+    raw_args = fn.get("arguments")
+    if isinstance(raw_args, (dict, list)):
+        args_str = json.dumps(raw_args, ensure_ascii=False)
+    else:
+        args_str = str(raw_args) if raw_args is not None else ""
+    return {
+        "id": tc.get("id") or "",
+        "type": tc.get("type", "function"),
+        "function": {
+            "name": fn.get("name", ""),
+            "arguments": args_str,
+        },
+    }
+
+
+def _compose_openai_multimodal(text: str, images_b64: list[str]) -> list[dict]:
+    parts: list[dict] = []
+    if text:
+        parts.append({"type": "text", "text": text})
+    for b64 in images_b64:
+        parts.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
+        })
+    return parts
 
 
 def _headers(api_key: str) -> dict[str, str]:
