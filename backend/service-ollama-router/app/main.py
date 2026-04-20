@@ -72,10 +72,12 @@ async def lifespan(app: FastAPI):
     probe_task = asyncio.create_task(_model_probe_loop())
     persist_task = asyncio.create_task(_stats_persist_loop())
 
-    # gRPC admin surface — every /router/admin/* endpoint listens on :5501.
-    # FastAPI :11430 only keeps the Ollama-compatible passthrough.
+    # gRPC admin + inference surface on :5501. Every internal Jervis
+    # module dials this; no REST inference endpoint is exposed. FastAPI
+    # :11430 only keeps the Ollama-compatible *administrative* passthrough
+    # (show/pull/tags/ps/delete) used by operator-side debugging.
     from .grpc_server import start_grpc_server
-    grpc_server = await start_grpc_server(port=5501)
+    grpc_server = await start_grpc_server(router, port=5501)
 
     yield
     # Persist stats before shutdown
@@ -177,30 +179,81 @@ def _get_priority_header(request: Request) -> int | None:
     return None
 
 
-# ── Standard Ollama API – transparent proxy ─────────────────────────────
+# ── Ollama inference endpoints — TRANSITIONAL REST WRAP ───────────────
+# The canonical surface is `RouterInferenceService` (gRPC on :5501). The
+# FastAPI handlers below exist only while the remaining internal Jervis
+# modules are being cut over to gRPC. They delegate to the same
+# `router.dispatch_inference` path the gRPC servicer uses, then wrap the
+# iterator/dict back into a Starlette response.
+#
+# Delete these handlers once every caller of `/api/chat`, `/api/generate`,
+# `/api/embed`, `/api/embeddings` has been migrated — see Phase 1
+# deferred in `docs/inter-service-contracts-bigbang.md`.
+
+import json as _json
+from starlette.responses import StreamingResponse, JSONResponse as _JSON
+from .proxy import ProxyError as _ProxyError
+from .request_queue import QueueCancelled as _QueueCancelled
+
+
+async def _rest_inference(api_path: str, body: dict, http_request: Request):
+    """Run inference via the gRPC-shared dispatch path and wrap into HTTP."""
+    capability = (http_request.headers.get("X-Capability") or "").strip().lower() or None
+    client_id = http_request.headers.get("X-Client-Id") or None
+    try:
+        result = await router.dispatch_inference(
+            api_path, body,
+            capability=capability,
+            client_id=client_id,
+            intent=http_request.headers.get("X-Intent", "") or "",
+        )
+    except _QueueCancelled:
+        return _JSON(status_code=499, content={"error": "cancelled"})
+    except _ProxyError as e:
+        status = e.status_code or 502
+        return _JSON(
+            status_code=status,
+            content={"error": e.reason, "message": e.message},
+        )
+
+    if isinstance(result, dict):
+        return _JSON(content=result)
+
+    async def _stream():
+        try:
+            async for chunk in result:
+                yield (_json.dumps(chunk) + "\n").encode()
+        except _ProxyError as e:
+            yield (_json.dumps({
+                "error": e.reason, "status_code": e.status_code,
+                "message": e.message, "done": True,
+            }) + "\n").encode()
+
+    return StreamingResponse(_stream(), media_type="application/x-ndjson")
+
 
 @app.post("/api/generate")
 async def api_generate(request: Request):
     body = await request.json()
-    return await router.decide_and_dispatch("/api/generate", body, http_request=request)
+    return await _rest_inference("/api/generate", body, request)
 
 
 @app.post("/api/chat")
 async def api_chat(request: Request):
     body = await request.json()
-    return await router.decide_and_dispatch("/api/chat", body, http_request=request)
+    return await _rest_inference("/api/chat", body, request)
 
 
 @app.post("/api/embeddings")
 async def api_embeddings(request: Request):
     body = await request.json()
-    return await router.decide_and_dispatch("/api/embeddings", body, http_request=request)
+    return await _rest_inference("/api/embeddings", body, request)
 
 
 @app.post("/api/embed")
 async def api_embed(request: Request):
     body = await request.json()
-    return await router.decide_and_dispatch("/api/embed", body, http_request=request)
+    return await _rest_inference("/api/embed", body, request)
 
 
 @app.post("/api/show")

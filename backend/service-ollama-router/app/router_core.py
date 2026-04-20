@@ -12,9 +12,9 @@ import asyncio
 import logging
 import time
 import uuid
+from typing import AsyncIterator, Union
 
 import httpx
-from starlette.responses import Response, JSONResponse, StreamingResponse
 
 from .config import settings
 from .gpu_state import GpuBackend, GpuPool
@@ -23,6 +23,7 @@ from enum import Enum as _StdEnum
 
 from .models import (
     EMBEDDING_MODELS,
+    EMBEDDING_PATHS,
     GPU_MODEL_SETS,
     LOCAL_MODEL_CAPABILITIES,
     LOCAL_MODEL_CONTEXT,
@@ -34,6 +35,7 @@ from .models import (
     TrackedRequest,
     VLM_GPU,
 )
+from .proxy import is_streaming_request
 
 
 class _Bucket(str, _StdEnum):
@@ -407,31 +409,28 @@ class OllamaRouter:
         )
         return local_fallback
 
-    # ── Unified single-entry dispatch ──────────────────────────────────
+    # ── Unified single-entry dispatch (gRPC-only) ──────────────────────
 
-    async def decide_and_dispatch(
+    async def dispatch_inference(
         self,
         api_path: str,
         body: dict,
-        http_request,
-    ) -> Response:
-        """Single-pass route + dispatch.
+        *,
+        capability: str | None = None,
+        client_id: str | None = None,
+        intent: str = "",
+        priority: Priority = Priority.NORMAL,
+        deadline_iso: str | None = None,
+    ) -> Union[AsyncIterator[dict], dict]:
+        """Single-pass route + dispatch, returning an async iterator for
+        streaming (chat / generate) or a parsed dict for unary (embeddings).
 
-        Caller contract is minimal:
-          X-Capability  chat | thinking | coding | extraction | embedding | visual
-                        (falls back to detect_capability_from_body when missing)
-          X-Client-Id   resolves tier via CloudModelPolicy
-
-        Everything else — tier resolution, bucket/urgency, local vs cloud,
-        concrete model, retries, cooldowns — is the router's job. Model
-        reputation is tracked internally via report_model_error/success;
-        callers don't pass skip lists.
+        Every value that used to travel as an X-* header now comes in
+        typed args — the caller is the gRPC RouterInferenceServicer,
+        which extracts them from RequestContext.
         """
-        headers = http_request.headers
-        capability = (headers.get("X-Capability") or "").strip().lower()
         if not capability:
             capability = detect_capability_from_body(api_path, body)
-        client_id = headers.get("X-Client-Id") or None
         require_tools = bool(body.get("tools"))
 
         estimated_tokens = self._estimate_tokens(body)
@@ -444,115 +443,24 @@ class OllamaRouter:
         )
 
         if decision.get("target") == "openrouter":
-            from app.openrouter_proxy import proxy_to_openrouter
-            request_id = f"unified-{str(uuid.uuid4())[:6]}"
-            return await proxy_to_openrouter(
-                api_path, body,
-                decision["model"], decision["api_key"], request_id,
+            request_id = f"inf-{str(uuid.uuid4())[:6]}"
+            if is_streaming_request(body) and api_path not in EMBEDDING_PATHS:
+                from app.openrouter_proxy import stream_openrouter
+                return stream_openrouter(
+                    body, decision["model"], decision["api_key"], request_id,
+                )
+            from app.openrouter_proxy import call_openrouter
+            return await call_openrouter(
+                body, decision["model"], decision["api_key"], request_id,
             )
 
-        # Local path — substitute model from decision and queue-dispatch.
-        # `priority_header=None` lets route_request resolve the default via
-        # `_resolve_priority(model, None)` (NORMAL unless the caller set
-        # `x-ollama-priority` on the inbound HTTP request, in which case
-        # route_request itself will still pick it up via the http_request).
-        # The previous `int(priority)` referenced an undefined local —
-        # every /api/chat call from the Teams browser pod crashed with
-        # `NameError: name 'priority' is not defined`, which is what the
-        # user saw as "Teams VNC down" (the pod agent couldn't observe
-        # its own browser tab).
+        # Local path — substitute model and hand off to the queue.
         local_model = decision.get("model")
         if local_model:
             body["model"] = local_model
-        return await self.route_request(api_path, body, http_request=http_request)
-
-    # ── Instant cascade routing ────────────────────────────────────────
-
-    async def cascade_route(
-        self,
-        api_path: str,
-        body: dict,
-        http_request=None,
-    ) -> Response:
-        """Instant cascade: try GPU-1 → GPU-2 → OpenRouter FREE → PAID → PREMIUM → queue.
-
-        Used for latency-critical internal calls (voice pipeline, live assist).
-        Does NOT preempt running GPU work. Falls back to queuing if all busy.
-
-        Priority order:
-        1. GPU-1 (p40-1) — if idle, route immediately
-        2. GPU-2 (p40-2) — if idle, route immediately
-        3. OpenRouter FREE — if available model found
-        4. OpenRouter PAID — if available
-        5. OpenRouter PREMIUM — if available
-        6. Queue on first GPU that frees up (NORMAL priority, no preemption)
-        """
-        model = self._extract_model(body)
-        request_id = f"cascade-{str(uuid.uuid4())[:6]}"
-        start = time.monotonic()
-        whisper_busy = self.check_whisper_busy()
-
-        # Step 1-2: Try GPUs immediately (no queuing, no preemption)
-        for backend in self.gpu_pool.all_backends:
-            if not backend.healthy:
-                continue
-            if backend.active_request_count() > 0:
-                continue
-            if backend.loading_in_progress:
-                continue
-            if backend.name == VLM_GPU and whisper_busy:
-                continue
-            # Check if this GPU can run the model
-            gpu_models = GPU_MODEL_SETS.get(backend.name, [])
-            if model and model not in gpu_models:
-                continue
-
-            logger.info("CASCADE: %s → %s (free, immediate dispatch)", request_id, backend.name)
-            return await self._cascade_dispatch_gpu(
-                request_id, api_path, body, model, backend, http_request,
-            )
-
-        # Step 3-5: Try OpenRouter tiers (FREE → PAID → PREMIUM)
-        estimated_tokens = self._estimate_tokens(body)
-        for tier_name, tier_level in [("FREE", 1), ("PAID", 2), ("PREMIUM", 3)]:
-            cloud_model = await find_cloud_model_for_context(
-                estimated_tokens, tier_level, capability="chat",
-            )
-            if cloud_model:
-                api_key = await get_api_key()
-                logger.info("CASCADE: %s → OpenRouter %s (%s) after %.1fms",
-                            request_id, tier_name, cloud_model, (time.monotonic() - start) * 1000)
-                return await self._cascade_dispatch_cloud(
-                    request_id, api_path, body, cloud_model, api_key,
-                )
-
-        # Step 6: All busy — CASCADE queue (highest priority, preempts entire queue, waits for running GPU)
-        logger.info("CASCADE: %s → CASCADE queue (all targets busy, front of queue)", request_id)
-        return await self.route_request(api_path, body, Priority.CASCADE.value, http_request)
-
-    async def _cascade_dispatch_gpu(
-        self, request_id: str, api_path: str, body: dict,
-        model: str, backend, http_request,
-    ) -> Response:
-        """Dispatch directly to a specific GPU backend via the queue."""
-        request = TrackedRequest(
-            request_id=request_id,
-            model=model or settings.orchestrator_model,
-            priority=Priority.CASCADE,
-            api_path=api_path,
-            body=body,
+        return await self.route_request(
+            api_path, body, priority=priority, intent=intent, deadline_iso=deadline_iso,
         )
-        self._last_any_gpu_activity = time.monotonic()
-        self._idle_notified = False
-        return await self._queue.submit(request)
-
-    async def _cascade_dispatch_cloud(
-        self, request_id: str, api_path: str, body: dict,
-        cloud_model: str, api_key: str,
-    ) -> Response:
-        """Proxy request to OpenRouter cloud model."""
-        from app.openrouter_proxy import proxy_to_openrouter
-        return await proxy_to_openrouter(api_path, body, cloud_model, api_key, request_id)
 
     @staticmethod
     def _estimate_tokens(body: dict) -> int:
@@ -601,64 +509,45 @@ class OllamaRouter:
         self,
         api_path: str,
         body: dict,
-        priority_header: int | None = None,
-        http_request=None,
-    ) -> Response:
-        """Route an Ollama API request via the request queue.
+        *,
+        priority: Priority | None = None,
+        intent: str = "",
+        deadline_iso: str | None = None,
+    ) -> Union[AsyncIterator[dict], dict]:
+        """Queue + dispatch an inference request. Returns an async iterator
+        for streaming paths, or a dict for unary (embedding) paths.
 
-        Router ALWAYS accepts. Request is queued and dispatched when a
-        backend slot becomes available. Never returns 503/reject (except
-        when NORMAL queue is full → 429 back-pressure).
-
-        If http_request (FastAPI Request) is provided, monitors client disconnect
-        and sets cancel_event to abort zombie requests / dequeue.
+        Router ALWAYS accepts — requests that cannot run immediately wait
+        in the queue. Cancellation is signalled through
+        `TrackedRequest.cancel_event` (the gRPC servicer wires this to
+        the gRPC context's cancellation).
         """
         model = self._extract_model(body)
-        priority = self._resolve_priority(model, priority_header)
+        resolved_priority = priority if priority is not None else self._resolve_priority(model, None)
         request_id = str(uuid.uuid4())[:8]
 
         request = TrackedRequest(
             request_id=request_id,
             model=model,
-            priority=priority,
+            priority=resolved_priority,
             api_path=api_path,
             body=body,
+            deadline_iso=deadline_iso,
         )
 
-        # Track GPU activity for idle notification
         self._last_any_gpu_activity = time.monotonic()
         self._idle_notified = False
 
-        # ── Entry logging ──
         num_ctx = body.get("options", {}).get("num_ctx") if isinstance(body.get("options"), dict) else None
         qdepth = self._queue.queue_depth if self._queue else {}
         logger.info(
-            "REQUEST_IN: id=%s model=%s priority=%s path=%s num_ctx=%s queue=%s",
-            request_id, model, priority.name, api_path, num_ctx, qdepth,
+            "REQUEST_IN: id=%s model=%s priority=%s path=%s num_ctx=%s queue=%s intent=%s",
+            request_id, model, resolved_priority.name, api_path, num_ctx, qdepth, intent,
         )
-
-        # Start client disconnect monitor if http_request provided
-        disconnect_task = None
-        if http_request is not None:
-            disconnect_task = asyncio.create_task(
-                self._monitor_client_disconnect(http_request, request)
-            )
 
         start_time = time.monotonic()
         try:
-            response = await self._queue.submit(request)
-            duration = time.monotonic() - start_time
-            if isinstance(response, StreamingResponse):
-                logger.info(
-                    "REQUEST_OUT: id=%s routing=%.2fs (streaming — see PROXY_STREAM for total)",
-                    request_id, duration,
-                )
-            else:
-                logger.info(
-                    "REQUEST_OUT: id=%s duration=%.2fs",
-                    request_id, duration,
-                )
-            return response
+            result = await self._queue.submit(request)
         except Exception as e:
             duration = time.monotonic() - start_time
             logger.error(
@@ -666,33 +555,15 @@ class OllamaRouter:
                 request_id, duration, str(e),
             )
             raise
-        finally:
-            # Cancel disconnect monitor
-            if disconnect_task and not disconnect_task.done():
-                disconnect_task.cancel()
-                try:
-                    await disconnect_task
-                except (asyncio.CancelledError, Exception):
-                    pass
-            # Notify queue that a slot may have been freed
-            if self._queue:
-                self._queue.notify_slot_freed()
-
-    @staticmethod
-    async def _monitor_client_disconnect(http_request, tracked_request: TrackedRequest) -> None:
-        """Monitor HTTP client disconnect and set cancel_event to abort zombie proxying."""
-        try:
-            while not await http_request.is_disconnected():
-                await asyncio.sleep(2)
-            # Client disconnected — signal cancellation
-            if not tracked_request.cancel_event.is_set():
-                logger.warning(
-                    "CLIENT_DISCONNECT: id=%s model=%s — setting cancel_event",
-                    tracked_request.request_id, tracked_request.model,
-                )
-                tracked_request.cancel_event.set()
-        except asyncio.CancelledError:
-            pass  # Normal cleanup when request completes before disconnect
+        duration = time.monotonic() - start_time
+        if isinstance(result, dict):
+            logger.info("REQUEST_OUT: id=%s duration=%.2fs (unary)", request_id, duration)
+        else:
+            logger.info(
+                "REQUEST_OUT: id=%s routing=%.2fs (streaming — see PROXY_STREAM for total)",
+                request_id, duration,
+            )
+        return result
 
     # ── CRITICAL reservation management ─────────────────────────────────
     # Reservations are managed here (not in RequestQueue) because they're

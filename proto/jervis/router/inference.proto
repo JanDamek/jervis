@@ -1,0 +1,172 @@
+syntax = "proto3";
+
+package jervis.router;
+
+import "google/protobuf/struct.proto";
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.router";
+option java_multiple_files = true;
+option java_outer_classname = "RouterInferenceProto";
+
+// RouterInferenceService is the single entry point for all local Jervis
+// modules needing LLM / VLM / embedding inference. It supersedes the
+// former `/api/chat`, `/api/generate`, `/api/embeddings`, `/api/embed`
+// FastAPI routes — no internal module may talk to the router over REST.
+// The router itself still dispatches outward to the Ollama / OpenRouter
+// vendors over HTTP (vendor contracts), but that is strictly egress and
+// never visible on the router's input surface.
+//
+// Routing policy (capability + tier + priority + deadline) stays owned
+// by the router; callers pass the semantic intent via RequestContext
+// (see `jervis/common/types.proto`) and a best-effort `model_hint`. The
+// router substitutes the concrete model and backend per `decide_route`
+// in `service-ollama-router/app/router_core.py`.
+service RouterInferenceService {
+  // Streaming chat completion. Server emits incremental chunks; the
+  // final chunk carries `done=true` plus token usage + finish_reason.
+  // Tool calls (if any) are delivered either incrementally or once on
+  // the final chunk — consumer MUST accumulate across chunks.
+  rpc Chat(ChatRequest) returns (stream ChatChunk);
+
+  // Single-prompt generate — used primarily by VLM (image input) and
+  // legacy non-chat prompts (KB embedding-like, simple completions).
+  // Server-streamed for keep-alive parity with Chat.
+  rpc Generate(GenerateRequest) returns (stream GenerateChunk);
+
+  // Embeddings — unary. Returns one vector per input string in order.
+  rpc Embed(EmbedRequest) returns (EmbedResponse);
+}
+
+// ── Chat ───────────────────────────────────────────────────────────────
+
+message ChatRequest {
+  // RequestContext.scope.client_id resolves tenant tier via the router
+  // CloudModelPolicy cache. RequestContext.capability selects the
+  // routing bucket (chat / thinking / coding / extraction / visual).
+  // RequestContext.priority + deadline_iso feed urgency. intent is a
+  // free-form sub-capability tag ("qualifier", "voice", …).
+  jervis.common.RequestContext ctx = 1;
+
+  // Model the caller would prefer if local GPU is free. The router may
+  // substitute based on capability + tier + load. Empty = let router
+  // pick the default for the capability.
+  string model_hint = 2;
+
+  repeated ChatMessage messages = 3;
+  repeated Tool tools = 4;
+  ChatOptions options = 5;
+}
+
+message ChatMessage {
+  // "system" | "user" | "assistant" | "tool".
+  string role = 1;
+
+  // Text content. May be empty when the message is a tool_call-only
+  // assistant step or a multimodal message whose content lives in images.
+  string content = 2;
+
+  // Assistant-generated tool invocations. Populated on role="assistant"
+  // when the model chose to call tools instead of replying.
+  repeated ToolCall tool_calls = 3;
+
+  // Required on role="tool". Matches ToolCall.id from the preceding
+  // assistant message so the router / model can thread the response.
+  string tool_call_id = 4;
+
+  // Optional — some providers echo the tool name alongside the id.
+  string name = 5;
+
+  // Raw JPEG/PNG bytes for multimodal messages. Order is semantic
+  // (left-to-right reading). No base64 — typed binary end-to-end.
+  repeated bytes images = 6;
+}
+
+message ToolCall {
+  string id = 1;
+  string name = 2;
+  // Dynamic per-tool arguments. Typed end-to-end as a protobuf Struct
+  // (no JSON shuttle). The Tool.parameters schema constrains shape.
+  google.protobuf.Struct args = 3;
+}
+
+message Tool {
+  string name = 1;
+  string description = 2;
+  // JSON Schema describing the tool's parameters, represented as a
+  // typed Struct. The router forwards this verbatim to the model.
+  google.protobuf.Struct parameters = 3;
+}
+
+message ChatOptions {
+  // Sampling temperature. 0 for deterministic.
+  double temperature = 1;
+  // Max tokens to generate.
+  int32 num_predict = 2;
+  // Context window hint. Empty / 0 = backend default.
+  int32 num_ctx = 3;
+  // Nucleus sampling.
+  double top_p = 4;
+}
+
+message ChatChunk {
+  // Incremental text to append. Empty on tool-only chunks.
+  string content_delta = 1;
+
+  // Optional reasoning chain (qwen3 thinking, etc.). Incremental.
+  string thinking_delta = 2;
+
+  // Incremental or final tool_calls. Consumer should accumulate by id.
+  repeated ToolCall tool_calls = 3;
+
+  // True on the terminal chunk. Token counts + finish_reason populated
+  // only on done=true.
+  bool done = 4;
+
+  // "stop" | "tool_calls" | "length" | "error". Valid on done=true.
+  string finish_reason = 5;
+
+  int64 prompt_tokens = 6;
+  int64 completion_tokens = 7;
+
+  // Actual model the router dispatched to. Populated once (typically
+  // first chunk) so the caller can log / attribute.
+  string model_used = 8;
+}
+
+// ── Generate ──────────────────────────────────────────────────────────
+
+message GenerateRequest {
+  jervis.common.RequestContext ctx = 1;
+  string model_hint = 2;
+  string prompt = 3;
+  // Raw JPEG/PNG bytes for VLM. Empty for text-only generate.
+  repeated bytes images = 4;
+  ChatOptions options = 5;
+}
+
+message GenerateChunk {
+  string response_delta = 1;
+  bool done = 2;
+  int64 prompt_tokens = 3;
+  int64 completion_tokens = 4;
+  string model_used = 5;
+  string finish_reason = 6;
+}
+
+// ── Embed ─────────────────────────────────────────────────────────────
+
+message EmbedRequest {
+  jervis.common.RequestContext ctx = 1;
+  string model_hint = 2;
+  repeated string inputs = 3;
+}
+
+message EmbedResponse {
+  repeated Embedding embeddings = 1;
+  string model_used = 2;
+}
+
+message Embedding {
+  repeated float vector = 1;
+}

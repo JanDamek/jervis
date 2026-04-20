@@ -1,26 +1,63 @@
 """gRPC server for `service-ollama-router`.
 
-Hosts every `/router/admin/*` and `/router/internal/*` endpoint on gRPC
-port 5501. The transparent Ollama-compatible surface (`/api/generate`,
-`/api/chat`, `/api/embeddings`) stays on FastAPI port 11430 because that
-is a vendor contract (Ollama API) — consumers dial it as a generic
-OpenAI/Ollama client, not via our proto.
+Two services on port 5501:
+  * `RouterAdminService` — admin / telemetry (model errors, stats,
+    rate-limits, tier invalidation). Pure unary RPCs.
+  * `RouterInferenceService` — Chat (server-stream), Generate
+    (server-stream), Embed (unary). Every internal module that used to
+    POST to `/api/chat`, `/api/generate`, `/api/embed`, `/api/embeddings`
+    now dials this service. The router still forwards outward to the
+    Ollama / OpenRouter vendors over HTTP (egress vendor contract), but
+    no REST endpoint is exposed on the router's ingress surface.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import time
+from typing import AsyncIterator
 
 import grpc
 import httpx
+from google.protobuf import struct_pb2
+from google.protobuf.json_format import MessageToDict, ParseDict
 from grpc_reflection.v1alpha import reflection
 
-from jervis.router import admin_pb2, admin_pb2_grpc
+from jervis.router import admin_pb2, admin_pb2_grpc, inference_pb2, inference_pb2_grpc
 from jervis.common import enums_pb2
 from jervis_contracts.interceptors import ServerContextInterceptor
 
+from .proxy import ProxyError
+from .request_queue import QueueCancelled
+
 logger = logging.getLogger("ollama-router.grpc")
+
+
+# ── Priority + capability enum mapping ────────────────────────────────
+
+# proto Priority → router internal Priority (IntEnum defined in .models).
+# BACKGROUND = scheduled work (NORMAL queue); FOREGROUND = user waiting
+# (CRITICAL, preempts); CRITICAL proto = voice cascade (CASCADE, preempts
+# even queued CRITICAL).
+def _proto_priority_to_internal(value) -> "int":
+    from .models import Priority as InternalPriority
+    if value == enums_pb2.PRIORITY_FOREGROUND:
+        return InternalPriority.CRITICAL
+    if value == enums_pb2.PRIORITY_CRITICAL:
+        return InternalPriority.CASCADE
+    return InternalPriority.NORMAL
+
+
+_CAPABILITY_PROTO_TO_STR = {
+    enums_pb2.CAPABILITY_UNSPECIFIED: "",
+    enums_pb2.CAPABILITY_CHAT: "chat",
+    enums_pb2.CAPABILITY_THINKING: "thinking",
+    enums_pb2.CAPABILITY_CODING: "coding",
+    enums_pb2.CAPABILITY_EXTRACTION: "extraction",
+    enums_pb2.CAPABILITY_EMBEDDING: "embedding",
+    enums_pb2.CAPABILITY_VISUAL: "visual",
+}
 
 
 _TIER_CAP_TO_STR = {
@@ -221,7 +258,290 @@ class RouterAdminServicer(admin_pb2_grpc.RouterAdminServiceServicer):
         return admin_pb2.InvalidateClientTierResponse(invalidated=client_id or "all")
 
 
-async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
+class RouterInferenceServicer(inference_pb2_grpc.RouterInferenceServiceServicer):
+    """gRPC inference surface for every internal module.
+
+    Chat / Generate are server-streamed; Embed is unary. Each call resolves
+    routing policy via `OllamaRouter.dispatch_inference`, which returns
+    either an `AsyncIterator[dict]` (streaming) or a `dict` (unary). We
+    translate those to proto messages on the way out.
+    """
+
+    def __init__(self, router):
+        self._router = router  # OllamaRouter instance
+
+    async def Chat(
+        self,
+        request: inference_pb2.ChatRequest,
+        context: grpc.aio.ServicerContext,
+    ):
+        body = _chat_request_to_body(request)
+        async for chunk in self._dispatch_stream(request.ctx, "/api/chat", body, context):
+            yield _ollama_chunk_to_chat(chunk)
+
+    async def Generate(
+        self,
+        request: inference_pb2.GenerateRequest,
+        context: grpc.aio.ServicerContext,
+    ):
+        body = _generate_request_to_body(request)
+        async for chunk in self._dispatch_stream(request.ctx, "/api/generate", body, context):
+            yield _ollama_chunk_to_generate(chunk)
+
+    async def Embed(
+        self,
+        request: inference_pb2.EmbedRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> inference_pb2.EmbedResponse:
+        body = {"model": request.model_hint or "bge-m3", "input": list(request.inputs)}
+        try:
+            result = await self._router.dispatch_inference(
+                "/api/embed", body,
+                capability=_CAPABILITY_PROTO_TO_STR.get(
+                    request.ctx.capability, "embedding",
+                ) or "embedding",
+                client_id=request.ctx.scope.client_id or None,
+                intent=request.ctx.intent or "",
+                priority=_proto_priority_to_internal(request.ctx.priority),
+                deadline_iso=request.ctx.deadline_iso or None,
+            )
+        except QueueCancelled as e:
+            await context.abort(grpc.StatusCode.CANCELLED, str(e))
+            raise
+        except ProxyError as e:
+            await _abort_from_proxy_error(context, e)
+            raise
+
+        if not isinstance(result, dict):
+            # Unary path should always return dict; if the queue handed us
+            # an iterator (misconfig) drain it into a single dict.
+            logger.warning("Embed: got iterator instead of dict — draining")
+            acc: dict = {}
+            async for chunk in result:
+                if chunk.get("embeddings"):
+                    acc.setdefault("embeddings", []).extend(chunk["embeddings"])
+                elif chunk.get("embedding"):
+                    acc.setdefault("embeddings", []).append(chunk["embedding"])
+                acc["model"] = chunk.get("model", acc.get("model", ""))
+            result = acc
+
+        vectors = _extract_embeddings(result)
+        return inference_pb2.EmbedResponse(
+            embeddings=[
+                inference_pb2.Embedding(vector=v) for v in vectors
+            ],
+            model_used=result.get("model") or request.model_hint,
+        )
+
+    async def _dispatch_stream(
+        self,
+        ctx: "jervis_contracts.common.types_pb2.RequestContext",  # type: ignore
+        api_path: str,
+        body: dict,
+        context: grpc.aio.ServicerContext,
+    ) -> AsyncIterator[dict]:
+        capability = _CAPABILITY_PROTO_TO_STR.get(ctx.capability, "") or None
+        client_id = ctx.scope.client_id or None
+        priority = _proto_priority_to_internal(ctx.priority)
+        deadline_iso = ctx.deadline_iso or None
+
+        try:
+            result = await self._router.dispatch_inference(
+                api_path, body,
+                capability=capability,
+                client_id=client_id,
+                intent=ctx.intent or "",
+                priority=priority,
+                deadline_iso=deadline_iso,
+            )
+        except QueueCancelled as e:
+            await context.abort(grpc.StatusCode.CANCELLED, str(e))
+            return
+        except ProxyError as e:
+            await _abort_from_proxy_error(context, e)
+            return
+
+        if isinstance(result, dict):
+            # Non-streaming upstream — emit a single final chunk.
+            yield result
+            return
+
+        async for chunk in result:
+            yield chunk
+
+
+# ── Proto ↔ Ollama dict helpers ────────────────────────────────────────
+
+def _struct_to_dict(s: struct_pb2.Struct) -> dict:
+    if not s or not s.fields:
+        return {}
+    return MessageToDict(s, preserving_proto_field_name=True)
+
+
+def _dict_to_struct(d: dict) -> struct_pb2.Struct:
+    out = struct_pb2.Struct()
+    if d:
+        ParseDict(d, out)
+    return out
+
+
+def _chat_request_to_body(req: inference_pb2.ChatRequest) -> dict:
+    """Turn a ChatRequest into the Ollama /api/chat JSON body."""
+    messages: list[dict] = []
+    for m in req.messages:
+        msg: dict = {"role": m.role or "user"}
+        if m.content:
+            msg["content"] = m.content
+        if m.name:
+            msg["name"] = m.name
+        if m.tool_call_id:
+            msg["tool_call_id"] = m.tool_call_id
+        if m.images:
+            # Ollama expects base64 strings.
+            import base64
+            msg["images"] = [base64.b64encode(b).decode() for b in m.images]
+        if m.tool_calls:
+            msg["tool_calls"] = [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {
+                        "name": tc.name,
+                        "arguments": _struct_to_dict(tc.args),
+                    },
+                }
+                for tc in m.tool_calls
+            ]
+        messages.append(msg)
+
+    body: dict = {
+        "model": req.model_hint or "qwen3-coder-tool:latest",
+        "messages": messages,
+        "stream": True,
+    }
+    if req.tools:
+        body["tools"] = [
+            {
+                "type": "function",
+                "function": {
+                    "name": t.name,
+                    "description": t.description,
+                    "parameters": _struct_to_dict(t.parameters),
+                },
+            }
+            for t in req.tools
+        ]
+    opts: dict = {}
+    if req.options.temperature:
+        opts["temperature"] = req.options.temperature
+    if req.options.num_predict:
+        opts["num_predict"] = req.options.num_predict
+    if req.options.num_ctx:
+        opts["num_ctx"] = req.options.num_ctx
+    if req.options.top_p:
+        opts["top_p"] = req.options.top_p
+    if opts:
+        body["options"] = opts
+    return body
+
+
+def _generate_request_to_body(req: inference_pb2.GenerateRequest) -> dict:
+    body: dict = {
+        "model": req.model_hint or "qwen3-vl-tool:latest",
+        "prompt": req.prompt,
+        "stream": True,
+    }
+    if req.images:
+        import base64
+        body["images"] = [base64.b64encode(b).decode() for b in req.images]
+    opts: dict = {}
+    if req.options.temperature:
+        opts["temperature"] = req.options.temperature
+    if req.options.num_predict:
+        opts["num_predict"] = req.options.num_predict
+    if req.options.num_ctx:
+        opts["num_ctx"] = req.options.num_ctx
+    if req.options.top_p:
+        opts["top_p"] = req.options.top_p
+    if opts:
+        body["options"] = opts
+    return body
+
+
+def _ollama_chunk_to_chat(chunk: dict) -> inference_pb2.ChatChunk:
+    msg = chunk.get("message") or {}
+    content = msg.get("content", "") or ""
+    thinking = msg.get("thinking", "") or ""
+    tool_calls_proto: list[inference_pb2.ToolCall] = []
+    for tc in msg.get("tool_calls") or []:
+        fn = tc.get("function") or {}
+        args = fn.get("arguments")
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except Exception:
+                args = {}
+        tool_calls_proto.append(
+            inference_pb2.ToolCall(
+                id=tc.get("id", "") or "",
+                name=fn.get("name", "") or "",
+                args=_dict_to_struct(args or {}),
+            )
+        )
+
+    out = inference_pb2.ChatChunk(
+        content_delta=content,
+        thinking_delta=thinking,
+        tool_calls=tool_calls_proto,
+        done=bool(chunk.get("done", False)),
+        finish_reason=chunk.get("done_reason", "") or "",
+        prompt_tokens=int(chunk.get("prompt_eval_count", 0) or 0),
+        completion_tokens=int(chunk.get("eval_count", 0) or 0),
+        model_used=chunk.get("model", "") or "",
+    )
+    return out
+
+
+def _ollama_chunk_to_generate(chunk: dict) -> inference_pb2.GenerateChunk:
+    return inference_pb2.GenerateChunk(
+        response_delta=chunk.get("response", "") or "",
+        done=bool(chunk.get("done", False)),
+        prompt_tokens=int(chunk.get("prompt_eval_count", 0) or 0),
+        completion_tokens=int(chunk.get("eval_count", 0) or 0),
+        model_used=chunk.get("model", "") or "",
+        finish_reason=chunk.get("done_reason", "") or "",
+    )
+
+
+def _extract_embeddings(result: dict) -> list[list[float]]:
+    """Ollama returns either {embedding: [...]} or {embeddings: [[...]]}."""
+    if "embeddings" in result and isinstance(result["embeddings"], list):
+        return [list(v) for v in result["embeddings"]]
+    if "embedding" in result and isinstance(result["embedding"], list):
+        return [list(result["embedding"])]
+    return []
+
+
+async def _abort_from_proxy_error(
+    context: grpc.aio.ServicerContext, err: ProxyError,
+) -> None:
+    code = grpc.StatusCode.INTERNAL
+    if err.reason == "cancelled":
+        code = grpc.StatusCode.CANCELLED
+    elif err.reason == "backend_unavailable":
+        code = grpc.StatusCode.UNAVAILABLE
+    elif err.reason == "upstream_error" and err.status_code == 429:
+        code = grpc.StatusCode.RESOURCE_EXHAUSTED
+    elif err.reason == "upstream_error" and err.status_code and 400 <= err.status_code < 500:
+        code = grpc.StatusCode.INVALID_ARGUMENT
+    detail = err.message or err.reason
+    logger.warning("gRPC inference abort: code=%s reason=%s detail=%s", code, err.reason, detail)
+    await context.abort(code, detail)
+
+
+# ── Server bootstrap ──────────────────────────────────────────────────
+
+async def start_grpc_server(router, port: int = 5501) -> grpc.aio.Server:
     """Start the gRPC server on `port` and return the handle for later cleanup."""
     from jervis_contracts.grpc_options import build_server_options
 
@@ -230,14 +550,21 @@ async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
         options=build_server_options(),
     )
     admin_pb2_grpc.add_RouterAdminServiceServicer_to_server(RouterAdminServicer(), server)
+    inference_pb2_grpc.add_RouterInferenceServiceServicer_to_server(
+        RouterInferenceServicer(router), server,
+    )
 
     service_names = (
         admin_pb2.DESCRIPTOR.services_by_name["RouterAdminService"].full_name,
+        inference_pb2.DESCRIPTOR.services_by_name["RouterInferenceService"].full_name,
         reflection.SERVICE_NAME,
     )
     reflection.enable_server_reflection(service_names, server)
 
     server.add_insecure_port(f"[::]:{port}")
     await server.start()
-    logger.info("gRPC RouterAdminService listening on :%d", port)
+    logger.info(
+        "gRPC RouterAdminService + RouterInferenceService listening on :%d",
+        port,
+    )
     return server
