@@ -1,5 +1,6 @@
 package com.jervis.ui.notification
 
+import com.jervis.dto.notification.DeviceContextDto
 import com.jervis.dto.notification.DeviceTokenDto
 import com.jervis.service.notification.IDeviceTokenService
 import kotlinx.coroutines.flow.filterNotNull
@@ -7,9 +8,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 
 actual object PushTokenRegistrar {
-    private var lastRegisteredKey: String? = null
+    // In-memory dedup: last token value that was successfully uploaded.
+    // Persisted only per-process; a cold start will re-upload once which
+    // is fine — the backend is idempotent on deviceId.
+    private var lastRegisteredToken: String? = null
 
-    actual suspend fun registerIfNeeded(clientId: String, deviceTokenService: IDeviceTokenService) {
+    actual suspend fun registerTokenIfNeeded(deviceTokenService: IDeviceTokenService) {
         try {
             var token = IosTokenHolder.apnsToken
             var deviceId = IosTokenHolder.deviceId
@@ -27,27 +31,43 @@ actual object PushTokenRegistrar {
                 deviceId = pair.second
             }
 
-            // Dedup: don't re-register same token for same client
-            val key = "$clientId:$token"
-            if (key == lastRegisteredKey) return
+            if (token == lastRegisteredToken) return
 
             val result = deviceTokenService.registerToken(
                 DeviceTokenDto(
-                    clientId = clientId,
-                    token = token,
+                    deviceId = deviceId!!,
+                    token = token!!,
                     platform = "ios",
-                    deviceId = deviceId,
                 ),
             )
 
             if (result.success) {
-                lastRegisteredKey = key
-                println("APNs token registered for client $clientId")
+                lastRegisteredToken = token
+                println("APNs token registered, device $deviceId")
             } else {
                 println("APNs token registration failed: ${result.message}")
             }
         } catch (e: Exception) {
             println("APNs token registration error: ${e.message}")
+        }
+    }
+
+    actual suspend fun announceContext(clientId: String, deviceTokenService: IDeviceTokenService) {
+        try {
+            val deviceId = IosTokenHolder.deviceId
+            if (deviceId.isNullOrBlank()) {
+                // No deviceId yet — registerTokenIfNeeded hasn't run / token not arrived.
+                // Context will be announced later on next reconnect cycle.
+                return
+            }
+            val result = deviceTokenService.setActiveContext(
+                DeviceContextDto(deviceId = deviceId, clientId = clientId),
+            )
+            if (!result.success) {
+                println("APNs context announce failed: ${result.message}")
+            }
+        } catch (e: Exception) {
+            println("APNs context announce error: ${e.message}")
         }
     }
 }

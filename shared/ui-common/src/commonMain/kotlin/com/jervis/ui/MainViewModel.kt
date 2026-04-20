@@ -212,25 +212,30 @@ class MainViewModel(
             }
         }
 
-        // Register push token (FCM on Android, APNs on iOS, desktop) whenever
-        // we have BOTH a selected client AND a live RPC connection.
+        // Device presence loop — device token (APNs/FCM) vs client scope
+        // are two separate concerns:
         //
-        // Push tokens MUST reach the backend — an app can run offline for
-        // arbitrary time (cached data + infinite reconnect loop), so we
-        // don't time out. Instead we re-fire registration on every
-        // (clientId, Connected) pair as the user may well stay on the
-        // same __global__ selection through many reconnect cycles.
-        // distinctUntilChanged + PushTokenRegistrar.registerIfNeeded
-        // keep repeated emits a no-op when nothing changed.
+        //   - registerTokenIfNeeded() uploads the OS-level push token;
+        //     dedup per token value so it's a server round-trip only
+        //     when the token is freshly acquired or has rotated.
+        //   - announceContext() refreshes the device → client binding;
+        //     fired on every (clientId, Connected) pair so the backend's
+        //     push routing and registered event flow see the current
+        //     scope after each reconnect.
+        //
+        // Token registration MUST precede context announce (backend rejects
+        // setActiveContext for an unknown deviceId) — we run them
+        // sequentially in the same coroutine.
         scope.launch {
             combine(_selectedClientId, connectionManager.state) { cid, state ->
                 if (cid != null && state is RpcConnectionState.Connected) cid else null
             }.distinctUntilChanged().collect { readyClientId ->
                 if (readyClientId != null) {
                     runCatching {
-                        PushTokenRegistrar.registerIfNeeded(readyClientId, repository.deviceTokens)
+                        PushTokenRegistrar.registerTokenIfNeeded(repository.deviceTokens)
+                        PushTokenRegistrar.announceContext(readyClientId, repository.deviceTokens)
                     }.onFailure { e ->
-                        println("MainViewModel: push token registration failed — ${e.message}")
+                        println("MainViewModel: device registration failed — ${e.message}")
                     }
                 }
             }

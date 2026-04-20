@@ -11,13 +11,14 @@ import kotlin.uuid.Uuid
  * Stores:
  * - FCM token (updated on every onNewToken callback)
  * - Device ID (stable UUID generated once per install)
- * - Registration flag (tracks if token was sent to backend for current clientId)
+ * - Last registered token (tracks if the current token value has already
+ *   been uploaded to the backend; no clientId here — client scope is
+ *   announced separately via announceContext)
  */
 object FcmTokenStorage {
     private const val PREFS_NAME = "jervis_fcm"
     private const val KEY_TOKEN = "fcm_token"
     private const val KEY_DEVICE_ID = "device_id"
-    private const val KEY_REGISTERED_CLIENT = "registered_client"
     private const val KEY_REGISTERED_TOKEN = "registered_token"
 
     private fun prefs(context: Context): SharedPreferences =
@@ -26,7 +27,7 @@ object FcmTokenStorage {
     fun saveToken(context: Context, token: String) {
         prefs(context).edit()
             .putString(KEY_TOKEN, token)
-            // Invalidate registration — new token needs re-registration
+            // Invalidate last-registered — new token needs re-registration
             .remove(KEY_REGISTERED_TOKEN)
             .apply()
     }
@@ -45,22 +46,18 @@ object FcmTokenStorage {
         return deviceId
     }
 
-    fun markRegistered(context: Context, clientId: String, token: String) {
+    fun markRegistered(context: Context, token: String) {
         prefs(context).edit()
-            .putString(KEY_REGISTERED_CLIENT, clientId)
             .putString(KEY_REGISTERED_TOKEN, token)
             .apply()
     }
 
-    fun needsRegistration(context: Context, clientId: String): Boolean {
+    fun needsRegistration(context: Context): Boolean {
         val prefs = prefs(context)
-        val registeredClient = prefs.getString(KEY_REGISTERED_CLIENT, null)
         val registeredToken = prefs.getString(KEY_REGISTERED_TOKEN, null)
         val currentToken = prefs.getString(KEY_TOKEN, null)
 
-        // Need registration if: different client, no token registered, or token changed
-        return registeredClient != clientId ||
-            registeredToken == null ||
-            registeredToken != currentToken
+        // Need registration if: no current token yet, never registered, or token rotated
+        return currentToken != null && (registeredToken == null || registeredToken != currentToken)
     }
 }

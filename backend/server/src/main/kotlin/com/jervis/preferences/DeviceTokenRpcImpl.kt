@@ -1,6 +1,7 @@
 package com.jervis.preferences
 
 import com.jervis.dto.meeting.DeviceInfoDto
+import com.jervis.dto.notification.DeviceContextDto
 import com.jervis.dto.notification.DeviceTokenDto
 import com.jervis.dto.notification.DeviceTokenRegistrationResult
 import com.jervis.preferences.DeviceTokenDocument
@@ -14,9 +15,12 @@ import java.time.Instant
 /**
  * RPC implementation for device token management.
  *
- * Handles FCM/APNs token registration from mobile apps
- * so the backend can send push notifications.
- * Also serves as device registry for Meeting Helper and other real-time features.
+ * Two-endpoint split:
+ *  - [registerToken] — OS-level push token, rarely changes. Client calls
+ *    on first acquisition or rotation.
+ *  - [setActiveContext] — which client this device is scoped to right
+ *    now. Client calls on every RPC (re)connect so push routing and
+ *    lastSeen stay fresh without re-uploading the token blob.
  */
 @Component
 class DeviceTokenRpcImpl(
@@ -27,24 +31,25 @@ class DeviceTokenRpcImpl(
     override suspend fun registerToken(dto: DeviceTokenDto): DeviceTokenRegistrationResult {
         return try {
             val deviceType = try { DeviceType.valueOf(dto.deviceType) } catch (_: Exception) { DeviceType.UNKNOWN }
-            // Upsert by deviceId
+            val now = Instant.now()
             val existing = deviceTokenRepository.findByDeviceId(dto.deviceId)
             if (existing != null) {
                 val updated = existing.copy(
-                    clientId = dto.clientId,
                     token = dto.token,
                     platform = dto.platform,
                     deviceName = dto.deviceName.ifBlank { existing.deviceName },
                     deviceType = if (deviceType != DeviceType.UNKNOWN) deviceType else existing.deviceType,
                     capabilities = dto.capabilities.ifEmpty { existing.capabilities },
-                    lastSeen = Instant.now(),
-                    updatedAt = Instant.now(),
+                    lastSeen = now,
+                    updatedAt = now,
                 )
                 deviceTokenRepository.save(updated)
-                logger.info { "Updated device token for device=${dto.deviceId} platform=${dto.platform}" }
+                logger.info { "Updated push token for device=${dto.deviceId} platform=${dto.platform}" }
             } else {
+                // clientId is unknown at this point — setActiveContext will fill it
+                // on the first post-connect announcement.
                 val document = DeviceTokenDocument(
-                    clientId = dto.clientId,
+                    clientId = "",
                     token = dto.token,
                     platform = dto.platform,
                     deviceId = dto.deviceId,
@@ -53,11 +58,33 @@ class DeviceTokenRpcImpl(
                     capabilities = dto.capabilities,
                 )
                 deviceTokenRepository.save(document)
-                logger.info { "Registered new device token for device=${dto.deviceId} platform=${dto.platform}" }
+                logger.info { "Registered new push token for device=${dto.deviceId} platform=${dto.platform}" }
             }
             DeviceTokenRegistrationResult(success = true)
         } catch (e: Exception) {
-            logger.error(e) { "Failed to register device token for device=${dto.deviceId}" }
+            logger.error(e) { "Failed to register push token for device=${dto.deviceId}" }
+            DeviceTokenRegistrationResult(success = false, message = e.message)
+        }
+    }
+
+    override suspend fun setActiveContext(dto: DeviceContextDto): DeviceTokenRegistrationResult {
+        return try {
+            val existing = deviceTokenRepository.findByDeviceId(dto.deviceId)
+                ?: return DeviceTokenRegistrationResult(
+                    success = false,
+                    message = "device not registered — call registerToken first",
+                )
+            val now = Instant.now()
+            val updated = existing.copy(
+                clientId = dto.clientId,
+                lastSeen = now,
+                updatedAt = now,
+            )
+            deviceTokenRepository.save(updated)
+            logger.info { "Device context updated: deviceId=${dto.deviceId} clientId=${dto.clientId}" }
+            DeviceTokenRegistrationResult(success = true)
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to update device context for device=${dto.deviceId}" }
             DeviceTokenRegistrationResult(success = false, message = e.message)
         }
     }
