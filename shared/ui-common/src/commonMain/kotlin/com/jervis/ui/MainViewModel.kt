@@ -205,9 +205,19 @@ class MainViewModel(
                 println("MainViewModel: _selectedClientId changed to $clientId")
                 if (clientId != null) {
                     subscribeToEventStream(clientId)
-                    // Register push token (FCM on Android, APNs on iOS, desktop)
+                    // Register push token (FCM on Android, APNs on iOS, desktop).
+                    // Push token MUST reach the backend — wait for RPC Connected
+                    // instead of throwing OfflineException on first emit. If the
+                    // 10 s awaitConnected times out (still offline), fall through
+                    // silently — the next _selectedClientId emit after reconnect
+                    // will retry the registration.
                     scope.launch {
-                        PushTokenRegistrar.registerIfNeeded(clientId, repository.deviceTokens)
+                        runCatching {
+                            connectionManager.awaitConnected()
+                            PushTokenRegistrar.registerIfNeeded(clientId, repository.deviceTokens)
+                        }.onFailure { e ->
+                            println("MainViewModel: push token registration deferred — ${e.message}")
+                        }
                     }
                 } else {
                     eventJob?.cancel()
