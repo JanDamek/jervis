@@ -3195,6 +3195,24 @@ All scripts run on VD GPU VM (never K8s CPU pods):
 3. Deploy: copy `speaker_embedding.pt` → `TTS_DATA_DIR/speakers/jan-damek.pt`
 4. Hot-swap: `POST /set_speaker` or restart TTS service
 
+### VD GPU VM port layout (ollama.lan.mazlusek.com)
+
+Both XTTS and Whisper share the P40 and speak gRPC over h2c. Port
+assignment avoids the silent bind-race seen on 2026-04-20 when both
+services defaulted to 5501 and only the first-starting systemd unit
+actually listened:
+
+| Port | Service | Systemd unit | Notes |
+|------|---------|--------------|-------|
+| 5501 | XTTS v2 (`service-tts`) gRPC | `jervis-tts-gpu` | Deployed via `k8s/deploy_xtts_gpu.sh` |
+| 5502 | Whisper (`service-whisper`) gRPC | `jervis-whisper` | Deployed via `k8s/deploy_whisper_gpu.sh` — env `WHISPER_GRPC_PORT=5502` |
+| 8786 | Whisper FastAPI (legacy `/health`, `/gpu/release`) | same unit | Kept for the ollama-router GPU coordination — pod-to-pod transcription traffic is gRPC-only. |
+| 11434 | Ollama | `ollama` | Raw model serving, consumed by `service-ollama-router`. |
+
+Kotlin clients hard-code these ports (`TtsGrpcClient` → 5501,
+`WhisperRestClient.parseTarget` → 5502). Adding a new VD-hosted
+service means allocating the next free port (5503…) and matching the
+env on both the server script and the consumer.
 
 ---
 

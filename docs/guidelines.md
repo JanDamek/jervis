@@ -185,7 +185,35 @@ current snapshot immediately so the UI is never empty.
 
 SSOT: `docs/ui-design.md` §"Reactive data streams".
 
-### 10. Per-connection browser pods (Teams, WhatsApp, future O365-likes)
+### 10. gRPC everywhere, REST only at system boundaries
+
+**Internal pod-to-pod communication is gRPC over h2c.** REST is reserved
+for (a) external APIs (GitHub, Atlassian, O365…), (b) Prometheus
+`/metrics`, (c) K8s `/health` readiness/liveness probes, and (d) Ollama
+compatibility (`service-ollama-router` exposes `/api/*` so `ollama` CLI
+and third-party libraries can route through it).
+
+Every other hop — Kotlin server ↔ Python service, VD GPU workloads,
+browser pods — speaks gRPC on the `5501` pod-to-pod family. When two
+services coexist on the same host (e.g. XTTS + Whisper on the VD),
+allocate the next free port (5502…) so both can bind; don't let one
+silently lose the race at startup.
+
+Changes that touch `proto/**/*.proto` or anything under
+`libs/jervis_contracts/jervis/**/*_pb2*.py` are **breaking across every
+consumer**. Build order matters:
+
+1. Regenerate stubs (`make proto-generate` / `./gradlew protoGenerate`).
+2. Full rebuild — `./gradlew jervisBuildAll` + `./k8s/build_all.sh` or
+   at minimum every service that imports the changed stub (server,
+   orchestrator, KB, MCP, ollama-router, browser pods, TTS, Whisper,
+   etc.). Partial rebuilds leave half the fleet with mismatched wire
+   formats and will crash at the first RPC.
+3. Redeploy **all** dependents in one sweep — skipping one produces
+   runtime `VersionError` / `Detected mismatched Protobuf Runtime` at
+   the first import.
+
+### 11. Per-connection browser pods (Teams, WhatsApp, future O365-likes)
 
 **One pod per Connection. Autonomous ReAct agent. DOM-first. Router-only LLM.**
 
