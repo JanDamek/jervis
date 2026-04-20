@@ -223,7 +223,12 @@ class RouterAdminServicer(admin_pb2_grpc.RouterAdminServiceServicer):
 
 async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     """Start the gRPC server on `port` and return the handle for later cleanup."""
-    server = grpc.aio.server(interceptors=[ServerContextInterceptor()])
+    from jervis_contracts.grpc_options import build_server_options
+
+    server = grpc.aio.server(
+        interceptors=[ServerContextInterceptor()],
+        options=build_server_options(),
+    )
     admin_pb2_grpc.add_RouterAdminServiceServicer_to_server(RouterAdminServicer(), server)
 
     service_names = (

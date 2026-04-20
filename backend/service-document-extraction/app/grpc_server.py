@@ -81,13 +81,11 @@ class DocumentExtractionServicer(extract_pb2_grpc.DocumentExtractionServiceServi
 
 async def start_grpc_server(extractor, port: int = 5501) -> grpc.aio.Server:
     """Start the gRPC server on `port` and return the handle for cleanup."""
-    max_msg_bytes = 64 * 1024 * 1024
+    from jervis_contracts.grpc_options import build_server_options
+
     server = grpc.aio.server(
         interceptors=[ServerContextInterceptor()],
-        options=[
-            ("grpc.max_receive_message_length", max_msg_bytes),
-            ("grpc.max_send_message_length", max_msg_bytes),
-        ],
+        options=build_server_options(),
     )
     extract_pb2_grpc.add_DocumentExtractionServiceServicer_to_server(
         DocumentExtractionServicer(extractor), server,

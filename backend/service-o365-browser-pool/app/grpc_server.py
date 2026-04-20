@@ -281,13 +281,11 @@ async def start_grpc_server(
     vnc_auth_manager: VncAuthManager,
     port: int = 5501,
 ) -> grpc.aio.Server:
-    max_msg_bytes = 64 * 1024 * 1024
+    from jervis_contracts.grpc_options import build_server_options
+
     server = grpc.aio.server(
         interceptors=[ServerContextInterceptor()],
-        options=[
-            ("grpc.max_receive_message_length", max_msg_bytes),
-            ("grpc.max_send_message_length", max_msg_bytes),
-        ],
+        options=build_server_options(),
     )
     pool_pb2_grpc.add_O365BrowserPoolServiceServicer_to_server(
         O365BrowserPoolServicer(

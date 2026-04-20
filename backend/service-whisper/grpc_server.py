@@ -248,13 +248,12 @@ class WhisperServicer(transcribe_pb2_grpc.WhisperServiceServicer):
 
 
 async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
-    max_msg_bytes = 256 * 1024 * 1024  # meeting audio files can be large
+    from jervis_contracts.grpc_options import build_server_options
+
+    # Meeting audio files can be >64 MiB per transcribe.
     server = grpc.aio.server(
         interceptors=[ServerContextInterceptor()],
-        options=[
-            ("grpc.max_receive_message_length", max_msg_bytes),
-            ("grpc.max_send_message_length", max_msg_bytes),
-        ],
+        options=build_server_options(max_msg_bytes=256 * 1024 * 1024),
     )
     transcribe_pb2_grpc.add_WhisperServiceServicer_to_server(WhisperServicer(), server)
 

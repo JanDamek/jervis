@@ -88,13 +88,11 @@ class VisualCaptureServicer(capture_pb2_grpc.VisualCaptureServiceServicer):
 
 
 async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
-    max_msg_bytes = 16 * 1024 * 1024
+    from jervis_contracts.grpc_options import build_server_options
+
     server = grpc.aio.server(
         interceptors=[ServerContextInterceptor()],
-        options=[
-            ("grpc.max_receive_message_length", max_msg_bytes),
-            ("grpc.max_send_message_length", max_msg_bytes),
-        ],
+        options=build_server_options(max_msg_bytes=16 * 1024 * 1024),
     )
     capture_pb2_grpc.add_VisualCaptureServiceServicer_to_server(
         VisualCaptureServicer(), server,
