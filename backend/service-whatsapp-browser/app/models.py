@@ -23,23 +23,11 @@ class SessionStatus(BaseModel):
     message: str | None = None
 
 
-class SessionInitRequest(BaseModel):
-    login_url: str = "https://web.whatsapp.com"
-    user_agent: str = (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/131.0.0.0 Safari/537.36"
-    )
-    capabilities: list[str] = ["CHAT_READ"]
-    # Phone number — informational only, not used for login
-    phone_number: str | None = None
-
-
-class SessionInitResponse(BaseModel):
-    client_id: str
-    state: SessionState
-    novnc_url: str | None = None
-    message: str
+# SessionInitRequest / SessionInitResponse removed 2026-04-20 — gRPC
+# `jervis.whatsapp_browser.WhatsAppBrowserService.InitSession` is the
+# only caller and speaks the typed Protobuf message directly. No need
+# for a parallel Pydantic mirror; mirrors invite the "proto default
+# "" becomes Pydantic None" class of bug (see guideline §11).
 
 
 class WhatsAppMessage(BaseModel):

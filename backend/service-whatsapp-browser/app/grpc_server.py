@@ -14,7 +14,12 @@ from grpc_reflection.v1alpha import reflection
 
 from app.browser_manager import BrowserManager
 from app.config import settings
-from app.models import SessionInitRequest, SessionState
+from app.config import (
+    DEFAULT_CAPABILITIES,
+    DEFAULT_LOGIN_URL,
+    DEFAULT_USER_AGENT,
+)
+from app.models import SessionState
 from app.scrape_storage import ScrapeStorage
 from app.screen_scraper import WhatsAppScraper
 from app.vnc_auth import VncAuthManager
@@ -66,23 +71,23 @@ class WhatsAppBrowserServicer(whatsapp_pb2_grpc.WhatsAppBrowserServiceServicer):
         request: whatsapp_pb2.InitSessionRequest,
         context: grpc.aio.ServicerContext,
     ) -> whatsapp_pb2.InitSessionResponse:
+        # Use the typed Protobuf request directly — no intermediate Pydantic
+        # mirror. Proto3 scalar fields default to "" when the caller doesn't
+        # set them; fall back to the module-level defaults in config.py for
+        # those cases. Guideline §11.
+        #
+        # Note: `request.capabilities` and `request.phone_number` are
+        # currently not consumed by the handler (the browser session logs
+        # in via QR regardless of requested capabilities, and phone_number
+        # is informational). They stay on the proto wire so the existing
+        # Kotlin → Python surface keeps working, but we don't bind them
+        # to Python locals until someone actually needs them.
         client_id = request.client_id
-        # Proto3 defaults empty string for scalar fields, which `or None` turns
-        # into an explicit None — but SessionInitRequest.user_agent is a `str`
-        # with its own default ("Mozilla/5.0 …"), so passing None fails
-        # Pydantic validation. Build kwargs conditionally so an unset field
-        # falls back to the model default instead of blowing up.
-        init_kwargs: dict = {
-            "login_url": request.login_url or "https://web.whatsapp.com",
-            "capabilities": list(request.capabilities) or ["CHAT_READ"],
-            "phone_number": request.phone_number or None,
-        }
-        if request.user_agent:
-            init_kwargs["user_agent"] = request.user_agent
-        init = SessionInitRequest(**init_kwargs)
+        login_url = request.login_url or DEFAULT_LOGIN_URL
+        user_agent = request.user_agent or DEFAULT_USER_AGENT
 
         browser_context = await self._browser.get_or_create_context(
-            client_id, user_agent=init.user_agent,
+            client_id, user_agent=user_agent,
         )
 
         if browser_context.pages:
@@ -90,10 +95,10 @@ class WhatsAppBrowserServicer(whatsapp_pb2_grpc.WhatsAppBrowserServiceServicer):
             for extra in browser_context.pages[1:]:
                 await extra.close()
             if "whatsapp.com" not in (page.url or ""):
-                await page.goto(init.login_url, wait_until="domcontentloaded", timeout=30000)
+                await page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
         else:
             page = await browser_context.new_page()
-            await page.goto(init.login_url, wait_until="domcontentloaded", timeout=30000)
+            await page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
 
         self._scraper.set_connection_id(client_id)
         asyncio.create_task(

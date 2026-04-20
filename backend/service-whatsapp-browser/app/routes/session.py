@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException
 from app.browser_manager import BrowserManager
 from app.config import settings
 from app.kotlin_callback import notify_capabilities_discovered, notify_session_state
-from app.models import SessionInitRequest, SessionInitResponse, SessionState, SessionStatus
+from app.models import SessionState, SessionStatus
 from app.scrape_storage import ScrapeStorage
 from app.screen_scraper import WhatsAppScraper
 
@@ -25,42 +25,10 @@ def create_session_router(
     scrape_storage: ScrapeStorage,
 ) -> APIRouter:
 
-    async def init_session(client_id: str, request: SessionInitRequest) -> SessionInitResponse:
-        """Initialize a WhatsApp Web browser session.
-
-        Opens WhatsApp Web in a Playwright context. The user must scan the QR code
-        via noVNC to complete login.
-        """
-        context = await browser_manager.get_or_create_context(
-            client_id,
-            user_agent=request.user_agent,
-        )
-
-        # Reuse existing page or create one — never open multiple tabs
-        if context.pages:
-            page = context.pages[0]
-            # Close extra tabs if any
-            for extra in context.pages[1:]:
-                await extra.close()
-            # Navigate only if not already on WhatsApp
-            if "whatsapp.com" not in (page.url or ""):
-                await page.goto(request.login_url, wait_until="domcontentloaded", timeout=30000)
-        else:
-            page = await context.new_page()
-            await page.goto(request.login_url, wait_until="domcontentloaded", timeout=30000)
-
-        # Set connection ID for storage
-        scraper.set_connection_id(client_id)
-
-        # Start QR monitoring in background
-        asyncio.create_task(_monitor_qr_login(client_id, browser_manager, scraper, scrape_storage))
-
-        return SessionInitResponse(
-            client_id=client_id,
-            state=SessionState.PENDING_LOGIN,
-            novnc_url=f"{settings.novnc_external_url}/vnc-login",
-            message="WhatsApp Web otevřen. Naskenujte QR kód telefonem.",
-        )
+    # Session init flow moved to gRPC `WhatsAppBrowserService.InitSession`
+    # (see app/grpc_server.py). Legacy FastAPI `init_session` helper was
+    # never wired to an @router decorator — removed 2026-04-20 to kill
+    # the Pydantic SessionInitRequest mirror (guideline §11).
 
     async def get_session_status(client_id: str) -> SessionStatus:
         """Get current session status."""

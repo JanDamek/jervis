@@ -213,7 +213,56 @@ consumer**. Build order matters:
    runtime `VersionError` / `Detected mismatched Protobuf Runtime` at
    the first import.
 
-### 11. Per-connection browser pods (Teams, WhatsApp, future O365-likes)
+### 11. No dict/map shuttles between proto and domain code
+
+**Hard limit.** Data that crosses a service boundary travels as a
+**typed Protobuf message** end-to-end. Inside the service the proto
+object is handed to typed helpers — repositories, Pydantic/POJO
+domain models, `@dataclass`, Kotlin `data class`. Shuttle containers
+(`dict[str, Any]`, `Map<String, Any>`, raw `JsonObject`, Python
+`**kwargs` builders) are **forbidden** as the primary typed surface.
+
+Why: every time we let a mapping of raw fields bridge a proto ↔
+domain gap we recreate the same class of bug — a field on one side
+has a default, the other side overwrites it with `None`, and the
+wire validation blows up in production. Already burned twice:
+
+- KB `observedAt` — Python `datetime` default overwritten by
+  `str(...) or None` in the gRPC translator (commit `eca691293`).
+- WhatsApp `SessionInitRequest.user_agent` — Pydantic `str`
+  default clobbered by `request.user_agent or None`
+  (commit `56518e6a5` introduced a dict workaround, cleaned up in
+  this commit by removing the Pydantic mirror entirely).
+
+#### Rules
+
+- **Use the proto type directly** inside the handler. Proto3 scalar
+  defaults (`""`, `0`, `false`, `[]`) are the wire-level "unset" —
+  read them as such and fall back to a module-level constant, never
+  a parallel Pydantic model with its own default that you then have
+  to reconcile.
+- **If you need richer behaviour** (validators, derived properties),
+  add a typed wrapper around the proto (`@dataclass` from proto,
+  or a Pydantic model that takes the proto in its `__init__`) — not
+  a dict.
+- **Constants live in `app/config.py` / Kotlin `*Properties`.**
+  Never inline magic strings for defaults inside a translator.
+- **No `Map<String, Any>`** across Kotlin service boundaries either.
+  If a payload is polymorphic, add a proto `oneof`; if it's truly
+  opaque, make the proto field `bytes` + declare the content-type in
+  a sibling `string content_type` — but keep the envelope typed.
+- **No `**kwargs` conditional builders** around a typed constructor.
+  Build the proto, pass the proto. Conditional branches belong in
+  the constants / fallback, not in the kwargs dict.
+
+#### Review gate
+
+If a PR introduces `dict[str, Any]`, `Map<String, Any>`, or
+`init_kwargs = {...}` *anywhere* along an RPC entry/exit path, it
+bounces. Same for new Pydantic/data-class mirrors of a proto message
+that could just read the proto directly.
+
+### 12. Per-connection browser pods (Teams, WhatsApp, future O365-likes)
 
 **One pod per Connection. Autonomous ReAct agent. DOM-first. Router-only LLM.**
 
