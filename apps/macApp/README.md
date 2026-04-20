@@ -1,9 +1,20 @@
-# Jervis macApp — native APNs wrapper for Compose Desktop
+# Jervis macApp — native APNs helper for Compose Desktop
 
-Swift/SwiftUI host that registers for APNs, receives push payloads, and
-forwards both to the Compose Desktop JVM child over a Unix socket.
-Required because Compose Desktop runs as a plain JVM process and can't
-hold the `aps-environment` entitlement on its own.
+Two-app architecture on macOS:
+
+- **macApp.app** (this folder) — menubar-only Swift helper
+  (`LSUIElement`), holds the `aps-environment` entitlement, registers
+  for APNs, and relays the token + incoming push payloads to the JVM
+  over `/tmp/jervis-macapp-apns.sock`.
+- **Jervis.app** (existing `apps/desktop` jpackage bundle) — Compose
+  Desktop JVM. Dials the Unix socket on startup, feeds the APNs token
+  into `registerTokenIfNeeded(platform="macos")`.
+
+The two apps run independently. macApp is a background daemon (no Dock
+icon); the Compose window is the normal user-facing UI started via
+`./gradlew :apps:desktop:runPublic`. JVM embedding inside macApp.app
+was attempted but abandoned: jpackage launchers hard-code their
+`.cfg` path relative to the enclosing `.app`, so they can't be nested.
 
 Windows and Linux Desktop builds keep using the bare JVM Compose
 distribution with no background push — see
@@ -17,111 +28,94 @@ apps/macApp/
 │   ├── macAppApp.swift       @main — hosts AppDelegate, no visible UI
 │   ├── AppDelegate.swift     NSApplicationDelegate — APNs + notification delegate
 │   ├── SocketBridge.swift    Unix socket server (Swift → JVM, JSON-per-line)
-│   ├── ComposeLauncher.swift Spawns the bundled Compose Desktop JVM
-│   ├── Info.plist            Bundle id com.jervis.macApp, usage strings
-│   └── macApp.entitlements   aps-environment + network + JVM JIT
+│   ├── ComposeLauncher.swift Stub — embedding is intentionally not implemented
+│   ├── Info.plist            Placeholder; xcodegen expands the real keys
+│   └── macApp.entitlements   Placeholder; xcodegen expands the real keys
+├── project.yml               xcodegen spec (Info.plist/entitlements SSOT)
 └── README.md
 ```
 
-No `.xcodeproj` is committed (binary pbxproj would constantly churn in
-git). Create the project in Xcode once per clone:
+`Info.plist` and `macApp.entitlements` are **generated from
+`project.yml`** on every `xcodegen generate` run. Local linters /
+editors reset them to minimal stubs — that's fine, the full content
+lives in the YAML spec. Do not rely on their on-disk contents.
 
-1. **Xcode → File → New → Project…** → macOS → App → Next.
-2. Product Name: `macApp`, Team: your Apple Developer team, Bundle
-   Identifier: `com.jervis.macApp`, Interface: SwiftUI, Language: Swift.
-3. Save the project at `apps/macApp/` (so `macApp.xcodeproj` sits next
-   to the existing `macApp/` folder).
-4. Xcode will create its own `macApp/` subfolder — **delete the
-   auto-generated files inside it** and drag in the committed
-   `macAppApp.swift`, `AppDelegate.swift`, `SocketBridge.swift`,
-   `ComposeLauncher.swift`, `Info.plist`, `macApp.entitlements`
-   via the Project Navigator (Add Files to "macApp"…, uncheck "Copy
-   items if needed").
-5. **Build Settings → Signing & Capabilities**:
-   - Team: your team
-   - Bundle Identifier: `com.jervis.macApp`
-   - Code-sign with Developer ID Application (distribution) or
-     Developer ID (local dev)
-   - Capabilities → `+ Capability`: Push Notifications (adds
-     `aps-environment`), Hardened Runtime (allow-jit +
-     allow-unsigned-executable-memory +
-     disable-library-validation — mirrored from
-     `macApp.entitlements`).
-6. **Build Settings → Info** → set the Info.plist path to the committed
-   `macApp/Info.plist`.
-7. **Build Settings → Code Signing Entitlements** → set to the committed
-   `macApp/macApp.entitlements`.
+No `.xcodeproj` is committed; `run-mac.sh` generates it fresh each
+invocation.
 
-## APNs key (reuse iOS one)
-
-The `.p8` APNs Auth Key issued for `apps/iosApp` works for any bundle
-id in the same Apple Developer team, so the backend
-`ApnsPushService` configuration doesn't need to change. Just make sure
-`com.jervis.macApp` is a registered App ID in your developer account
-and has the "Push Notifications" capability enabled.
-
-## Embedding Compose Desktop JVM
-
-The wrapper expects the JRE + app jar at
-`macApp.app/Contents/Resources/JervisDesktop/`. Produce that tree with:
+## Build + launch
 
 ```bash
-./gradlew :apps:desktop:packageDistributionForCurrentOS
-# → apps/desktop/build/compose/binaries/main/app/Jervis.app
+./run-mac.sh          # xcodegen → xcodebuild → open Jervis.app (macApp)
+./run-mac.sh clean    # additionally wipes build/macapp and the xcodeproj
+
+# Then, in a second terminal, start the Compose Desktop client:
+./gradlew :apps:desktop:runPublic
 ```
 
-Then in Xcode: **Build Phases → + → New Copy Files Phase**, Destination
-`Resources`, Subpath `JervisDesktop`, and drag the *contents* of the
-generated `Jervis.app` (the `Contents` directory). `ComposeLauncher`
-runs `Contents/runtime/Contents/Home/bin/java -cp …/app/*
-com.jervis.desktop.MainKt` against that tree at startup.
+Logs:
+
+```bash
+log stream --predicate 'process == "Jervis"' --style compact
+```
+
+## IntelliJ run configurations
+
+The repo ships `.run/Mac App (runMac).run.xml` and `.run/Mac App -
+clean (runMacClean).run.xml` — IntelliJ picks them up as shared Run
+Configurations alongside `runLocal`/`runRemote`/`runPublic`. Under the
+hood they call the Gradle tasks `:apps:desktop:runMac` /
+`:apps:desktop:runMacClean`, which in turn call `run-mac.sh`.
+
+## Enabling APNs (first-run signing setup)
+
+`project.yml` intentionally does **not** include the `aps-environment`
+entitlement: that key requires signing with a real Developer
+certificate, which a vanilla `./run-mac.sh` with ad-hoc signing can't
+provide. Once per workstation:
+
+1. Register App ID `com.jervis.macApp` in the Apple Developer portal
+   with **Push Notifications** enabled (the existing `.p8` APNs Auth
+   Key from `apps/iosApp` works under the same Team ID).
+2. Export your team ID: `export DEVELOPMENT_TEAM=ABCDE12345`.
+3. Open `apps/macApp/macApp.xcodeproj` in Xcode → Signing &
+   Capabilities → Team = yours → `+ Capability` → **Push
+   Notifications** (adds `aps-environment=development` to the on-disk
+   `macApp.entitlements`).
+4. Re-run `./run-mac.sh`. `xcodegen generate` preserves the Push
+   Notifications entitlement added through Xcode; subsequent runs use
+   the signed build.
 
 ## IPC protocol
 
 Unix socket at `/tmp/jervis-macapp-apns.sock`. One JSON message per
-line, written by Swift:
+line, written by Swift, read by the JVM
+(`MacAppSocketBridge.kt`):
 
 ```
 {"kind":"token","hexToken":"...","deviceId":"IOPlatformUUID"}
 {"kind":"payload","userInfo":{...}}
 ```
 
-The JVM child (see
-`shared/ui-common/src/jvmMain/.../PushTokenRegistrar.jvm.kt`,
-macOS branch) reads the socket from `JERVIS_MACAPP_SOCKET` env, feeds
-the token into the standard `registerTokenIfNeeded(platform="macos")`
-flow, and dispatches payloads into the in-app notification UI.
-
-## Build + run (ad-hoc dev)
-
-```bash
-# 1. Build the Compose Desktop runtime once
-./gradlew :apps:desktop:packageDistributionForCurrentOS
-
-# 2. In Xcode: Product → Run (⌘R)
-#    — Xcode signs the bundle with your dev cert and installs it into
-#      ~/Library/Developer/Xcode/DerivedData/…/Build/Products/…
-#    — first launch triggers the macOS notification permission prompt
-```
-
-For distribution (`.dmg` with notarization): use `xcodebuild archive`
-→ Organizer → Distribute App → Developer ID. The notarization step is
-mandatory because Hardened Runtime is enabled.
+The JVM side uses `JERVIS_MACAPP_SOCKET` env (the macApp Swift host
+never launches the JVM itself — it's set manually or by a
+LaunchAgent). If not set, the socket path defaults to
+`/tmp/jervis-macapp-apns.sock` inside
+`PushTokenRegistrar.jvm.kt`.
 
 ## Not implemented (yet)
 
-- Xcode project file (`.xcodeproj`) — must be created manually on first
-  clone as described above. If the team decides to commit one, switch
-  to `xcodegen project.yml` instead to keep diffs reviewable.
-- Gradle task `:apps:macApp:build` that wraps `xcodebuild` — optional;
-  would make CI/CD symmetrical with the other platforms.
-- Retry / reconnect logic on the JVM child side of the socket (for
-  long-running sessions where the socket gets reset).
+- Xcodegen `project.yml` switch for `aps-environment=production` when
+  signing for distribution.
+- LaunchAgent plist so macApp starts automatically at login.
+- Forwarding the `payload` messages into the Compose notification UI
+  (currently just logged).
+- CI integration (`xcodebuild` in GitHub Actions).
 
 ## Related
 
 - `docs/architecture.md` → "Device registration — two RPCs, two
-  concerns" + "macOS background push — native wrapper (planned)".
+  concerns" + "macOS background push — native wrapper".
 - KB: `agent://claude-code/device-token-split-and-macos-push`.
 - Memory: `project-macos-native-push-wrapper.md`.
 - Commit `f03f2ee78` — device token RPC split (prereq).

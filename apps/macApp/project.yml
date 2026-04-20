@@ -5,7 +5,6 @@ options:
   developmentLanguage: cs
   deploymentTarget:
     macOS: "13.0"
-  xcodeVersion: "15.0"
   createIntermediateGroups: true
 
 settings:
@@ -18,7 +17,6 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.9"
     ENABLE_HARDENED_RUNTIME: YES
-    CODE_SIGN_ENTITLEMENTS: macApp/macApp.entitlements
 
 targets:
   macApp:
@@ -26,14 +24,48 @@ targets:
     platform: macOS
     deploymentTarget: "13.0"
     sources:
+      # Swift sources only. Info.plist and entitlements content is
+      # expanded below so local linters/editors can reset the on-disk
+      # files to stubs without breaking the build — xcodegen writes the
+      # full content on every `generate`.
       - path: macApp
         excludes:
           - "Info.plist"
           - "macApp.entitlements"
+          - "Resources/**"
     info:
       path: macApp/Info.plist
+      properties:
+        CFBundleDisplayName: Jervis
+        LSMinimumSystemVersion: "13.0"
+        NSMicrophoneUsageDescription: Jervis needs microphone access for voice assistant and meeting recording.
+        # Agent-style app: no Dock icon, no main window. macApp exists to
+        # hold the APNs entitlement and relay notifications to the
+        # separate Compose Desktop Jervis.app over a Unix socket.
+        LSUIElement: true
+        # Background mode so APNs wakeups can reach the app at launch.
+        NSApplicationBackgroundModes:
+          - remote-notification
     entitlements:
       path: macApp/macApp.entitlements
+      properties:
+        # Outbound network for the JVM child / any in-proc HTTP.
+        com.apple.security.network.client: true
+        # JVM JIT / runtime (mirrors apps/desktop/runtime-entitlements.plist).
+        com.apple.security.cs.allow-jit: true
+        com.apple.security.cs.allow-unsigned-executable-memory: true
+        com.apple.security.cs.disable-library-validation: true
+        # Microphone access (matches apps/desktop).
+        com.apple.security.device.audio-input: true
+        #
+        # NOTE: `aps-environment` is intentionally absent from this spec.
+        # APNs requires signing with a real Apple Developer certificate
+        # (ad-hoc signing cannot carry the entitlement) — enable it via
+        # Xcode → Signing & Capabilities → "+ Capability" → Push
+        # Notifications after opening the generated .xcodeproj with a
+        # valid DEVELOPMENT_TEAM. xcodegen preserves the on-disk
+        # macApp.entitlements between regenerations, so the checkbox
+        # only needs to be flipped once per workstation.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.jervis.macApp
@@ -41,7 +73,4 @@ targets:
         INFOPLIST_FILE: macApp/Info.plist
         CODE_SIGN_ENTITLEMENTS: macApp/macApp.entitlements
         GENERATE_INFOPLIST_FILE: NO
-    # Compose Desktop runtime is staged into
-    # macApp/Resources/JervisDesktop/ by run-mac.sh before xcodebuild, so
-    # the generic `sources: - macApp` entry below already picks it up as
-    # copied resources.
+    dependencies: []
