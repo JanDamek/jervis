@@ -1,12 +1,16 @@
-"""VNC authentication endpoints — one-time token login, cookie validation."""
+"""VNC authentication endpoints — one-time token login, cookie validation.
+
+Authorization chain: single-use /vnc-login?token=X → vnc_session cookie →
+nginx auth_request on every static asset and WebSocket upgrade. The
+x11vnc server runs with -nopw, so no password ever appears in a URL
+(neither address bar nor iframe src).
+"""
 
 from __future__ import annotations
 
 import logging
-from urllib.parse import quote
 
 from fastapi import APIRouter, Cookie, Response
-from fastapi.responses import RedirectResponse
 
 from app.vnc_auth import VncAuthManager
 
@@ -15,11 +19,30 @@ logger = logging.getLogger("whatsapp-browser.vnc-auth")
 router = APIRouter(tags=["vnc-auth"])
 
 
-def _get_vnc_password() -> str:
-    try:
-        return open("/tmp/vnc_password").read().strip()
-    except FileNotFoundError:
-        return ""
+_VNC_WRAPPER_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>WhatsApp VNC</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #000; }
+  iframe { border: 0; width: 100%; height: 100%; display: block; }
+</style>
+</head>
+<body>
+<iframe id="vnc" src="/vnc.html?autoconnect=true&resize=scale&reconnect=true" allow="clipboard-read; clipboard-write"></iframe>
+<script>
+var f=document.getElementById('vnc');
+f.onload=function(){try{
+  var d=f.contentDocument;
+  var s=d.createElement('style');
+  s.textContent='#noVNC_control_bar{display:none!important}#noVNC_control_bar_anchor{display:none!important}';
+  d.head.appendChild(s);
+}catch(e){}};
+</script>
+</body>
+</html>
+"""
 
 
 def create_vnc_auth_router(vnc_auth: VncAuthManager) -> APIRouter:
@@ -29,6 +52,12 @@ def create_vnc_auth_router(vnc_auth: VncAuthManager) -> APIRouter:
 
     @router.get("/vnc-login")
     async def vnc_login(token: str = "") -> Response:
+        """Validate one-time token, set session cookie, render noVNC.
+
+        Response is an HTML wrapper embedding noVNC in an iframe with
+        `autoconnect=true&resize=scale`. The browser URL stays
+        /vnc-login?token=... — no 302, no password query leak.
+        """
         if not token:
             return Response(status_code=404)
 
@@ -37,32 +66,7 @@ def create_vnc_auth_router(vnc_auth: VncAuthManager) -> APIRouter:
             return Response(status_code=404)
 
         session_id = vnc_auth.create_session()
-
-        vnc_pwd = _get_vnc_password()
-
-        # Serve page with hidden iframe — password in iframe src, not in address bar.
-        escaped_pwd = quote(vnc_pwd, safe="")
-        vnc_params = f"autoconnect=true&resize=scale&reconnect=true&password={escaped_pwd}"
-        html = f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>WhatsApp VNC</title>
-<style>
-body{{margin:0;overflow:hidden}}
-iframe{{border:none;width:100vw;height:100vh}}
-</style></head><body>
-<iframe id="vnc" src="/vnc.html?{vnc_params}"></iframe>
-<script>
-// Hide noVNC control bar after connection (runs inside iframe)
-var f=document.getElementById('vnc');
-f.onload=function(){{try{{
-  var d=f.contentDocument;
-  var s=d.createElement('style');
-  s.textContent='#noVNC_control_bar{{display:none!important}}#noVNC_control_bar_anchor{{display:none!important}}';
-  d.head.appendChild(s);
-}}catch(e){{}}}};
-</script>
-</body></html>"""
-
-        response = Response(content=html, media_type="text/html", status_code=200)
+        response = Response(content=_VNC_WRAPPER_HTML, media_type="text/html", status_code=200)
         response.set_cookie(
             key="vnc_session",
             value=session_id,

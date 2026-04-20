@@ -24,7 +24,6 @@ class Settings(BaseSettings):
     # noVNC (only used in headed mode)
     novnc_enabled: bool = Field(default=False, validation_alias="WHATSAPP_NOVNC_ENABLED")
     novnc_port: int = Field(default=6080, validation_alias="WHATSAPP_NOVNC_PORT")
-    vnc_password: str = Field(default="", validation_alias="WHATSAPP_VNC_PASSWORD")
     vnc_token_ttl: int = Field(default=300, validation_alias="WHATSAPP_VNC_TOKEN_TTL")
     novnc_external_url: str = Field(
         default="https://jervis-whatsapp-vnc.damek-soft.eu",

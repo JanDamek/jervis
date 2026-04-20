@@ -301,26 +301,16 @@ class BrowserPodManager(
     }
 
     /**
-     * Check if browser pod resources exist.
-     */
-    fun podExists(connectionId: ConnectionId): Boolean {
-        val name = deploymentName(connectionId)
-        return buildK8sClient().use { client ->
-            client.apps().deployments()
-                .inNamespace(NAMESPACE)
-                .withName(name)
-                .get() != null
-        }
-    }
-
-    /**
-     * Ensure browser pod exists — create if missing.
+     * Ensure browser pod resources exist and match the current spec.
+     *
+     * Always runs `createBrowserPod` — server-side apply is idempotent when
+     * the spec already matches, but it is the only way to reconcile port /
+     * container-spec drift for pods that were created against an older
+     * BrowserPodManager (e.g. Service missing the gRPC :5501 port after
+     * the contracts-v1 slice landed).
      */
     fun ensureBrowserPod(connectionId: ConnectionId) {
-        if (!podExists(connectionId)) {
-            logger.info { "Browser pod missing for connection $connectionId — creating" }
-            createBrowserPod(connectionId)
-        }
+        createBrowserPod(connectionId)
     }
 
     /**

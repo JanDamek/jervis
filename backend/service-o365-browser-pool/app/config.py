@@ -31,10 +31,10 @@ class Settings(BaseSettings):
     connection_id: str = Field(default="", validation_alias="CONNECTION_ID")
     k8s_namespace: str = Field(default="jervis", validation_alias="O365_POOL_NAMESPACE")
 
-    # noVNC (only used in headed mode)
+    # noVNC (only used in headed mode). x11vnc runs with -nopw; authorization
+    # is the single-use /vnc-login?token=X + vnc_session cookie chain.
     novnc_enabled: bool = Field(default=False, validation_alias="O365_POOL_NOVNC_ENABLED")
     novnc_port: int = Field(default=6080, validation_alias="O365_POOL_NOVNC_PORT")
-    vnc_password: str = Field(default="", validation_alias="O365_POOL_VNC_PASSWORD")  # Auto-generated if empty (read from /tmp/vnc_password)
     vnc_token_ttl: int = Field(default=300, validation_alias="O365_POOL_VNC_TOKEN_TTL")  # One-time VNC token TTL in seconds (5 min)
     novnc_external_url: str = Field(default="https://jervis-vnc.damek-soft.eu", validation_alias="O365_POOL_NOVNC_EXTERNAL_URL")
 
