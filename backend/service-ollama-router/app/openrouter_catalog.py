@@ -80,12 +80,6 @@ def get_model_stats() -> dict[str, dict]:
     return result
 
 
-# ── Round-robin state for FREE queue ─────────────────────────────────
-# Tracks which model was used last per queue, so we rotate evenly
-# queue_name → index of last used model in the filtered candidate list
-_round_robin_index: dict[str, int] = {}
-
-
 async def _fetch_openrouter_settings() -> dict | None:
     """Fetch OpenRouter settings from Kotlin server (cached 60s)."""
     global _openrouter_settings_cache, _openrouter_settings_ts
@@ -274,15 +268,17 @@ async def _first_cloud_model(
     capability: str | None = None,
     require_tools: bool = False,
 ) -> str | None:
-    """Get next available cloud model from a queue using round-robin rotation.
+    """Get the highest-priority available cloud model from a queue.
 
-    For FREE queue: rotates through models evenly to distribute load and avoid
-    hitting per-model rate limits. For PAID/PREMIUM: uses first-fit (priority order).
+    Strict priority order: the queue is ordered from fastest+most reliable
+    at the top to slower/less proven at the bottom. We always pick #1 first;
+    model #2 is used only when #1 is currently disabled (error cooldown,
+    out-of-context, or explicitly skipped by the caller). Once #1 recovers,
+    subsequent requests hit it again — no round-robin.
 
-    Skips models marked as error (3+ consecutive failures) and skip_models list.
-    capability: if set, model must have matching capability in its capabilities list.
+    skip_models: caller-side exclusion for fallback loops within a single request.
+    capability: if set, model must declare it (empty capabilities = compatible with all).
     require_tools: if True, only models with supportsTools=True are eligible.
-    Models with empty capabilities list are compatible with all capabilities (backward compat).
     """
     skip_set = set(skip_models) if skip_models else set()
     queue_models = await get_queue(queue_name)
