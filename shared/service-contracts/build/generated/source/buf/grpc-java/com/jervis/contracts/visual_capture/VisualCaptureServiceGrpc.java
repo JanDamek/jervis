@@ -10,9 +10,6 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
  * the orchestrator through this RPC.
  * </pre>
  */
-@javax.annotation.Generated(
-    value = "by gRPC proto compiler (version 1.68.0)",
-    comments = "Source: jervis/visual_capture/capture.proto")
 @io.grpc.stub.annotations.GrpcGenerated
 public final class VisualCaptureServiceGrpc {
 
@@ -126,6 +123,21 @@ public final class VisualCaptureServiceGrpc {
         }
       };
     return VisualCaptureServiceStub.newStub(factory, channel);
+  }
+
+  /**
+   * Creates a new blocking-style stub that supports all types of calls on the service
+   */
+  public static VisualCaptureServiceBlockingV2Stub newBlockingV2Stub(
+      io.grpc.Channel channel) {
+    io.grpc.stub.AbstractStub.StubFactory<VisualCaptureServiceBlockingV2Stub> factory =
+      new io.grpc.stub.AbstractStub.StubFactory<VisualCaptureServiceBlockingV2Stub>() {
+        @java.lang.Override
+        public VisualCaptureServiceBlockingV2Stub newStub(io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+          return new VisualCaptureServiceBlockingV2Stub(channel, callOptions);
+        }
+      };
+    return VisualCaptureServiceBlockingV2Stub.newStub(factory, channel);
   }
 
   /**
@@ -256,6 +268,50 @@ public final class VisualCaptureServiceGrpc {
 
   /**
    * A stub to allow clients to do synchronous rpc calls to service VisualCaptureService.
+   * <pre>
+   * VisualCaptureService — ONVIF camera + RTSP capture + VLM analysis.
+   * Fully-typed surface — no passthrough JSON. Kotlin server's
+   * ServerVisualCaptureGrpcImpl forwards Snapshot/PtzGoto requests from
+   * the orchestrator through this RPC.
+   * </pre>
+   */
+  public static final class VisualCaptureServiceBlockingV2Stub
+      extends io.grpc.stub.AbstractBlockingStub<VisualCaptureServiceBlockingV2Stub> {
+    private VisualCaptureServiceBlockingV2Stub(
+        io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+      super(channel, callOptions);
+    }
+
+    @java.lang.Override
+    protected VisualCaptureServiceBlockingV2Stub build(
+        io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+      return new VisualCaptureServiceBlockingV2Stub(channel, callOptions);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.visual_capture.SnapshotResponse snapshot(com.jervis.contracts.visual_capture.SnapshotRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getSnapshotMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.visual_capture.PtzGotoResponse ptzGoto(com.jervis.contracts.visual_capture.PtzGotoRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getPtzGotoMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.visual_capture.PtzPresetsResponse ptzPresets(com.jervis.contracts.visual_capture.PtzPresetsRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getPtzPresetsMethod(), getCallOptions(), request);
+    }
+  }
+
+  /**
+   * A stub to allow clients to do limited synchronous rpc calls to service VisualCaptureService.
    * <pre>
    * VisualCaptureService — ONVIF camera + RTSP capture + VLM analysis.
    * Fully-typed surface — no passthrough JSON. Kotlin server's

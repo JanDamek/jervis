@@ -24,8 +24,7 @@ import kotlin.jvm.JvmStatic
 import kotlinx.coroutines.flow.Flow
 
 /**
- * Holder for Kotlin coroutine-based client and server APIs for
- * jervis.orchestrator.OrchestratorJobLogsService.
+ * Holder for Kotlin coroutine-based client and server APIs for jervis.orchestrator.OrchestratorJobLogsService.
  */
 public object OrchestratorJobLogsServiceGrpcKt {
   public const val SERVICE_NAME: String = OrchestratorJobLogsServiceGrpc.SERVICE_NAME
@@ -39,17 +38,14 @@ public object OrchestratorJobLogsServiceGrpcKt {
     get() = OrchestratorJobLogsServiceGrpc.getStreamLogsMethod()
 
   /**
-   * A stub for issuing RPCs to a(n) jervis.orchestrator.OrchestratorJobLogsService service as
-   * suspending coroutines.
+   * A stub for issuing RPCs to a(n) jervis.orchestrator.OrchestratorJobLogsService service as suspending coroutines.
    */
   @StubFor(OrchestratorJobLogsServiceGrpc::class)
   public class OrchestratorJobLogsServiceCoroutineStub @JvmOverloads constructor(
     channel: Channel,
     callOptions: CallOptions = DEFAULT,
   ) : AbstractCoroutineStub<OrchestratorJobLogsServiceCoroutineStub>(channel, callOptions) {
-    override fun build(channel: Channel, callOptions: CallOptions):
-        OrchestratorJobLogsServiceCoroutineStub = OrchestratorJobLogsServiceCoroutineStub(channel,
-        callOptions)
+    override fun build(channel: Channel, callOptions: CallOptions): OrchestratorJobLogsServiceCoroutineStub = OrchestratorJobLogsServiceCoroutineStub(channel, callOptions)
 
     /**
      * Returns a [Flow] that, when collected, executes this RPC and emits responses from the
@@ -64,8 +60,7 @@ public object OrchestratorJobLogsServiceGrpcKt {
      *
      * @return A flow that, when collected, emits the responses from the server.
      */
-    public fun streamLogs(request: JobLogsRequest, headers: Metadata = Metadata()):
-        Flow<JobLogEvent> = serverStreamingRpc(
+    public fun streamLogs(request: JobLogsRequest, headers: Metadata = Metadata()): Flow<JobLogEvent> = serverStreamingRpc(
       channel,
       OrchestratorJobLogsServiceGrpc.getStreamLogsMethod(),
       request,
@@ -75,27 +70,23 @@ public object OrchestratorJobLogsServiceGrpcKt {
   }
 
   /**
-   * Skeletal implementation of the jervis.orchestrator.OrchestratorJobLogsService service based on
-   * Kotlin coroutines.
+   * Skeletal implementation of the jervis.orchestrator.OrchestratorJobLogsService service based on Kotlin coroutines.
    */
   public abstract class OrchestratorJobLogsServiceCoroutineImplBase(
     coroutineContext: CoroutineContext = EmptyCoroutineContext,
   ) : AbstractCoroutineServerImpl(coroutineContext) {
     /**
-     * Returns a [Flow] of responses to an RPC for
-     * jervis.orchestrator.OrchestratorJobLogsService.StreamLogs.
+     * Returns a [Flow] of responses to an RPC for jervis.orchestrator.OrchestratorJobLogsService.StreamLogs.
      *
      * If creating or collecting the returned flow fails with a [StatusException], the RPC
      * will fail with the corresponding [io.grpc.Status].  If it fails with a
-     * [java.util.concurrent.CancellationException], the RPC will fail with status
-     * `Status.CANCELLED`.  If creating
+     * [java.util.concurrent.CancellationException], the RPC will fail with status `Status.CANCELLED`.  If creating
      * or collecting the returned flow fails for any other reason, the RPC will fail with
      * `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open fun streamLogs(request: JobLogsRequest): Flow<JobLogEvent> = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.orchestrator.OrchestratorJobLogsService.StreamLogs is unimplemented"))
+    public open fun streamLogs(request: JobLogsRequest): Flow<JobLogEvent> = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.orchestrator.OrchestratorJobLogsService.StreamLogs is unimplemented"))
 
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(serverStreamingServerMethodDefinition(

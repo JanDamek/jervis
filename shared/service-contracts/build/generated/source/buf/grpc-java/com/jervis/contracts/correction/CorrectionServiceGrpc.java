@@ -11,9 +11,6 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
  * JSON hand-parsing.
  * </pre>
  */
-@javax.annotation.Generated(
-    value = "by gRPC proto compiler (version 1.68.0)",
-    comments = "Source: jervis/correction/correction.proto")
 @io.grpc.stub.annotations.GrpcGenerated
 public final class CorrectionServiceGrpc {
 
@@ -254,6 +251,21 @@ public final class CorrectionServiceGrpc {
   }
 
   /**
+   * Creates a new blocking-style stub that supports all types of calls on the service
+   */
+  public static CorrectionServiceBlockingV2Stub newBlockingV2Stub(
+      io.grpc.Channel channel) {
+    io.grpc.stub.AbstractStub.StubFactory<CorrectionServiceBlockingV2Stub> factory =
+      new io.grpc.stub.AbstractStub.StubFactory<CorrectionServiceBlockingV2Stub>() {
+        @java.lang.Override
+        public CorrectionServiceBlockingV2Stub newStub(io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+          return new CorrectionServiceBlockingV2Stub(channel, callOptions);
+        }
+      };
+    return CorrectionServiceBlockingV2Stub.newStub(factory, channel);
+  }
+
+  /**
    * Creates a new blocking-style stub that supports unary and streaming output calls on the service
    */
   public static CorrectionServiceBlockingStub newBlockingStub(
@@ -444,6 +456,79 @@ public final class CorrectionServiceGrpc {
 
   /**
    * A stub to allow clients to do synchronous rpc calls to service CorrectionService.
+   * <pre>
+   * CorrectionService — transcript correction service (KB-stored rules +
+   * Ollama GPU). Fully-typed surface — no passthrough JSON. RPC names and
+   * field shapes mirror the retired REST routes 1:1 so the Python agent +
+   * Kotlin caller can both reach the same semantics without per-message
+   * JSON hand-parsing.
+   * </pre>
+   */
+  public static final class CorrectionServiceBlockingV2Stub
+      extends io.grpc.stub.AbstractBlockingStub<CorrectionServiceBlockingV2Stub> {
+    private CorrectionServiceBlockingV2Stub(
+        io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+      super(channel, callOptions);
+    }
+
+    @java.lang.Override
+    protected CorrectionServiceBlockingV2Stub build(
+        io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+      return new CorrectionServiceBlockingV2Stub(channel, callOptions);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.correction.SubmitCorrectionResponse submitCorrection(com.jervis.contracts.correction.SubmitCorrectionRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getSubmitCorrectionMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.correction.CorrectResult correctTranscript(com.jervis.contracts.correction.CorrectTranscriptRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getCorrectTranscriptMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.correction.ListCorrectionsResponse listCorrections(com.jervis.contracts.correction.ListCorrectionsRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getListCorrectionsMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.correction.AnswerCorrectionsResponse answerCorrectionQuestions(com.jervis.contracts.correction.AnswerCorrectionsRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getAnswerCorrectionQuestionsMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.correction.CorrectWithInstructionResponse correctWithInstruction(com.jervis.contracts.correction.CorrectWithInstructionRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getCorrectWithInstructionMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.correction.CorrectResult correctTargeted(com.jervis.contracts.correction.CorrectTargetedRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getCorrectTargetedMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.correction.DeleteCorrectionResponse deleteCorrection(com.jervis.contracts.correction.DeleteCorrectionRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getDeleteCorrectionMethod(), getCallOptions(), request);
+    }
+  }
+
+  /**
+   * A stub to allow clients to do limited synchronous rpc calls to service CorrectionService.
    * <pre>
    * CorrectionService — transcript correction service (KB-stored rules +
    * Ollama GPU). Fully-typed surface — no passthrough JSON. RPC names and

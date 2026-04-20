@@ -12,9 +12,6 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
  * the capture pod.
  * </pre>
  */
-@javax.annotation.Generated(
-    value = "by gRPC proto compiler (version 1.68.0)",
-    comments = "Source: jervis/server/visual_capture.proto")
 @io.grpc.stub.annotations.GrpcGenerated
 public final class ServerVisualCaptureServiceGrpc {
 
@@ -128,6 +125,21 @@ public final class ServerVisualCaptureServiceGrpc {
         }
       };
     return ServerVisualCaptureServiceStub.newStub(factory, channel);
+  }
+
+  /**
+   * Creates a new blocking-style stub that supports all types of calls on the service
+   */
+  public static ServerVisualCaptureServiceBlockingV2Stub newBlockingV2Stub(
+      io.grpc.Channel channel) {
+    io.grpc.stub.AbstractStub.StubFactory<ServerVisualCaptureServiceBlockingV2Stub> factory =
+      new io.grpc.stub.AbstractStub.StubFactory<ServerVisualCaptureServiceBlockingV2Stub>() {
+        @java.lang.Override
+        public ServerVisualCaptureServiceBlockingV2Stub newStub(io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+          return new ServerVisualCaptureServiceBlockingV2Stub(channel, callOptions);
+        }
+      };
+    return ServerVisualCaptureServiceBlockingV2Stub.newStub(factory, channel);
   }
 
   /**
@@ -264,6 +276,52 @@ public final class ServerVisualCaptureServiceGrpc {
 
   /**
    * A stub to allow clients to do synchronous rpc calls to service ServerVisualCaptureService.
+   * <pre>
+   * ServerVisualCaptureService — inbound bridge for the
+   * `service-visual-capture` K8s pod. The pod pushes VLM analysis results
+   * here (scene/whiteboard/screen OCR) and the server fans them into
+   * MeetingHelperService for live UI push + KB storage. Snapshot + PTZ
+   * proxy RPCs are typed 1:1 with the downstream VisualCaptureService on
+   * the capture pod.
+   * </pre>
+   */
+  public static final class ServerVisualCaptureServiceBlockingV2Stub
+      extends io.grpc.stub.AbstractBlockingStub<ServerVisualCaptureServiceBlockingV2Stub> {
+    private ServerVisualCaptureServiceBlockingV2Stub(
+        io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+      super(channel, callOptions);
+    }
+
+    @java.lang.Override
+    protected ServerVisualCaptureServiceBlockingV2Stub build(
+        io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+      return new ServerVisualCaptureServiceBlockingV2Stub(channel, callOptions);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.server.VisualResultResponse postResult(com.jervis.contracts.server.VisualResultRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getPostResultMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.server.ProxySnapshotResponse snapshot(com.jervis.contracts.server.ProxySnapshotRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getSnapshotMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.server.ProxyPtzResponse ptz(com.jervis.contracts.server.ProxyPtzRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getPtzMethod(), getCallOptions(), request);
+    }
+  }
+
+  /**
+   * A stub to allow clients to do limited synchronous rpc calls to service ServerVisualCaptureService.
    * <pre>
    * ServerVisualCaptureService — inbound bridge for the
    * `service-visual-capture` K8s pod. The pod pushes VLM analysis results

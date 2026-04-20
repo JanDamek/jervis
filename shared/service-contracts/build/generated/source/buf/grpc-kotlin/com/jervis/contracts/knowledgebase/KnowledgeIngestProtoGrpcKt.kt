@@ -23,8 +23,7 @@ import kotlin.jvm.JvmOverloads
 import kotlin.jvm.JvmStatic
 
 /**
- * Holder for Kotlin coroutine-based client and server APIs for
- * jervis.knowledgebase.KnowledgeIngestService.
+ * Holder for Kotlin coroutine-based client and server APIs for jervis.knowledgebase.KnowledgeIngestService.
  */
 public object KnowledgeIngestServiceGrpcKt {
   public const val SERVICE_NAME: String = KnowledgeIngestServiceGrpc.SERVICE_NAME
@@ -79,22 +78,18 @@ public object KnowledgeIngestServiceGrpcKt {
     get() = KnowledgeIngestServiceGrpc.getPurgeMethod()
 
   /**
-   * A stub for issuing RPCs to a(n) jervis.knowledgebase.KnowledgeIngestService service as
-   * suspending coroutines.
+   * A stub for issuing RPCs to a(n) jervis.knowledgebase.KnowledgeIngestService service as suspending coroutines.
    */
   @StubFor(KnowledgeIngestServiceGrpc::class)
   public class KnowledgeIngestServiceCoroutineStub @JvmOverloads constructor(
     channel: Channel,
     callOptions: CallOptions = DEFAULT,
   ) : AbstractCoroutineStub<KnowledgeIngestServiceCoroutineStub>(channel, callOptions) {
-    override fun build(channel: Channel, callOptions: CallOptions):
-        KnowledgeIngestServiceCoroutineStub = KnowledgeIngestServiceCoroutineStub(channel,
-        callOptions)
+    override fun build(channel: Channel, callOptions: CallOptions): KnowledgeIngestServiceCoroutineStub = KnowledgeIngestServiceCoroutineStub(channel, callOptions)
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -104,8 +99,7 @@ public object KnowledgeIngestServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun ingest(request: IngestRequest, headers: Metadata = Metadata()): IngestResult
-        = unaryRpc(
+    public suspend fun ingest(request: IngestRequest, headers: Metadata = Metadata()): IngestResult = unaryRpc(
       channel,
       KnowledgeIngestServiceGrpc.getIngestMethod(),
       request,
@@ -115,8 +109,7 @@ public object KnowledgeIngestServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -126,8 +119,7 @@ public object KnowledgeIngestServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun ingestImmediate(request: IngestRequest, headers: Metadata = Metadata()):
-        IngestResult = unaryRpc(
+    public suspend fun ingestImmediate(request: IngestRequest, headers: Metadata = Metadata()): IngestResult = unaryRpc(
       channel,
       KnowledgeIngestServiceGrpc.getIngestImmediateMethod(),
       request,
@@ -137,8 +129,7 @@ public object KnowledgeIngestServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -148,8 +139,7 @@ public object KnowledgeIngestServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun ingestQueue(request: IngestRequest, headers: Metadata = Metadata()):
-        IngestQueueAck = unaryRpc(
+    public suspend fun ingestQueue(request: IngestRequest, headers: Metadata = Metadata()): IngestQueueAck = unaryRpc(
       channel,
       KnowledgeIngestServiceGrpc.getIngestQueueMethod(),
       request,
@@ -159,8 +149,7 @@ public object KnowledgeIngestServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -170,8 +159,7 @@ public object KnowledgeIngestServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun ingestFile(request: IngestFileRequest, headers: Metadata = Metadata()):
-        IngestResult = unaryRpc(
+    public suspend fun ingestFile(request: IngestFileRequest, headers: Metadata = Metadata()): IngestResult = unaryRpc(
       channel,
       KnowledgeIngestServiceGrpc.getIngestFileMethod(),
       request,
@@ -181,8 +169,7 @@ public object KnowledgeIngestServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -192,8 +179,7 @@ public object KnowledgeIngestServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun ingestFull(request: FullIngestRequest, headers: Metadata = Metadata()):
-        FullIngestResult = unaryRpc(
+    public suspend fun ingestFull(request: FullIngestRequest, headers: Metadata = Metadata()): FullIngestResult = unaryRpc(
       channel,
       KnowledgeIngestServiceGrpc.getIngestFullMethod(),
       request,
@@ -203,8 +189,7 @@ public object KnowledgeIngestServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -214,8 +199,7 @@ public object KnowledgeIngestServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun ingestFullAsync(request: AsyncFullIngestRequest, headers: Metadata =
-        Metadata()): AsyncIngestAck = unaryRpc(
+    public suspend fun ingestFullAsync(request: AsyncFullIngestRequest, headers: Metadata = Metadata()): AsyncIngestAck = unaryRpc(
       channel,
       KnowledgeIngestServiceGrpc.getIngestFullAsyncMethod(),
       request,
@@ -225,8 +209,7 @@ public object KnowledgeIngestServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -236,8 +219,7 @@ public object KnowledgeIngestServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun ingestGitStructure(request: GitStructureIngestRequest, headers: Metadata =
-        Metadata()): GitStructureIngestResult = unaryRpc(
+    public suspend fun ingestGitStructure(request: GitStructureIngestRequest, headers: Metadata = Metadata()): GitStructureIngestResult = unaryRpc(
       channel,
       KnowledgeIngestServiceGrpc.getIngestGitStructureMethod(),
       request,
@@ -247,8 +229,7 @@ public object KnowledgeIngestServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -258,8 +239,7 @@ public object KnowledgeIngestServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun ingestGitCommits(request: GitCommitIngestRequest, headers: Metadata =
-        Metadata()): GitCommitIngestResult = unaryRpc(
+    public suspend fun ingestGitCommits(request: GitCommitIngestRequest, headers: Metadata = Metadata()): GitCommitIngestResult = unaryRpc(
       channel,
       KnowledgeIngestServiceGrpc.getIngestGitCommitsMethod(),
       request,
@@ -269,8 +249,7 @@ public object KnowledgeIngestServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -280,8 +259,7 @@ public object KnowledgeIngestServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun ingestCpg(request: CpgIngestRequest, headers: Metadata = Metadata()):
-        CpgIngestResult = unaryRpc(
+    public suspend fun ingestCpg(request: CpgIngestRequest, headers: Metadata = Metadata()): CpgIngestResult = unaryRpc(
       channel,
       KnowledgeIngestServiceGrpc.getIngestCpgMethod(),
       request,
@@ -291,8 +269,7 @@ public object KnowledgeIngestServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -302,8 +279,7 @@ public object KnowledgeIngestServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun crawl(request: CrawlRequest, headers: Metadata = Metadata()): IngestResult =
-        unaryRpc(
+    public suspend fun crawl(request: CrawlRequest, headers: Metadata = Metadata()): IngestResult = unaryRpc(
       channel,
       KnowledgeIngestServiceGrpc.getCrawlMethod(),
       request,
@@ -313,8 +289,7 @@ public object KnowledgeIngestServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -324,8 +299,7 @@ public object KnowledgeIngestServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun purge(request: PurgeRequest, headers: Metadata = Metadata()): PurgeResult =
-        unaryRpc(
+    public suspend fun purge(request: PurgeRequest, headers: Metadata = Metadata()): PurgeResult = unaryRpc(
       channel,
       KnowledgeIngestServiceGrpc.getPurgeMethod(),
       request,
@@ -335,8 +309,7 @@ public object KnowledgeIngestServiceGrpcKt {
   }
 
   /**
-   * Skeletal implementation of the jervis.knowledgebase.KnowledgeIngestService service based on
-   * Kotlin coroutines.
+   * Skeletal implementation of the jervis.knowledgebase.KnowledgeIngestService service based on Kotlin coroutines.
    */
   public abstract class KnowledgeIngestServiceCoroutineImplBase(
     coroutineContext: CoroutineContext = EmptyCoroutineContext,
@@ -345,161 +318,133 @@ public object KnowledgeIngestServiceGrpcKt {
      * Returns the response to an RPC for jervis.knowledgebase.KnowledgeIngestService.Ingest.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun ingest(request: IngestRequest): IngestResult = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeIngestService.Ingest is unimplemented"))
+    public open suspend fun ingest(request: IngestRequest): IngestResult = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeIngestService.Ingest is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.knowledgebase.KnowledgeIngestService.IngestImmediate.
+     * Returns the response to an RPC for jervis.knowledgebase.KnowledgeIngestService.IngestImmediate.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun ingestImmediate(request: IngestRequest): IngestResult = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeIngestService.IngestImmediate is unimplemented"))
+    public open suspend fun ingestImmediate(request: IngestRequest): IngestResult = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeIngestService.IngestImmediate is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.knowledgebase.KnowledgeIngestService.IngestQueue.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun ingestQueue(request: IngestRequest): IngestQueueAck = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeIngestService.IngestQueue is unimplemented"))
+    public open suspend fun ingestQueue(request: IngestRequest): IngestQueueAck = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeIngestService.IngestQueue is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.knowledgebase.KnowledgeIngestService.IngestFile.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun ingestFile(request: IngestFileRequest): IngestResult = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeIngestService.IngestFile is unimplemented"))
+    public open suspend fun ingestFile(request: IngestFileRequest): IngestResult = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeIngestService.IngestFile is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.knowledgebase.KnowledgeIngestService.IngestFull.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun ingestFull(request: FullIngestRequest): FullIngestResult = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeIngestService.IngestFull is unimplemented"))
+    public open suspend fun ingestFull(request: FullIngestRequest): FullIngestResult = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeIngestService.IngestFull is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.knowledgebase.KnowledgeIngestService.IngestFullAsync.
+     * Returns the response to an RPC for jervis.knowledgebase.KnowledgeIngestService.IngestFullAsync.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun ingestFullAsync(request: AsyncFullIngestRequest): AsyncIngestAck = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeIngestService.IngestFullAsync is unimplemented"))
+    public open suspend fun ingestFullAsync(request: AsyncFullIngestRequest): AsyncIngestAck = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeIngestService.IngestFullAsync is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.knowledgebase.KnowledgeIngestService.IngestGitStructure.
+     * Returns the response to an RPC for jervis.knowledgebase.KnowledgeIngestService.IngestGitStructure.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun ingestGitStructure(request: GitStructureIngestRequest):
-        GitStructureIngestResult = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeIngestService.IngestGitStructure is unimplemented"))
+    public open suspend fun ingestGitStructure(request: GitStructureIngestRequest): GitStructureIngestResult = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeIngestService.IngestGitStructure is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.knowledgebase.KnowledgeIngestService.IngestGitCommits.
+     * Returns the response to an RPC for jervis.knowledgebase.KnowledgeIngestService.IngestGitCommits.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun ingestGitCommits(request: GitCommitIngestRequest): GitCommitIngestResult
-        = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeIngestService.IngestGitCommits is unimplemented"))
+    public open suspend fun ingestGitCommits(request: GitCommitIngestRequest): GitCommitIngestResult = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeIngestService.IngestGitCommits is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.knowledgebase.KnowledgeIngestService.IngestCpg.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun ingestCpg(request: CpgIngestRequest): CpgIngestResult = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeIngestService.IngestCpg is unimplemented"))
+    public open suspend fun ingestCpg(request: CpgIngestRequest): CpgIngestResult = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeIngestService.IngestCpg is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.knowledgebase.KnowledgeIngestService.Crawl.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun crawl(request: CrawlRequest): IngestResult = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeIngestService.Crawl is unimplemented"))
+    public open suspend fun crawl(request: CrawlRequest): IngestResult = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeIngestService.Crawl is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.knowledgebase.KnowledgeIngestService.Purge.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun purge(request: PurgeRequest): PurgeResult = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeIngestService.Purge is unimplemented"))
+    public open suspend fun purge(request: PurgeRequest): PurgeResult = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeIngestService.Purge is unimplemented"))
 
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(

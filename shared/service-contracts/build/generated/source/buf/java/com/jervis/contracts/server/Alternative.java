@@ -6,13 +6,13 @@
 package com.jervis.contracts.server;
 
 /**
- * Protobuf type {@code jervis.server.ListProjectsResponse}
+ * Protobuf type {@code jervis.server.Alternative}
  */
 @com.google.protobuf.Generated
-public final class ListProjectsResponse extends
+public final class Alternative extends
     com.google.protobuf.GeneratedMessage implements
-    // @@protoc_insertion_point(message_implements:jervis.server.ListProjectsResponse)
-    ListProjectsResponseOrBuilder {
+    // @@protoc_insertion_point(message_implements:jervis.server.Alternative)
+    AlternativeOrBuilder {
 private static final long serialVersionUID = 0L;
   static {
     com.google.protobuf.RuntimeVersion.validateProtobufGencodeVersion(
@@ -21,75 +21,107 @@ private static final long serialVersionUID = 0L;
       /* minor= */ 34,
       /* patch= */ 1,
       /* suffix= */ "",
-      "ListProjectsResponse");
+      "Alternative");
   }
-  // Use ListProjectsResponse.newBuilder() to construct.
-  private ListProjectsResponse(com.google.protobuf.GeneratedMessage.Builder<?> builder) {
+  // Use Alternative.newBuilder() to construct.
+  private Alternative(com.google.protobuf.GeneratedMessage.Builder<?> builder) {
     super(builder);
   }
-  private ListProjectsResponse() {
-    itemsJson_ = "";
+  private Alternative() {
+    name_ = "";
+    description_ = "";
   }
 
   public static final com.google.protobuf.Descriptors.Descriptor
       getDescriptor() {
-    return com.jervis.contracts.server.ServerProjectManagementProto.internal_static_jervis_server_ListProjectsResponse_descriptor;
+    return com.jervis.contracts.server.ServerProjectManagementProto.internal_static_jervis_server_Alternative_descriptor;
   }
 
   @java.lang.Override
   public com.google.protobuf.Descriptors.Descriptor getDescriptorForType() {
-    return com.jervis.contracts.server.ServerProjectManagementProto.internal_static_jervis_server_ListProjectsResponse_descriptor;
+    return com.jervis.contracts.server.ServerProjectManagementProto.internal_static_jervis_server_Alternative_descriptor;
   }
 
   @java.lang.Override
   protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internalGetFieldAccessorTable() {
-    return com.jervis.contracts.server.ServerProjectManagementProto.internal_static_jervis_server_ListProjectsResponse_fieldAccessorTable
+    return com.jervis.contracts.server.ServerProjectManagementProto.internal_static_jervis_server_Alternative_fieldAccessorTable
         .ensureFieldAccessorsInitialized(
-            com.jervis.contracts.server.ListProjectsResponse.class, com.jervis.contracts.server.ListProjectsResponse.Builder.class);
+            com.jervis.contracts.server.Alternative.class, com.jervis.contracts.server.Alternative.Builder.class);
   }
 
-  public static final int ITEMS_JSON_FIELD_NUMBER = 1;
+  public static final int NAME_FIELD_NUMBER = 1;
   @SuppressWarnings("serial")
-  private volatile java.lang.Object itemsJson_ = "";
+  private volatile java.lang.Object name_ = "";
   /**
-   * <pre>
-   * Array of ProjectDto JSON objects.
-   * </pre>
-   *
-   * <code>string items_json = 1 [json_name = "itemsJson"];</code>
-   * @return The itemsJson.
+   * <code>string name = 1 [json_name = "name"];</code>
+   * @return The name.
    */
   @java.lang.Override
-  public java.lang.String getItemsJson() {
-    java.lang.Object ref = itemsJson_;
+  public java.lang.String getName() {
+    java.lang.Object ref = name_;
     if (ref instanceof java.lang.String) {
       return (java.lang.String) ref;
     } else {
       com.google.protobuf.ByteString bs = 
           (com.google.protobuf.ByteString) ref;
       java.lang.String s = bs.toStringUtf8();
-      itemsJson_ = s;
+      name_ = s;
       return s;
     }
   }
   /**
-   * <pre>
-   * Array of ProjectDto JSON objects.
-   * </pre>
-   *
-   * <code>string items_json = 1 [json_name = "itemsJson"];</code>
-   * @return The bytes for itemsJson.
+   * <code>string name = 1 [json_name = "name"];</code>
+   * @return The bytes for name.
    */
   @java.lang.Override
   public com.google.protobuf.ByteString
-      getItemsJsonBytes() {
-    java.lang.Object ref = itemsJson_;
+      getNameBytes() {
+    java.lang.Object ref = name_;
     if (ref instanceof java.lang.String) {
       com.google.protobuf.ByteString b = 
           com.google.protobuf.ByteString.copyFromUtf8(
               (java.lang.String) ref);
-      itemsJson_ = b;
+      name_ = b;
+      return b;
+    } else {
+      return (com.google.protobuf.ByteString) ref;
+    }
+  }
+
+  public static final int DESCRIPTION_FIELD_NUMBER = 2;
+  @SuppressWarnings("serial")
+  private volatile java.lang.Object description_ = "";
+  /**
+   * <code>string description = 2 [json_name = "description"];</code>
+   * @return The description.
+   */
+  @java.lang.Override
+  public java.lang.String getDescription() {
+    java.lang.Object ref = description_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      com.google.protobuf.ByteString bs = 
+          (com.google.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      description_ = s;
+      return s;
+    }
+  }
+  /**
+   * <code>string description = 2 [json_name = "description"];</code>
+   * @return The bytes for description.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getDescriptionBytes() {
+    java.lang.Object ref = description_;
+    if (ref instanceof java.lang.String) {
+      com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      description_ = b;
       return b;
     } else {
       return (com.google.protobuf.ByteString) ref;
@@ -110,8 +142,11 @@ private static final long serialVersionUID = 0L;
   @java.lang.Override
   public void writeTo(com.google.protobuf.CodedOutputStream output)
                       throws java.io.IOException {
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(itemsJson_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 1, itemsJson_);
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(name_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 1, name_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(description_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 2, description_);
     }
     getUnknownFields().writeTo(output);
   }
@@ -122,8 +157,11 @@ private static final long serialVersionUID = 0L;
     if (size != -1) return size;
 
     size = 0;
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(itemsJson_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(1, itemsJson_);
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(name_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(1, name_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(description_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(2, description_);
     }
     size += getUnknownFields().getSerializedSize();
     memoizedSize = size;
@@ -135,13 +173,15 @@ private static final long serialVersionUID = 0L;
     if (obj == this) {
      return true;
     }
-    if (!(obj instanceof com.jervis.contracts.server.ListProjectsResponse)) {
+    if (!(obj instanceof com.jervis.contracts.server.Alternative)) {
       return super.equals(obj);
     }
-    com.jervis.contracts.server.ListProjectsResponse other = (com.jervis.contracts.server.ListProjectsResponse) obj;
+    com.jervis.contracts.server.Alternative other = (com.jervis.contracts.server.Alternative) obj;
 
-    if (!getItemsJson()
-        .equals(other.getItemsJson())) return false;
+    if (!getName()
+        .equals(other.getName())) return false;
+    if (!getDescription()
+        .equals(other.getDescription())) return false;
     if (!getUnknownFields().equals(other.getUnknownFields())) return false;
     return true;
   }
@@ -153,51 +193,53 @@ private static final long serialVersionUID = 0L;
     }
     int hash = 41;
     hash = (19 * hash) + getDescriptor().hashCode();
-    hash = (37 * hash) + ITEMS_JSON_FIELD_NUMBER;
-    hash = (53 * hash) + getItemsJson().hashCode();
+    hash = (37 * hash) + NAME_FIELD_NUMBER;
+    hash = (53 * hash) + getName().hashCode();
+    hash = (37 * hash) + DESCRIPTION_FIELD_NUMBER;
+    hash = (53 * hash) + getDescription().hashCode();
     hash = (29 * hash) + getUnknownFields().hashCode();
     memoizedHashCode = hash;
     return hash;
   }
 
-  public static com.jervis.contracts.server.ListProjectsResponse parseFrom(
+  public static com.jervis.contracts.server.Alternative parseFrom(
       java.nio.ByteBuffer data)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data);
   }
-  public static com.jervis.contracts.server.ListProjectsResponse parseFrom(
+  public static com.jervis.contracts.server.Alternative parseFrom(
       java.nio.ByteBuffer data,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data, extensionRegistry);
   }
-  public static com.jervis.contracts.server.ListProjectsResponse parseFrom(
+  public static com.jervis.contracts.server.Alternative parseFrom(
       com.google.protobuf.ByteString data)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data);
   }
-  public static com.jervis.contracts.server.ListProjectsResponse parseFrom(
+  public static com.jervis.contracts.server.Alternative parseFrom(
       com.google.protobuf.ByteString data,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data, extensionRegistry);
   }
-  public static com.jervis.contracts.server.ListProjectsResponse parseFrom(byte[] data)
+  public static com.jervis.contracts.server.Alternative parseFrom(byte[] data)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data);
   }
-  public static com.jervis.contracts.server.ListProjectsResponse parseFrom(
+  public static com.jervis.contracts.server.Alternative parseFrom(
       byte[] data,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data, extensionRegistry);
   }
-  public static com.jervis.contracts.server.ListProjectsResponse parseFrom(java.io.InputStream input)
+  public static com.jervis.contracts.server.Alternative parseFrom(java.io.InputStream input)
       throws java.io.IOException {
     return com.google.protobuf.GeneratedMessage
         .parseWithIOException(PARSER, input);
   }
-  public static com.jervis.contracts.server.ListProjectsResponse parseFrom(
+  public static com.jervis.contracts.server.Alternative parseFrom(
       java.io.InputStream input,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws java.io.IOException {
@@ -205,26 +247,26 @@ private static final long serialVersionUID = 0L;
         .parseWithIOException(PARSER, input, extensionRegistry);
   }
 
-  public static com.jervis.contracts.server.ListProjectsResponse parseDelimitedFrom(java.io.InputStream input)
+  public static com.jervis.contracts.server.Alternative parseDelimitedFrom(java.io.InputStream input)
       throws java.io.IOException {
     return com.google.protobuf.GeneratedMessage
         .parseDelimitedWithIOException(PARSER, input);
   }
 
-  public static com.jervis.contracts.server.ListProjectsResponse parseDelimitedFrom(
+  public static com.jervis.contracts.server.Alternative parseDelimitedFrom(
       java.io.InputStream input,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws java.io.IOException {
     return com.google.protobuf.GeneratedMessage
         .parseDelimitedWithIOException(PARSER, input, extensionRegistry);
   }
-  public static com.jervis.contracts.server.ListProjectsResponse parseFrom(
+  public static com.jervis.contracts.server.Alternative parseFrom(
       com.google.protobuf.CodedInputStream input)
       throws java.io.IOException {
     return com.google.protobuf.GeneratedMessage
         .parseWithIOException(PARSER, input);
   }
-  public static com.jervis.contracts.server.ListProjectsResponse parseFrom(
+  public static com.jervis.contracts.server.Alternative parseFrom(
       com.google.protobuf.CodedInputStream input,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws java.io.IOException {
@@ -237,7 +279,7 @@ private static final long serialVersionUID = 0L;
   public static Builder newBuilder() {
     return DEFAULT_INSTANCE.toBuilder();
   }
-  public static Builder newBuilder(com.jervis.contracts.server.ListProjectsResponse prototype) {
+  public static Builder newBuilder(com.jervis.contracts.server.Alternative prototype) {
     return DEFAULT_INSTANCE.toBuilder().mergeFrom(prototype);
   }
   @java.lang.Override
@@ -253,26 +295,26 @@ private static final long serialVersionUID = 0L;
     return builder;
   }
   /**
-   * Protobuf type {@code jervis.server.ListProjectsResponse}
+   * Protobuf type {@code jervis.server.Alternative}
    */
   public static final class Builder extends
       com.google.protobuf.GeneratedMessage.Builder<Builder> implements
-      // @@protoc_insertion_point(builder_implements:jervis.server.ListProjectsResponse)
-      com.jervis.contracts.server.ListProjectsResponseOrBuilder {
+      // @@protoc_insertion_point(builder_implements:jervis.server.Alternative)
+      com.jervis.contracts.server.AlternativeOrBuilder {
     public static final com.google.protobuf.Descriptors.Descriptor
         getDescriptor() {
-      return com.jervis.contracts.server.ServerProjectManagementProto.internal_static_jervis_server_ListProjectsResponse_descriptor;
+      return com.jervis.contracts.server.ServerProjectManagementProto.internal_static_jervis_server_Alternative_descriptor;
     }
 
     @java.lang.Override
     protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
         internalGetFieldAccessorTable() {
-      return com.jervis.contracts.server.ServerProjectManagementProto.internal_static_jervis_server_ListProjectsResponse_fieldAccessorTable
+      return com.jervis.contracts.server.ServerProjectManagementProto.internal_static_jervis_server_Alternative_fieldAccessorTable
           .ensureFieldAccessorsInitialized(
-              com.jervis.contracts.server.ListProjectsResponse.class, com.jervis.contracts.server.ListProjectsResponse.Builder.class);
+              com.jervis.contracts.server.Alternative.class, com.jervis.contracts.server.Alternative.Builder.class);
     }
 
-    // Construct using com.jervis.contracts.server.ListProjectsResponse.newBuilder()
+    // Construct using com.jervis.contracts.server.Alternative.newBuilder()
     private Builder() {
 
     }
@@ -286,24 +328,25 @@ private static final long serialVersionUID = 0L;
     public Builder clear() {
       super.clear();
       bitField0_ = 0;
-      itemsJson_ = "";
+      name_ = "";
+      description_ = "";
       return this;
     }
 
     @java.lang.Override
     public com.google.protobuf.Descriptors.Descriptor
         getDescriptorForType() {
-      return com.jervis.contracts.server.ServerProjectManagementProto.internal_static_jervis_server_ListProjectsResponse_descriptor;
+      return com.jervis.contracts.server.ServerProjectManagementProto.internal_static_jervis_server_Alternative_descriptor;
     }
 
     @java.lang.Override
-    public com.jervis.contracts.server.ListProjectsResponse getDefaultInstanceForType() {
-      return com.jervis.contracts.server.ListProjectsResponse.getDefaultInstance();
+    public com.jervis.contracts.server.Alternative getDefaultInstanceForType() {
+      return com.jervis.contracts.server.Alternative.getDefaultInstance();
     }
 
     @java.lang.Override
-    public com.jervis.contracts.server.ListProjectsResponse build() {
-      com.jervis.contracts.server.ListProjectsResponse result = buildPartial();
+    public com.jervis.contracts.server.Alternative build() {
+      com.jervis.contracts.server.Alternative result = buildPartial();
       if (!result.isInitialized()) {
         throw newUninitializedMessageException(result);
       }
@@ -311,35 +354,43 @@ private static final long serialVersionUID = 0L;
     }
 
     @java.lang.Override
-    public com.jervis.contracts.server.ListProjectsResponse buildPartial() {
-      com.jervis.contracts.server.ListProjectsResponse result = new com.jervis.contracts.server.ListProjectsResponse(this);
+    public com.jervis.contracts.server.Alternative buildPartial() {
+      com.jervis.contracts.server.Alternative result = new com.jervis.contracts.server.Alternative(this);
       if (bitField0_ != 0) { buildPartial0(result); }
       onBuilt();
       return result;
     }
 
-    private void buildPartial0(com.jervis.contracts.server.ListProjectsResponse result) {
+    private void buildPartial0(com.jervis.contracts.server.Alternative result) {
       int from_bitField0_ = bitField0_;
       if (((from_bitField0_ & 0x00000001) != 0)) {
-        result.itemsJson_ = itemsJson_;
+        result.name_ = name_;
+      }
+      if (((from_bitField0_ & 0x00000002) != 0)) {
+        result.description_ = description_;
       }
     }
 
     @java.lang.Override
     public Builder mergeFrom(com.google.protobuf.Message other) {
-      if (other instanceof com.jervis.contracts.server.ListProjectsResponse) {
-        return mergeFrom((com.jervis.contracts.server.ListProjectsResponse)other);
+      if (other instanceof com.jervis.contracts.server.Alternative) {
+        return mergeFrom((com.jervis.contracts.server.Alternative)other);
       } else {
         super.mergeFrom(other);
         return this;
       }
     }
 
-    public Builder mergeFrom(com.jervis.contracts.server.ListProjectsResponse other) {
-      if (other == com.jervis.contracts.server.ListProjectsResponse.getDefaultInstance()) return this;
-      if (!other.getItemsJson().isEmpty()) {
-        itemsJson_ = other.itemsJson_;
+    public Builder mergeFrom(com.jervis.contracts.server.Alternative other) {
+      if (other == com.jervis.contracts.server.Alternative.getDefaultInstance()) return this;
+      if (!other.getName().isEmpty()) {
+        name_ = other.name_;
         bitField0_ |= 0x00000001;
+        onChanged();
+      }
+      if (!other.getDescription().isEmpty()) {
+        description_ = other.description_;
+        bitField0_ |= 0x00000002;
         onChanged();
       }
       this.mergeUnknownFields(other.getUnknownFields());
@@ -369,10 +420,15 @@ private static final long serialVersionUID = 0L;
               done = true;
               break;
             case 10: {
-              itemsJson_ = input.readStringRequireUtf8();
+              name_ = input.readStringRequireUtf8();
               bitField0_ |= 0x00000001;
               break;
             } // case 10
+            case 18: {
+              description_ = input.readStringRequireUtf8();
+              bitField0_ |= 0x00000002;
+              break;
+            } // case 18
             default: {
               if (!super.parseUnknownField(input, extensionRegistry, tag)) {
                 done = true; // was an endgroup tag
@@ -390,115 +446,167 @@ private static final long serialVersionUID = 0L;
     }
     private int bitField0_;
 
-    private java.lang.Object itemsJson_ = "";
+    private java.lang.Object name_ = "";
     /**
-     * <pre>
-     * Array of ProjectDto JSON objects.
-     * </pre>
-     *
-     * <code>string items_json = 1 [json_name = "itemsJson"];</code>
-     * @return The itemsJson.
+     * <code>string name = 1 [json_name = "name"];</code>
+     * @return The name.
      */
-    public java.lang.String getItemsJson() {
-      java.lang.Object ref = itemsJson_;
+    public java.lang.String getName() {
+      java.lang.Object ref = name_;
       if (!(ref instanceof java.lang.String)) {
         com.google.protobuf.ByteString bs =
             (com.google.protobuf.ByteString) ref;
         java.lang.String s = bs.toStringUtf8();
-        itemsJson_ = s;
+        name_ = s;
         return s;
       } else {
         return (java.lang.String) ref;
       }
     }
     /**
-     * <pre>
-     * Array of ProjectDto JSON objects.
-     * </pre>
-     *
-     * <code>string items_json = 1 [json_name = "itemsJson"];</code>
-     * @return The bytes for itemsJson.
+     * <code>string name = 1 [json_name = "name"];</code>
+     * @return The bytes for name.
      */
     public com.google.protobuf.ByteString
-        getItemsJsonBytes() {
-      java.lang.Object ref = itemsJson_;
+        getNameBytes() {
+      java.lang.Object ref = name_;
       if (ref instanceof String) {
         com.google.protobuf.ByteString b = 
             com.google.protobuf.ByteString.copyFromUtf8(
                 (java.lang.String) ref);
-        itemsJson_ = b;
+        name_ = b;
         return b;
       } else {
         return (com.google.protobuf.ByteString) ref;
       }
     }
     /**
-     * <pre>
-     * Array of ProjectDto JSON objects.
-     * </pre>
-     *
-     * <code>string items_json = 1 [json_name = "itemsJson"];</code>
-     * @param value The itemsJson to set.
+     * <code>string name = 1 [json_name = "name"];</code>
+     * @param value The name to set.
      * @return This builder for chaining.
      */
-    public Builder setItemsJson(
+    public Builder setName(
         java.lang.String value) {
       if (value == null) { throw new NullPointerException(); }
-      itemsJson_ = value;
+      name_ = value;
       bitField0_ |= 0x00000001;
       onChanged();
       return this;
     }
     /**
-     * <pre>
-     * Array of ProjectDto JSON objects.
-     * </pre>
-     *
-     * <code>string items_json = 1 [json_name = "itemsJson"];</code>
+     * <code>string name = 1 [json_name = "name"];</code>
      * @return This builder for chaining.
      */
-    public Builder clearItemsJson() {
-      itemsJson_ = getDefaultInstance().getItemsJson();
+    public Builder clearName() {
+      name_ = getDefaultInstance().getName();
       bitField0_ = (bitField0_ & ~0x00000001);
       onChanged();
       return this;
     }
     /**
-     * <pre>
-     * Array of ProjectDto JSON objects.
-     * </pre>
-     *
-     * <code>string items_json = 1 [json_name = "itemsJson"];</code>
-     * @param value The bytes for itemsJson to set.
+     * <code>string name = 1 [json_name = "name"];</code>
+     * @param value The bytes for name to set.
      * @return This builder for chaining.
      */
-    public Builder setItemsJsonBytes(
+    public Builder setNameBytes(
         com.google.protobuf.ByteString value) {
       if (value == null) { throw new NullPointerException(); }
       checkByteStringIsUtf8(value);
-      itemsJson_ = value;
+      name_ = value;
       bitField0_ |= 0x00000001;
       onChanged();
       return this;
     }
 
-    // @@protoc_insertion_point(builder_scope:jervis.server.ListProjectsResponse)
+    private java.lang.Object description_ = "";
+    /**
+     * <code>string description = 2 [json_name = "description"];</code>
+     * @return The description.
+     */
+    public java.lang.String getDescription() {
+      java.lang.Object ref = description_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        description_ = s;
+        return s;
+      } else {
+        return (java.lang.String) ref;
+      }
+    }
+    /**
+     * <code>string description = 2 [json_name = "description"];</code>
+     * @return The bytes for description.
+     */
+    public com.google.protobuf.ByteString
+        getDescriptionBytes() {
+      java.lang.Object ref = description_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        description_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+    /**
+     * <code>string description = 2 [json_name = "description"];</code>
+     * @param value The description to set.
+     * @return This builder for chaining.
+     */
+    public Builder setDescription(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      description_ = value;
+      bitField0_ |= 0x00000002;
+      onChanged();
+      return this;
+    }
+    /**
+     * <code>string description = 2 [json_name = "description"];</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearDescription() {
+      description_ = getDefaultInstance().getDescription();
+      bitField0_ = (bitField0_ & ~0x00000002);
+      onChanged();
+      return this;
+    }
+    /**
+     * <code>string description = 2 [json_name = "description"];</code>
+     * @param value The bytes for description to set.
+     * @return This builder for chaining.
+     */
+    public Builder setDescriptionBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      description_ = value;
+      bitField0_ |= 0x00000002;
+      onChanged();
+      return this;
+    }
+
+    // @@protoc_insertion_point(builder_scope:jervis.server.Alternative)
   }
 
-  // @@protoc_insertion_point(class_scope:jervis.server.ListProjectsResponse)
-  private static final com.jervis.contracts.server.ListProjectsResponse DEFAULT_INSTANCE;
+  // @@protoc_insertion_point(class_scope:jervis.server.Alternative)
+  private static final com.jervis.contracts.server.Alternative DEFAULT_INSTANCE;
   static {
-    DEFAULT_INSTANCE = new com.jervis.contracts.server.ListProjectsResponse();
+    DEFAULT_INSTANCE = new com.jervis.contracts.server.Alternative();
   }
 
-  public static com.jervis.contracts.server.ListProjectsResponse getDefaultInstance() {
+  public static com.jervis.contracts.server.Alternative getDefaultInstance() {
     return DEFAULT_INSTANCE;
   }
 
-  private static final com.google.protobuf.Parser<ListProjectsResponse>
-      PARSER = new com.google.protobuf.AbstractParser<ListProjectsResponse>() {
+  private static final com.google.protobuf.Parser<Alternative>
+      PARSER = new com.google.protobuf.AbstractParser<Alternative>() {
     @java.lang.Override
-    public ListProjectsResponse parsePartialFrom(
+    public Alternative parsePartialFrom(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws com.google.protobuf.InvalidProtocolBufferException {
@@ -517,17 +625,17 @@ private static final long serialVersionUID = 0L;
     }
   };
 
-  public static com.google.protobuf.Parser<ListProjectsResponse> parser() {
+  public static com.google.protobuf.Parser<Alternative> parser() {
     return PARSER;
   }
 
   @java.lang.Override
-  public com.google.protobuf.Parser<ListProjectsResponse> getParserForType() {
+  public com.google.protobuf.Parser<Alternative> getParserForType() {
     return PARSER;
   }
 
   @java.lang.Override
-  public com.jervis.contracts.server.ListProjectsResponse getDefaultInstanceForType() {
+  public com.jervis.contracts.server.Alternative getDefaultInstanceForType() {
     return DEFAULT_INSTANCE;
   }
 

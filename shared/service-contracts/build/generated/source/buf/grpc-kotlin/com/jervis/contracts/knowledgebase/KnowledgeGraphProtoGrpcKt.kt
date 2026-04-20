@@ -23,8 +23,7 @@ import kotlin.jvm.JvmOverloads
 import kotlin.jvm.JvmStatic
 
 /**
- * Holder for Kotlin coroutine-based client and server APIs for
- * jervis.knowledgebase.KnowledgeGraphService.
+ * Holder for Kotlin coroutine-based client and server APIs for jervis.knowledgebase.KnowledgeGraphService.
  */
 public object KnowledgeGraphServiceGrpcKt {
   public const val SERVICE_NAME: String = KnowledgeGraphServiceGrpc.SERVICE_NAME
@@ -99,22 +98,18 @@ public object KnowledgeGraphServiceGrpcKt {
     get() = KnowledgeGraphServiceGrpc.getThoughtStatsMethod()
 
   /**
-   * A stub for issuing RPCs to a(n) jervis.knowledgebase.KnowledgeGraphService service as
-   * suspending coroutines.
+   * A stub for issuing RPCs to a(n) jervis.knowledgebase.KnowledgeGraphService service as suspending coroutines.
    */
   @StubFor(KnowledgeGraphServiceGrpc::class)
   public class KnowledgeGraphServiceCoroutineStub @JvmOverloads constructor(
     channel: Channel,
     callOptions: CallOptions = DEFAULT,
   ) : AbstractCoroutineStub<KnowledgeGraphServiceCoroutineStub>(channel, callOptions) {
-    override fun build(channel: Channel, callOptions: CallOptions):
-        KnowledgeGraphServiceCoroutineStub = KnowledgeGraphServiceCoroutineStub(channel,
-        callOptions)
+    override fun build(channel: Channel, callOptions: CallOptions): KnowledgeGraphServiceCoroutineStub = KnowledgeGraphServiceCoroutineStub(channel, callOptions)
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -124,8 +119,7 @@ public object KnowledgeGraphServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun traverse(request: TraversalRequest, headers: Metadata = Metadata()):
-        GraphNodeList = unaryRpc(
+    public suspend fun traverse(request: TraversalRequest, headers: Metadata = Metadata()): GraphNodeList = unaryRpc(
       channel,
       KnowledgeGraphServiceGrpc.getTraverseMethod(),
       request,
@@ -135,8 +129,7 @@ public object KnowledgeGraphServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -146,8 +139,7 @@ public object KnowledgeGraphServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun getNode(request: GetNodeRequest, headers: Metadata = Metadata()): GraphNode =
-        unaryRpc(
+    public suspend fun getNode(request: GetNodeRequest, headers: Metadata = Metadata()): GraphNode = unaryRpc(
       channel,
       KnowledgeGraphServiceGrpc.getGetNodeMethod(),
       request,
@@ -157,8 +149,7 @@ public object KnowledgeGraphServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -168,8 +159,7 @@ public object KnowledgeGraphServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun searchNodes(request: SearchNodesRequest, headers: Metadata = Metadata()):
-        GraphNodeList = unaryRpc(
+    public suspend fun searchNodes(request: SearchNodesRequest, headers: Metadata = Metadata()): GraphNodeList = unaryRpc(
       channel,
       KnowledgeGraphServiceGrpc.getSearchNodesMethod(),
       request,
@@ -179,8 +169,7 @@ public object KnowledgeGraphServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -190,8 +179,7 @@ public object KnowledgeGraphServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun getNodeEvidence(request: GetNodeRequest, headers: Metadata = Metadata()):
-        EvidencePack = unaryRpc(
+    public suspend fun getNodeEvidence(request: GetNodeRequest, headers: Metadata = Metadata()): EvidencePack = unaryRpc(
       channel,
       KnowledgeGraphServiceGrpc.getGetNodeEvidenceMethod(),
       request,
@@ -201,8 +189,7 @@ public object KnowledgeGraphServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -212,8 +199,7 @@ public object KnowledgeGraphServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun listQueryEntities(request: ListQueryEntitiesRequest, headers: Metadata =
-        Metadata()): EntityList = unaryRpc(
+    public suspend fun listQueryEntities(request: ListQueryEntitiesRequest, headers: Metadata = Metadata()): EntityList = unaryRpc(
       channel,
       KnowledgeGraphServiceGrpc.getListQueryEntitiesMethod(),
       request,
@@ -223,8 +209,7 @@ public object KnowledgeGraphServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -234,8 +219,7 @@ public object KnowledgeGraphServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun resolveAlias(request: ResolveAliasRequest, headers: Metadata = Metadata()):
-        AliasResolveResult = unaryRpc(
+    public suspend fun resolveAlias(request: ResolveAliasRequest, headers: Metadata = Metadata()): AliasResolveResult = unaryRpc(
       channel,
       KnowledgeGraphServiceGrpc.getResolveAliasMethod(),
       request,
@@ -245,8 +229,7 @@ public object KnowledgeGraphServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -256,8 +239,7 @@ public object KnowledgeGraphServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun listAliases(request: ListAliasesRequest, headers: Metadata = Metadata()):
-        AliasList = unaryRpc(
+    public suspend fun listAliases(request: ListAliasesRequest, headers: Metadata = Metadata()): AliasList = unaryRpc(
       channel,
       KnowledgeGraphServiceGrpc.getListAliasesMethod(),
       request,
@@ -267,8 +249,7 @@ public object KnowledgeGraphServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -278,8 +259,7 @@ public object KnowledgeGraphServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun getAliasStats(request: AliasStatsRequest, headers: Metadata = Metadata()):
-        AliasStats = unaryRpc(
+    public suspend fun getAliasStats(request: AliasStatsRequest, headers: Metadata = Metadata()): AliasStats = unaryRpc(
       channel,
       KnowledgeGraphServiceGrpc.getGetAliasStatsMethod(),
       request,
@@ -289,8 +269,7 @@ public object KnowledgeGraphServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -300,8 +279,7 @@ public object KnowledgeGraphServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun registerAlias(request: RegisterAliasRequest, headers: Metadata = Metadata()):
-        AliasAck = unaryRpc(
+    public suspend fun registerAlias(request: RegisterAliasRequest, headers: Metadata = Metadata()): AliasAck = unaryRpc(
       channel,
       KnowledgeGraphServiceGrpc.getRegisterAliasMethod(),
       request,
@@ -311,8 +289,7 @@ public object KnowledgeGraphServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -322,8 +299,7 @@ public object KnowledgeGraphServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun mergeAlias(request: MergeAliasRequest, headers: Metadata = Metadata()):
-        AliasAck = unaryRpc(
+    public suspend fun mergeAlias(request: MergeAliasRequest, headers: Metadata = Metadata()): AliasAck = unaryRpc(
       channel,
       KnowledgeGraphServiceGrpc.getMergeAliasMethod(),
       request,
@@ -333,8 +309,7 @@ public object KnowledgeGraphServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -344,8 +319,7 @@ public object KnowledgeGraphServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun thoughtTraverse(request: ThoughtTraversalRequest, headers: Metadata =
-        Metadata()): ThoughtTraversalResult = unaryRpc(
+    public suspend fun thoughtTraverse(request: ThoughtTraversalRequest, headers: Metadata = Metadata()): ThoughtTraversalResult = unaryRpc(
       channel,
       KnowledgeGraphServiceGrpc.getThoughtTraverseMethod(),
       request,
@@ -355,8 +329,7 @@ public object KnowledgeGraphServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -366,8 +339,7 @@ public object KnowledgeGraphServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun thoughtReinforce(request: ThoughtReinforceRequest, headers: Metadata =
-        Metadata()): ThoughtAck = unaryRpc(
+    public suspend fun thoughtReinforce(request: ThoughtReinforceRequest, headers: Metadata = Metadata()): ThoughtAck = unaryRpc(
       channel,
       KnowledgeGraphServiceGrpc.getThoughtReinforceMethod(),
       request,
@@ -377,8 +349,7 @@ public object KnowledgeGraphServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -388,8 +359,7 @@ public object KnowledgeGraphServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun thoughtCreate(request: ThoughtCreateRequest, headers: Metadata = Metadata()):
-        ThoughtAck = unaryRpc(
+    public suspend fun thoughtCreate(request: ThoughtCreateRequest, headers: Metadata = Metadata()): ThoughtAck = unaryRpc(
       channel,
       KnowledgeGraphServiceGrpc.getThoughtCreateMethod(),
       request,
@@ -399,8 +369,7 @@ public object KnowledgeGraphServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -410,8 +379,7 @@ public object KnowledgeGraphServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun thoughtBootstrap(request: ThoughtBootstrapRequest, headers: Metadata =
-        Metadata()): ThoughtAck = unaryRpc(
+    public suspend fun thoughtBootstrap(request: ThoughtBootstrapRequest, headers: Metadata = Metadata()): ThoughtAck = unaryRpc(
       channel,
       KnowledgeGraphServiceGrpc.getThoughtBootstrapMethod(),
       request,
@@ -421,8 +389,7 @@ public object KnowledgeGraphServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -432,8 +399,7 @@ public object KnowledgeGraphServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun thoughtMaintain(request: ThoughtMaintenanceRequest, headers: Metadata =
-        Metadata()): ThoughtAck = unaryRpc(
+    public suspend fun thoughtMaintain(request: ThoughtMaintenanceRequest, headers: Metadata = Metadata()): ThoughtAck = unaryRpc(
       channel,
       KnowledgeGraphServiceGrpc.getThoughtMaintainMethod(),
       request,
@@ -443,8 +409,7 @@ public object KnowledgeGraphServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -454,8 +419,7 @@ public object KnowledgeGraphServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun thoughtStats(request: ThoughtStatsRequest, headers: Metadata = Metadata()):
-        ThoughtStatsResult = unaryRpc(
+    public suspend fun thoughtStats(request: ThoughtStatsRequest, headers: Metadata = Metadata()): ThoughtStatsResult = unaryRpc(
       channel,
       KnowledgeGraphServiceGrpc.getThoughtStatsMethod(),
       request,
@@ -465,8 +429,7 @@ public object KnowledgeGraphServiceGrpcKt {
   }
 
   /**
-   * Skeletal implementation of the jervis.knowledgebase.KnowledgeGraphService service based on
-   * Kotlin coroutines.
+   * Skeletal implementation of the jervis.knowledgebase.KnowledgeGraphService service based on Kotlin coroutines.
    */
   public abstract class KnowledgeGraphServiceCoroutineImplBase(
     coroutineContext: CoroutineContext = EmptyCoroutineContext,
@@ -475,232 +438,193 @@ public object KnowledgeGraphServiceGrpcKt {
      * Returns the response to an RPC for jervis.knowledgebase.KnowledgeGraphService.Traverse.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun traverse(request: TraversalRequest): GraphNodeList = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.Traverse is unimplemented"))
+    public open suspend fun traverse(request: TraversalRequest): GraphNodeList = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.Traverse is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.knowledgebase.KnowledgeGraphService.GetNode.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun getNode(request: GetNodeRequest): GraphNode = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.GetNode is unimplemented"))
+    public open suspend fun getNode(request: GetNodeRequest): GraphNode = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.GetNode is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.knowledgebase.KnowledgeGraphService.SearchNodes.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun searchNodes(request: SearchNodesRequest): GraphNodeList = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.SearchNodes is unimplemented"))
+    public open suspend fun searchNodes(request: SearchNodesRequest): GraphNodeList = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.SearchNodes is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.knowledgebase.KnowledgeGraphService.GetNodeEvidence.
+     * Returns the response to an RPC for jervis.knowledgebase.KnowledgeGraphService.GetNodeEvidence.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun getNodeEvidence(request: GetNodeRequest): EvidencePack = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.GetNodeEvidence is unimplemented"))
+    public open suspend fun getNodeEvidence(request: GetNodeRequest): EvidencePack = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.GetNodeEvidence is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.knowledgebase.KnowledgeGraphService.ListQueryEntities.
+     * Returns the response to an RPC for jervis.knowledgebase.KnowledgeGraphService.ListQueryEntities.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun listQueryEntities(request: ListQueryEntitiesRequest): EntityList = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.ListQueryEntities is unimplemented"))
+    public open suspend fun listQueryEntities(request: ListQueryEntitiesRequest): EntityList = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.ListQueryEntities is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.knowledgebase.KnowledgeGraphService.ResolveAlias.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun resolveAlias(request: ResolveAliasRequest): AliasResolveResult = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.ResolveAlias is unimplemented"))
+    public open suspend fun resolveAlias(request: ResolveAliasRequest): AliasResolveResult = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.ResolveAlias is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.knowledgebase.KnowledgeGraphService.ListAliases.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun listAliases(request: ListAliasesRequest): AliasList = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.ListAliases is unimplemented"))
+    public open suspend fun listAliases(request: ListAliasesRequest): AliasList = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.ListAliases is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.knowledgebase.KnowledgeGraphService.GetAliasStats.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun getAliasStats(request: AliasStatsRequest): AliasStats = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.GetAliasStats is unimplemented"))
+    public open suspend fun getAliasStats(request: AliasStatsRequest): AliasStats = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.GetAliasStats is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.knowledgebase.KnowledgeGraphService.RegisterAlias.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun registerAlias(request: RegisterAliasRequest): AliasAck = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.RegisterAlias is unimplemented"))
+    public open suspend fun registerAlias(request: RegisterAliasRequest): AliasAck = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.RegisterAlias is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.knowledgebase.KnowledgeGraphService.MergeAlias.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun mergeAlias(request: MergeAliasRequest): AliasAck = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.MergeAlias is unimplemented"))
+    public open suspend fun mergeAlias(request: MergeAliasRequest): AliasAck = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.MergeAlias is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.knowledgebase.KnowledgeGraphService.ThoughtTraverse.
+     * Returns the response to an RPC for jervis.knowledgebase.KnowledgeGraphService.ThoughtTraverse.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun thoughtTraverse(request: ThoughtTraversalRequest):
-        ThoughtTraversalResult = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.ThoughtTraverse is unimplemented"))
+    public open suspend fun thoughtTraverse(request: ThoughtTraversalRequest): ThoughtTraversalResult = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.ThoughtTraverse is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.knowledgebase.KnowledgeGraphService.ThoughtReinforce.
+     * Returns the response to an RPC for jervis.knowledgebase.KnowledgeGraphService.ThoughtReinforce.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun thoughtReinforce(request: ThoughtReinforceRequest): ThoughtAck = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.ThoughtReinforce is unimplemented"))
+    public open suspend fun thoughtReinforce(request: ThoughtReinforceRequest): ThoughtAck = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.ThoughtReinforce is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.knowledgebase.KnowledgeGraphService.ThoughtCreate.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun thoughtCreate(request: ThoughtCreateRequest): ThoughtAck = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.ThoughtCreate is unimplemented"))
+    public open suspend fun thoughtCreate(request: ThoughtCreateRequest): ThoughtAck = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.ThoughtCreate is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.knowledgebase.KnowledgeGraphService.ThoughtBootstrap.
+     * Returns the response to an RPC for jervis.knowledgebase.KnowledgeGraphService.ThoughtBootstrap.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun thoughtBootstrap(request: ThoughtBootstrapRequest): ThoughtAck = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.ThoughtBootstrap is unimplemented"))
+    public open suspend fun thoughtBootstrap(request: ThoughtBootstrapRequest): ThoughtAck = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.ThoughtBootstrap is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.knowledgebase.KnowledgeGraphService.ThoughtMaintain.
+     * Returns the response to an RPC for jervis.knowledgebase.KnowledgeGraphService.ThoughtMaintain.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun thoughtMaintain(request: ThoughtMaintenanceRequest): ThoughtAck = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.ThoughtMaintain is unimplemented"))
+    public open suspend fun thoughtMaintain(request: ThoughtMaintenanceRequest): ThoughtAck = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.ThoughtMaintain is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.knowledgebase.KnowledgeGraphService.ThoughtStats.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun thoughtStats(request: ThoughtStatsRequest): ThoughtStatsResult = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.ThoughtStats is unimplemented"))
+    public open suspend fun thoughtStats(request: ThoughtStatsRequest): ThoughtStatsResult = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeGraphService.ThoughtStats is unimplemented"))
 
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(

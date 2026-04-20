@@ -11,9 +11,6 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
  * anything larger the blob side channel is the answer).
  * </pre>
  */
-@javax.annotation.Generated(
-    value = "by gRPC proto compiler (version 1.68.0)",
-    comments = "Source: jervis/document_extraction/extract.proto")
 @io.grpc.stub.annotations.GrpcGenerated
 public final class DocumentExtractionServiceGrpc {
 
@@ -96,6 +93,21 @@ public final class DocumentExtractionServiceGrpc {
         }
       };
     return DocumentExtractionServiceStub.newStub(factory, channel);
+  }
+
+  /**
+   * Creates a new blocking-style stub that supports all types of calls on the service
+   */
+  public static DocumentExtractionServiceBlockingV2Stub newBlockingV2Stub(
+      io.grpc.Channel channel) {
+    io.grpc.stub.AbstractStub.StubFactory<DocumentExtractionServiceBlockingV2Stub> factory =
+      new io.grpc.stub.AbstractStub.StubFactory<DocumentExtractionServiceBlockingV2Stub>() {
+        @java.lang.Override
+        public DocumentExtractionServiceBlockingV2Stub newStub(io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+          return new DocumentExtractionServiceBlockingV2Stub(channel, callOptions);
+        }
+      };
+    return DocumentExtractionServiceBlockingV2Stub.newStub(factory, channel);
   }
 
   /**
@@ -214,6 +226,44 @@ public final class DocumentExtractionServiceGrpc {
 
   /**
    * A stub to allow clients to do synchronous rpc calls to service DocumentExtractionService.
+   * <pre>
+   * DocumentExtractionService — takes any binary content (PDF, DOCX, XLSX,
+   * HTML, images) and returns clean plain text. Replaces the former
+   * `POST /extract` and `POST /extract-base64` FastAPI routes; the callers
+   * now ride a single unary RPC with the bytes inline (64 MiB cap — for
+   * anything larger the blob side channel is the answer).
+   * </pre>
+   */
+  public static final class DocumentExtractionServiceBlockingV2Stub
+      extends io.grpc.stub.AbstractBlockingStub<DocumentExtractionServiceBlockingV2Stub> {
+    private DocumentExtractionServiceBlockingV2Stub(
+        io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+      super(channel, callOptions);
+    }
+
+    @java.lang.Override
+    protected DocumentExtractionServiceBlockingV2Stub build(
+        io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+      return new DocumentExtractionServiceBlockingV2Stub(channel, callOptions);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.document_extraction.ExtractResponse extract(com.jervis.contracts.document_extraction.ExtractRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getExtractMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.document_extraction.HealthResponse health(com.jervis.contracts.document_extraction.HealthRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getHealthMethod(), getCallOptions(), request);
+    }
+  }
+
+  /**
+   * A stub to allow clients to do limited synchronous rpc calls to service DocumentExtractionService.
    * <pre>
    * DocumentExtractionService — takes any binary content (PDF, DOCX, XLSX,
    * HTML, images) and returns clean plain text. Replaces the former

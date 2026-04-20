@@ -23,8 +23,7 @@ import kotlin.jvm.JvmOverloads
 import kotlin.jvm.JvmStatic
 
 /**
- * Holder for Kotlin coroutine-based client and server APIs for
- * jervis.knowledgebase.KnowledgeQueueService.
+ * Holder for Kotlin coroutine-based client and server APIs for jervis.knowledgebase.KnowledgeQueueService.
  */
 public object KnowledgeQueueServiceGrpcKt {
   public const val SERVICE_NAME: String = KnowledgeQueueServiceGrpc.SERVICE_NAME
@@ -38,22 +37,18 @@ public object KnowledgeQueueServiceGrpcKt {
     get() = KnowledgeQueueServiceGrpc.getListQueueMethod()
 
   /**
-   * A stub for issuing RPCs to a(n) jervis.knowledgebase.KnowledgeQueueService service as
-   * suspending coroutines.
+   * A stub for issuing RPCs to a(n) jervis.knowledgebase.KnowledgeQueueService service as suspending coroutines.
    */
   @StubFor(KnowledgeQueueServiceGrpc::class)
   public class KnowledgeQueueServiceCoroutineStub @JvmOverloads constructor(
     channel: Channel,
     callOptions: CallOptions = DEFAULT,
   ) : AbstractCoroutineStub<KnowledgeQueueServiceCoroutineStub>(channel, callOptions) {
-    override fun build(channel: Channel, callOptions: CallOptions):
-        KnowledgeQueueServiceCoroutineStub = KnowledgeQueueServiceCoroutineStub(channel,
-        callOptions)
+    override fun build(channel: Channel, callOptions: CallOptions): KnowledgeQueueServiceCoroutineStub = KnowledgeQueueServiceCoroutineStub(channel, callOptions)
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -63,8 +58,7 @@ public object KnowledgeQueueServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun listQueue(request: QueueListRequest, headers: Metadata = Metadata()):
-        QueueList = unaryRpc(
+    public suspend fun listQueue(request: QueueListRequest, headers: Metadata = Metadata()): QueueList = unaryRpc(
       channel,
       KnowledgeQueueServiceGrpc.getListQueueMethod(),
       request,
@@ -74,8 +68,7 @@ public object KnowledgeQueueServiceGrpcKt {
   }
 
   /**
-   * Skeletal implementation of the jervis.knowledgebase.KnowledgeQueueService service based on
-   * Kotlin coroutines.
+   * Skeletal implementation of the jervis.knowledgebase.KnowledgeQueueService service based on Kotlin coroutines.
    */
   public abstract class KnowledgeQueueServiceCoroutineImplBase(
     coroutineContext: CoroutineContext = EmptyCoroutineContext,
@@ -84,15 +77,13 @@ public object KnowledgeQueueServiceGrpcKt {
      * Returns the response to an RPC for jervis.knowledgebase.KnowledgeQueueService.ListQueue.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun listQueue(request: QueueListRequest): QueueList = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeQueueService.ListQueue is unimplemented"))
+    public open suspend fun listQueue(request: QueueListRequest): QueueList = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeQueueService.ListQueue is unimplemented"))
 
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(

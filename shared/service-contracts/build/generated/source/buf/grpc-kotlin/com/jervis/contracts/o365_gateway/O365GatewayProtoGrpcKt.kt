@@ -23,8 +23,7 @@ import kotlin.jvm.JvmOverloads
 import kotlin.jvm.JvmStatic
 
 /**
- * Holder for Kotlin coroutine-based client and server APIs for
- * jervis.o365_gateway.O365GatewayService.
+ * Holder for Kotlin coroutine-based client and server APIs for jervis.o365_gateway.O365GatewayService.
  */
 public object O365GatewayServiceGrpcKt {
   public const val SERVICE_NAME: String = O365GatewayServiceGrpc.SERVICE_NAME
@@ -122,21 +121,18 @@ public object O365GatewayServiceGrpcKt {
     get() = O365GatewayServiceGrpc.getGetSessionStatusMethod()
 
   /**
-   * A stub for issuing RPCs to a(n) jervis.o365_gateway.O365GatewayService service as suspending
-   * coroutines.
+   * A stub for issuing RPCs to a(n) jervis.o365_gateway.O365GatewayService service as suspending coroutines.
    */
   @StubFor(O365GatewayServiceGrpc::class)
   public class O365GatewayServiceCoroutineStub @JvmOverloads constructor(
     channel: Channel,
     callOptions: CallOptions = DEFAULT,
   ) : AbstractCoroutineStub<O365GatewayServiceCoroutineStub>(channel, callOptions) {
-    override fun build(channel: Channel, callOptions: CallOptions): O365GatewayServiceCoroutineStub
-        = O365GatewayServiceCoroutineStub(channel, callOptions)
+    override fun build(channel: Channel, callOptions: CallOptions): O365GatewayServiceCoroutineStub = O365GatewayServiceCoroutineStub(channel, callOptions)
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -146,8 +142,7 @@ public object O365GatewayServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun listChats(request: ListChatsRequest, headers: Metadata = Metadata()):
-        ListChatsResponse = unaryRpc(
+    public suspend fun listChats(request: ListChatsRequest, headers: Metadata = Metadata()): ListChatsResponse = unaryRpc(
       channel,
       O365GatewayServiceGrpc.getListChatsMethod(),
       request,
@@ -157,8 +152,7 @@ public object O365GatewayServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -168,8 +162,7 @@ public object O365GatewayServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun readChat(request: ReadChatRequest, headers: Metadata = Metadata()):
-        ListChatMessagesResponse = unaryRpc(
+    public suspend fun readChat(request: ReadChatRequest, headers: Metadata = Metadata()): ListChatMessagesResponse = unaryRpc(
       channel,
       O365GatewayServiceGrpc.getReadChatMethod(),
       request,
@@ -179,8 +172,7 @@ public object O365GatewayServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -190,8 +182,7 @@ public object O365GatewayServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun sendChatMessage(request: SendChatMessageRequest, headers: Metadata =
-        Metadata()): ChatMessage = unaryRpc(
+    public suspend fun sendChatMessage(request: SendChatMessageRequest, headers: Metadata = Metadata()): ChatMessage = unaryRpc(
       channel,
       O365GatewayServiceGrpc.getSendChatMessageMethod(),
       request,
@@ -201,8 +192,7 @@ public object O365GatewayServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -212,8 +202,7 @@ public object O365GatewayServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun listTeams(request: ListTeamsRequest, headers: Metadata = Metadata()):
-        ListTeamsResponse = unaryRpc(
+    public suspend fun listTeams(request: ListTeamsRequest, headers: Metadata = Metadata()): ListTeamsResponse = unaryRpc(
       channel,
       O365GatewayServiceGrpc.getListTeamsMethod(),
       request,
@@ -223,8 +212,7 @@ public object O365GatewayServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -234,8 +222,7 @@ public object O365GatewayServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun listChannels(request: ListChannelsRequest, headers: Metadata = Metadata()):
-        ListChannelsResponse = unaryRpc(
+    public suspend fun listChannels(request: ListChannelsRequest, headers: Metadata = Metadata()): ListChannelsResponse = unaryRpc(
       channel,
       O365GatewayServiceGrpc.getListChannelsMethod(),
       request,
@@ -245,8 +232,7 @@ public object O365GatewayServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -256,8 +242,7 @@ public object O365GatewayServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun readChannel(request: ReadChannelRequest, headers: Metadata = Metadata()):
-        ListChannelMessagesResponse = unaryRpc(
+    public suspend fun readChannel(request: ReadChannelRequest, headers: Metadata = Metadata()): ListChannelMessagesResponse = unaryRpc(
       channel,
       O365GatewayServiceGrpc.getReadChannelMethod(),
       request,
@@ -267,8 +252,7 @@ public object O365GatewayServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -278,8 +262,7 @@ public object O365GatewayServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun sendChannelMessage(request: SendChannelMessageRequest, headers: Metadata =
-        Metadata()): ChatMessage = unaryRpc(
+    public suspend fun sendChannelMessage(request: SendChannelMessageRequest, headers: Metadata = Metadata()): ChatMessage = unaryRpc(
       channel,
       O365GatewayServiceGrpc.getSendChannelMessageMethod(),
       request,
@@ -289,8 +272,7 @@ public object O365GatewayServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -300,8 +282,7 @@ public object O365GatewayServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun listMail(request: ListMailRequest, headers: Metadata = Metadata()):
-        ListMailResponse = unaryRpc(
+    public suspend fun listMail(request: ListMailRequest, headers: Metadata = Metadata()): ListMailResponse = unaryRpc(
       channel,
       O365GatewayServiceGrpc.getListMailMethod(),
       request,
@@ -311,8 +292,7 @@ public object O365GatewayServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -322,8 +302,7 @@ public object O365GatewayServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun readMail(request: ReadMailRequest, headers: Metadata = Metadata()):
-        MailMessage = unaryRpc(
+    public suspend fun readMail(request: ReadMailRequest, headers: Metadata = Metadata()): MailMessage = unaryRpc(
       channel,
       O365GatewayServiceGrpc.getReadMailMethod(),
       request,
@@ -333,8 +312,7 @@ public object O365GatewayServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -344,8 +322,7 @@ public object O365GatewayServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun sendMail(request: SendMailRpcRequest, headers: Metadata = Metadata()):
-        SendMailAck = unaryRpc(
+    public suspend fun sendMail(request: SendMailRpcRequest, headers: Metadata = Metadata()): SendMailAck = unaryRpc(
       channel,
       O365GatewayServiceGrpc.getSendMailMethod(),
       request,
@@ -355,8 +332,7 @@ public object O365GatewayServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -366,8 +342,7 @@ public object O365GatewayServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun listCalendarEvents(request: ListCalendarEventsRequest, headers: Metadata =
-        Metadata()): ListCalendarEventsResponse = unaryRpc(
+    public suspend fun listCalendarEvents(request: ListCalendarEventsRequest, headers: Metadata = Metadata()): ListCalendarEventsResponse = unaryRpc(
       channel,
       O365GatewayServiceGrpc.getListCalendarEventsMethod(),
       request,
@@ -377,8 +352,7 @@ public object O365GatewayServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -388,8 +362,7 @@ public object O365GatewayServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun createCalendarEvent(request: CreateCalendarEventRequest, headers: Metadata =
-        Metadata()): CalendarEvent = unaryRpc(
+    public suspend fun createCalendarEvent(request: CreateCalendarEventRequest, headers: Metadata = Metadata()): CalendarEvent = unaryRpc(
       channel,
       O365GatewayServiceGrpc.getCreateCalendarEventMethod(),
       request,
@@ -399,8 +372,7 @@ public object O365GatewayServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -410,8 +382,7 @@ public object O365GatewayServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun getOnlineMeetingByJoinUrl(request: OnlineMeetingByJoinUrlRequest,
-        headers: Metadata = Metadata()): OnlineMeeting = unaryRpc(
+    public suspend fun getOnlineMeetingByJoinUrl(request: OnlineMeetingByJoinUrlRequest, headers: Metadata = Metadata()): OnlineMeeting = unaryRpc(
       channel,
       O365GatewayServiceGrpc.getGetOnlineMeetingByJoinUrlMethod(),
       request,
@@ -421,8 +392,7 @@ public object O365GatewayServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -432,8 +402,7 @@ public object O365GatewayServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun getOnlineMeeting(request: OnlineMeetingRequest, headers: Metadata =
-        Metadata()): OnlineMeeting = unaryRpc(
+    public suspend fun getOnlineMeeting(request: OnlineMeetingRequest, headers: Metadata = Metadata()): OnlineMeeting = unaryRpc(
       channel,
       O365GatewayServiceGrpc.getGetOnlineMeetingMethod(),
       request,
@@ -443,8 +412,7 @@ public object O365GatewayServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -454,8 +422,7 @@ public object O365GatewayServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun listMeetingRecordings(request: OnlineMeetingRequest, headers: Metadata =
-        Metadata()): ListRecordingsResponse = unaryRpc(
+    public suspend fun listMeetingRecordings(request: OnlineMeetingRequest, headers: Metadata = Metadata()): ListRecordingsResponse = unaryRpc(
       channel,
       O365GatewayServiceGrpc.getListMeetingRecordingsMethod(),
       request,
@@ -465,8 +432,7 @@ public object O365GatewayServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -476,8 +442,7 @@ public object O365GatewayServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun listMeetingTranscripts(request: OnlineMeetingRequest, headers: Metadata =
-        Metadata()): ListTranscriptsResponse = unaryRpc(
+    public suspend fun listMeetingTranscripts(request: OnlineMeetingRequest, headers: Metadata = Metadata()): ListTranscriptsResponse = unaryRpc(
       channel,
       O365GatewayServiceGrpc.getListMeetingTranscriptsMethod(),
       request,
@@ -487,8 +452,7 @@ public object O365GatewayServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -498,8 +462,7 @@ public object O365GatewayServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun downloadTranscriptVtt(request: TranscriptRef, headers: Metadata =
-        Metadata()): TranscriptContent = unaryRpc(
+    public suspend fun downloadTranscriptVtt(request: TranscriptRef, headers: Metadata = Metadata()): TranscriptContent = unaryRpc(
       channel,
       O365GatewayServiceGrpc.getDownloadTranscriptVttMethod(),
       request,
@@ -509,8 +472,7 @@ public object O365GatewayServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -520,8 +482,7 @@ public object O365GatewayServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun listDriveItems(request: ListDriveItemsRequest, headers: Metadata =
-        Metadata()): ListDriveItemsResponse = unaryRpc(
+    public suspend fun listDriveItems(request: ListDriveItemsRequest, headers: Metadata = Metadata()): ListDriveItemsResponse = unaryRpc(
       channel,
       O365GatewayServiceGrpc.getListDriveItemsMethod(),
       request,
@@ -531,8 +492,7 @@ public object O365GatewayServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -542,8 +502,7 @@ public object O365GatewayServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun getDriveItem(request: DriveItemRequest, headers: Metadata = Metadata()):
-        DriveItem = unaryRpc(
+    public suspend fun getDriveItem(request: DriveItemRequest, headers: Metadata = Metadata()): DriveItem = unaryRpc(
       channel,
       O365GatewayServiceGrpc.getGetDriveItemMethod(),
       request,
@@ -553,8 +512,7 @@ public object O365GatewayServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -564,8 +522,7 @@ public object O365GatewayServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun searchDrive(request: SearchDriveRequest, headers: Metadata = Metadata()):
-        ListDriveItemsResponse = unaryRpc(
+    public suspend fun searchDrive(request: SearchDriveRequest, headers: Metadata = Metadata()): ListDriveItemsResponse = unaryRpc(
       channel,
       O365GatewayServiceGrpc.getSearchDriveMethod(),
       request,
@@ -575,8 +532,7 @@ public object O365GatewayServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -586,8 +542,7 @@ public object O365GatewayServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun getSessionStatus(request: SessionStatusRequest, headers: Metadata =
-        Metadata()): SessionStatus = unaryRpc(
+    public suspend fun getSessionStatus(request: SessionStatusRequest, headers: Metadata = Metadata()): SessionStatus = unaryRpc(
       channel,
       O365GatewayServiceGrpc.getGetSessionStatusMethod(),
       request,
@@ -597,8 +552,7 @@ public object O365GatewayServiceGrpcKt {
   }
 
   /**
-   * Skeletal implementation of the jervis.o365_gateway.O365GatewayService service based on Kotlin
-   * coroutines.
+   * Skeletal implementation of the jervis.o365_gateway.O365GatewayService service based on Kotlin coroutines.
    */
   public abstract class O365GatewayServiceCoroutineImplBase(
     coroutineContext: CoroutineContext = EmptyCoroutineContext,
@@ -607,308 +561,253 @@ public object O365GatewayServiceGrpcKt {
      * Returns the response to an RPC for jervis.o365_gateway.O365GatewayService.ListChats.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun listChats(request: ListChatsRequest): ListChatsResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.ListChats is unimplemented"))
+    public open suspend fun listChats(request: ListChatsRequest): ListChatsResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.ListChats is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.o365_gateway.O365GatewayService.ReadChat.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun readChat(request: ReadChatRequest): ListChatMessagesResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.ReadChat is unimplemented"))
+    public open suspend fun readChat(request: ReadChatRequest): ListChatMessagesResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.ReadChat is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.o365_gateway.O365GatewayService.SendChatMessage.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun sendChatMessage(request: SendChatMessageRequest): ChatMessage = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.SendChatMessage is unimplemented"))
+    public open suspend fun sendChatMessage(request: SendChatMessageRequest): ChatMessage = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.SendChatMessage is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.o365_gateway.O365GatewayService.ListTeams.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun listTeams(request: ListTeamsRequest): ListTeamsResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.ListTeams is unimplemented"))
+    public open suspend fun listTeams(request: ListTeamsRequest): ListTeamsResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.ListTeams is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.o365_gateway.O365GatewayService.ListChannels.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun listChannels(request: ListChannelsRequest): ListChannelsResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.ListChannels is unimplemented"))
+    public open suspend fun listChannels(request: ListChannelsRequest): ListChannelsResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.ListChannels is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.o365_gateway.O365GatewayService.ReadChannel.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun readChannel(request: ReadChannelRequest): ListChannelMessagesResponse =
-        throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.ReadChannel is unimplemented"))
+    public open suspend fun readChannel(request: ReadChannelRequest): ListChannelMessagesResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.ReadChannel is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.o365_gateway.O365GatewayService.SendChannelMessage.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun sendChannelMessage(request: SendChannelMessageRequest): ChatMessage =
-        throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.SendChannelMessage is unimplemented"))
+    public open suspend fun sendChannelMessage(request: SendChannelMessageRequest): ChatMessage = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.SendChannelMessage is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.o365_gateway.O365GatewayService.ListMail.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun listMail(request: ListMailRequest): ListMailResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.ListMail is unimplemented"))
+    public open suspend fun listMail(request: ListMailRequest): ListMailResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.ListMail is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.o365_gateway.O365GatewayService.ReadMail.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun readMail(request: ReadMailRequest): MailMessage = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.ReadMail is unimplemented"))
+    public open suspend fun readMail(request: ReadMailRequest): MailMessage = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.ReadMail is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.o365_gateway.O365GatewayService.SendMail.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun sendMail(request: SendMailRpcRequest): SendMailAck = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.SendMail is unimplemented"))
+    public open suspend fun sendMail(request: SendMailRpcRequest): SendMailAck = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.SendMail is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.o365_gateway.O365GatewayService.ListCalendarEvents.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun listCalendarEvents(request: ListCalendarEventsRequest):
-        ListCalendarEventsResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.ListCalendarEvents is unimplemented"))
+    public open suspend fun listCalendarEvents(request: ListCalendarEventsRequest): ListCalendarEventsResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.ListCalendarEvents is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.o365_gateway.O365GatewayService.CreateCalendarEvent.
+     * Returns the response to an RPC for jervis.o365_gateway.O365GatewayService.CreateCalendarEvent.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun createCalendarEvent(request: CreateCalendarEventRequest): CalendarEvent
-        = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.CreateCalendarEvent is unimplemented"))
+    public open suspend fun createCalendarEvent(request: CreateCalendarEventRequest): CalendarEvent = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.CreateCalendarEvent is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.o365_gateway.O365GatewayService.GetOnlineMeetingByJoinUrl.
+     * Returns the response to an RPC for jervis.o365_gateway.O365GatewayService.GetOnlineMeetingByJoinUrl.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun getOnlineMeetingByJoinUrl(request: OnlineMeetingByJoinUrlRequest):
-        OnlineMeeting = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.GetOnlineMeetingByJoinUrl is unimplemented"))
+    public open suspend fun getOnlineMeetingByJoinUrl(request: OnlineMeetingByJoinUrlRequest): OnlineMeeting = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.GetOnlineMeetingByJoinUrl is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.o365_gateway.O365GatewayService.GetOnlineMeeting.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun getOnlineMeeting(request: OnlineMeetingRequest): OnlineMeeting = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.GetOnlineMeeting is unimplemented"))
+    public open suspend fun getOnlineMeeting(request: OnlineMeetingRequest): OnlineMeeting = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.GetOnlineMeeting is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.o365_gateway.O365GatewayService.ListMeetingRecordings.
+     * Returns the response to an RPC for jervis.o365_gateway.O365GatewayService.ListMeetingRecordings.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun listMeetingRecordings(request: OnlineMeetingRequest):
-        ListRecordingsResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.ListMeetingRecordings is unimplemented"))
+    public open suspend fun listMeetingRecordings(request: OnlineMeetingRequest): ListRecordingsResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.ListMeetingRecordings is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.o365_gateway.O365GatewayService.ListMeetingTranscripts.
+     * Returns the response to an RPC for jervis.o365_gateway.O365GatewayService.ListMeetingTranscripts.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun listMeetingTranscripts(request: OnlineMeetingRequest):
-        ListTranscriptsResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.ListMeetingTranscripts is unimplemented"))
+    public open suspend fun listMeetingTranscripts(request: OnlineMeetingRequest): ListTranscriptsResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.ListMeetingTranscripts is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.o365_gateway.O365GatewayService.DownloadTranscriptVtt.
+     * Returns the response to an RPC for jervis.o365_gateway.O365GatewayService.DownloadTranscriptVtt.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun downloadTranscriptVtt(request: TranscriptRef): TranscriptContent = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.DownloadTranscriptVtt is unimplemented"))
+    public open suspend fun downloadTranscriptVtt(request: TranscriptRef): TranscriptContent = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.DownloadTranscriptVtt is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.o365_gateway.O365GatewayService.ListDriveItems.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun listDriveItems(request: ListDriveItemsRequest): ListDriveItemsResponse =
-        throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.ListDriveItems is unimplemented"))
+    public open suspend fun listDriveItems(request: ListDriveItemsRequest): ListDriveItemsResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.ListDriveItems is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.o365_gateway.O365GatewayService.GetDriveItem.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun getDriveItem(request: DriveItemRequest): DriveItem = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.GetDriveItem is unimplemented"))
+    public open suspend fun getDriveItem(request: DriveItemRequest): DriveItem = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.GetDriveItem is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.o365_gateway.O365GatewayService.SearchDrive.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun searchDrive(request: SearchDriveRequest): ListDriveItemsResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.SearchDrive is unimplemented"))
+    public open suspend fun searchDrive(request: SearchDriveRequest): ListDriveItemsResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.SearchDrive is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.o365_gateway.O365GatewayService.GetSessionStatus.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun getSessionStatus(request: SessionStatusRequest): SessionStatus = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.GetSessionStatus is unimplemented"))
+    public open suspend fun getSessionStatus(request: SessionStatusRequest): SessionStatus = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_gateway.O365GatewayService.GetSessionStatus is unimplemented"))
 
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(

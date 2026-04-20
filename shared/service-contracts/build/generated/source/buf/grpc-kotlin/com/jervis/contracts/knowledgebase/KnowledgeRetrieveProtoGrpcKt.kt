@@ -23,8 +23,7 @@ import kotlin.jvm.JvmOverloads
 import kotlin.jvm.JvmStatic
 
 /**
- * Holder for Kotlin coroutine-based client and server APIs for
- * jervis.knowledgebase.KnowledgeRetrieveService.
+ * Holder for Kotlin coroutine-based client and server APIs for jervis.knowledgebase.KnowledgeRetrieveService.
  */
 public object KnowledgeRetrieveServiceGrpcKt {
   public const val SERVICE_NAME: String = KnowledgeRetrieveServiceGrpc.SERVICE_NAME
@@ -58,22 +57,18 @@ public object KnowledgeRetrieveServiceGrpcKt {
     get() = KnowledgeRetrieveServiceGrpc.getListChunksByKindMethod()
 
   /**
-   * A stub for issuing RPCs to a(n) jervis.knowledgebase.KnowledgeRetrieveService service as
-   * suspending coroutines.
+   * A stub for issuing RPCs to a(n) jervis.knowledgebase.KnowledgeRetrieveService service as suspending coroutines.
    */
   @StubFor(KnowledgeRetrieveServiceGrpc::class)
   public class KnowledgeRetrieveServiceCoroutineStub @JvmOverloads constructor(
     channel: Channel,
     callOptions: CallOptions = DEFAULT,
   ) : AbstractCoroutineStub<KnowledgeRetrieveServiceCoroutineStub>(channel, callOptions) {
-    override fun build(channel: Channel, callOptions: CallOptions):
-        KnowledgeRetrieveServiceCoroutineStub = KnowledgeRetrieveServiceCoroutineStub(channel,
-        callOptions)
+    override fun build(channel: Channel, callOptions: CallOptions): KnowledgeRetrieveServiceCoroutineStub = KnowledgeRetrieveServiceCoroutineStub(channel, callOptions)
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -83,8 +78,7 @@ public object KnowledgeRetrieveServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun retrieve(request: RetrievalRequest, headers: Metadata = Metadata()):
-        EvidencePack = unaryRpc(
+    public suspend fun retrieve(request: RetrievalRequest, headers: Metadata = Metadata()): EvidencePack = unaryRpc(
       channel,
       KnowledgeRetrieveServiceGrpc.getRetrieveMethod(),
       request,
@@ -94,8 +88,7 @@ public object KnowledgeRetrieveServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -105,8 +98,7 @@ public object KnowledgeRetrieveServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun retrieveSimple(request: RetrievalRequest, headers: Metadata = Metadata()):
-        EvidencePack = unaryRpc(
+    public suspend fun retrieveSimple(request: RetrievalRequest, headers: Metadata = Metadata()): EvidencePack = unaryRpc(
       channel,
       KnowledgeRetrieveServiceGrpc.getRetrieveSimpleMethod(),
       request,
@@ -116,8 +108,7 @@ public object KnowledgeRetrieveServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -127,8 +118,7 @@ public object KnowledgeRetrieveServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun retrieveHybrid(request: HybridRetrievalRequest, headers: Metadata =
-        Metadata()): HybridEvidencePack = unaryRpc(
+    public suspend fun retrieveHybrid(request: HybridRetrievalRequest, headers: Metadata = Metadata()): HybridEvidencePack = unaryRpc(
       channel,
       KnowledgeRetrieveServiceGrpc.getRetrieveHybridMethod(),
       request,
@@ -138,8 +128,7 @@ public object KnowledgeRetrieveServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -149,8 +138,7 @@ public object KnowledgeRetrieveServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun analyzeCode(request: TraversalRequest, headers: Metadata = Metadata()):
-        JoernAnalyzeResult = unaryRpc(
+    public suspend fun analyzeCode(request: TraversalRequest, headers: Metadata = Metadata()): JoernAnalyzeResult = unaryRpc(
       channel,
       KnowledgeRetrieveServiceGrpc.getAnalyzeCodeMethod(),
       request,
@@ -160,8 +148,7 @@ public object KnowledgeRetrieveServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -171,8 +158,7 @@ public object KnowledgeRetrieveServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun joernScan(request: JoernScanRequest, headers: Metadata = Metadata()):
-        JoernScanResult = unaryRpc(
+    public suspend fun joernScan(request: JoernScanRequest, headers: Metadata = Metadata()): JoernScanResult = unaryRpc(
       channel,
       KnowledgeRetrieveServiceGrpc.getJoernScanMethod(),
       request,
@@ -182,8 +168,7 @@ public object KnowledgeRetrieveServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -193,8 +178,7 @@ public object KnowledgeRetrieveServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun listChunksByKind(request: ListByKindRequest, headers: Metadata = Metadata()):
-        ChunkList = unaryRpc(
+    public suspend fun listChunksByKind(request: ListByKindRequest, headers: Metadata = Metadata()): ChunkList = unaryRpc(
       channel,
       KnowledgeRetrieveServiceGrpc.getListChunksByKindMethod(),
       request,
@@ -204,8 +188,7 @@ public object KnowledgeRetrieveServiceGrpcKt {
   }
 
   /**
-   * Skeletal implementation of the jervis.knowledgebase.KnowledgeRetrieveService service based on
-   * Kotlin coroutines.
+   * Skeletal implementation of the jervis.knowledgebase.KnowledgeRetrieveService service based on Kotlin coroutines.
    */
   public abstract class KnowledgeRetrieveServiceCoroutineImplBase(
     coroutineContext: CoroutineContext = EmptyCoroutineContext,
@@ -214,89 +197,73 @@ public object KnowledgeRetrieveServiceGrpcKt {
      * Returns the response to an RPC for jervis.knowledgebase.KnowledgeRetrieveService.Retrieve.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun retrieve(request: RetrievalRequest): EvidencePack = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeRetrieveService.Retrieve is unimplemented"))
+    public open suspend fun retrieve(request: RetrievalRequest): EvidencePack = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeRetrieveService.Retrieve is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.knowledgebase.KnowledgeRetrieveService.RetrieveSimple.
+     * Returns the response to an RPC for jervis.knowledgebase.KnowledgeRetrieveService.RetrieveSimple.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun retrieveSimple(request: RetrievalRequest): EvidencePack = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeRetrieveService.RetrieveSimple is unimplemented"))
+    public open suspend fun retrieveSimple(request: RetrievalRequest): EvidencePack = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeRetrieveService.RetrieveSimple is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.knowledgebase.KnowledgeRetrieveService.RetrieveHybrid.
+     * Returns the response to an RPC for jervis.knowledgebase.KnowledgeRetrieveService.RetrieveHybrid.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun retrieveHybrid(request: HybridRetrievalRequest): HybridEvidencePack =
-        throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeRetrieveService.RetrieveHybrid is unimplemented"))
+    public open suspend fun retrieveHybrid(request: HybridRetrievalRequest): HybridEvidencePack = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeRetrieveService.RetrieveHybrid is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.knowledgebase.KnowledgeRetrieveService.AnalyzeCode.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun analyzeCode(request: TraversalRequest): JoernAnalyzeResult = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeRetrieveService.AnalyzeCode is unimplemented"))
+    public open suspend fun analyzeCode(request: TraversalRequest): JoernAnalyzeResult = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeRetrieveService.AnalyzeCode is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.knowledgebase.KnowledgeRetrieveService.JoernScan.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun joernScan(request: JoernScanRequest): JoernScanResult = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeRetrieveService.JoernScan is unimplemented"))
+    public open suspend fun joernScan(request: JoernScanRequest): JoernScanResult = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeRetrieveService.JoernScan is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.knowledgebase.KnowledgeRetrieveService.ListChunksByKind.
+     * Returns the response to an RPC for jervis.knowledgebase.KnowledgeRetrieveService.ListChunksByKind.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun listChunksByKind(request: ListByKindRequest): ChunkList = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeRetrieveService.ListChunksByKind is unimplemented"))
+    public open suspend fun listChunksByKind(request: ListByKindRequest): ChunkList = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeRetrieveService.ListChunksByKind is unimplemented"))
 
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(

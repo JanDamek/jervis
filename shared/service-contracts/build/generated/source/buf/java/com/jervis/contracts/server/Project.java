@@ -6,13 +6,18 @@
 package com.jervis.contracts.server;
 
 /**
- * Protobuf type {@code jervis.server.UpdateProjectResponse}
+ * <pre>
+ * Project — subset of com.jervis.dto.project.ProjectDto the orchestrator
+ * + MCP consumers read over the pod-to-pod wire.
+ * </pre>
+ *
+ * Protobuf type {@code jervis.server.Project}
  */
 @com.google.protobuf.Generated
-public final class UpdateProjectResponse extends
+public final class Project extends
     com.google.protobuf.GeneratedMessage implements
-    // @@protoc_insertion_point(message_implements:jervis.server.UpdateProjectResponse)
-    UpdateProjectResponseOrBuilder {
+    // @@protoc_insertion_point(message_implements:jervis.server.Project)
+    ProjectOrBuilder {
 private static final long serialVersionUID = 0L;
   static {
     com.google.protobuf.RuntimeVersion.validateProtobufGencodeVersion(
@@ -21,34 +26,36 @@ private static final long serialVersionUID = 0L;
       /* minor= */ 34,
       /* patch= */ 1,
       /* suffix= */ "",
-      "UpdateProjectResponse");
+      "Project");
   }
-  // Use UpdateProjectResponse.newBuilder() to construct.
-  private UpdateProjectResponse(com.google.protobuf.GeneratedMessage.Builder<?> builder) {
+  // Use Project.newBuilder() to construct.
+  private Project(com.google.protobuf.GeneratedMessage.Builder<?> builder) {
     super(builder);
   }
-  private UpdateProjectResponse() {
+  private Project() {
     id_ = "";
     name_ = "";
-    bodyJson_ = "";
+    clientId_ = "";
+    groupId_ = "";
+    description_ = "";
   }
 
   public static final com.google.protobuf.Descriptors.Descriptor
       getDescriptor() {
-    return com.jervis.contracts.server.ServerProjectManagementProto.internal_static_jervis_server_UpdateProjectResponse_descriptor;
+    return com.jervis.contracts.server.ServerProjectManagementProto.internal_static_jervis_server_Project_descriptor;
   }
 
   @java.lang.Override
   public com.google.protobuf.Descriptors.Descriptor getDescriptorForType() {
-    return com.jervis.contracts.server.ServerProjectManagementProto.internal_static_jervis_server_UpdateProjectResponse_descriptor;
+    return com.jervis.contracts.server.ServerProjectManagementProto.internal_static_jervis_server_Project_descriptor;
   }
 
   @java.lang.Override
   protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internalGetFieldAccessorTable() {
-    return com.jervis.contracts.server.ServerProjectManagementProto.internal_static_jervis_server_UpdateProjectResponse_fieldAccessorTable
+    return com.jervis.contracts.server.ServerProjectManagementProto.internal_static_jervis_server_Project_fieldAccessorTable
         .ensureFieldAccessorsInitialized(
-            com.jervis.contracts.server.UpdateProjectResponse.class, com.jervis.contracts.server.UpdateProjectResponse.Builder.class);
+            com.jervis.contracts.server.Project.class, com.jervis.contracts.server.Project.Builder.class);
   }
 
   public static final int ID_FIELD_NUMBER = 1;
@@ -129,47 +136,117 @@ private static final long serialVersionUID = 0L;
     }
   }
 
-  public static final int BODY_JSON_FIELD_NUMBER = 3;
+  public static final int CLIENT_ID_FIELD_NUMBER = 3;
   @SuppressWarnings("serial")
-  private volatile java.lang.Object bodyJson_ = "";
+  private volatile java.lang.Object clientId_ = "";
   /**
-   * <pre>
-   * Full ProjectDto after update (same shape as list items).
-   * </pre>
-   *
-   * <code>string body_json = 3 [json_name = "bodyJson"];</code>
-   * @return The bodyJson.
+   * <code>string client_id = 3 [json_name = "clientId"];</code>
+   * @return The clientId.
    */
   @java.lang.Override
-  public java.lang.String getBodyJson() {
-    java.lang.Object ref = bodyJson_;
+  public java.lang.String getClientId() {
+    java.lang.Object ref = clientId_;
     if (ref instanceof java.lang.String) {
       return (java.lang.String) ref;
     } else {
       com.google.protobuf.ByteString bs = 
           (com.google.protobuf.ByteString) ref;
       java.lang.String s = bs.toStringUtf8();
-      bodyJson_ = s;
+      clientId_ = s;
       return s;
     }
   }
   /**
-   * <pre>
-   * Full ProjectDto after update (same shape as list items).
-   * </pre>
-   *
-   * <code>string body_json = 3 [json_name = "bodyJson"];</code>
-   * @return The bytes for bodyJson.
+   * <code>string client_id = 3 [json_name = "clientId"];</code>
+   * @return The bytes for clientId.
    */
   @java.lang.Override
   public com.google.protobuf.ByteString
-      getBodyJsonBytes() {
-    java.lang.Object ref = bodyJson_;
+      getClientIdBytes() {
+    java.lang.Object ref = clientId_;
     if (ref instanceof java.lang.String) {
       com.google.protobuf.ByteString b = 
           com.google.protobuf.ByteString.copyFromUtf8(
               (java.lang.String) ref);
-      bodyJson_ = b;
+      clientId_ = b;
+      return b;
+    } else {
+      return (com.google.protobuf.ByteString) ref;
+    }
+  }
+
+  public static final int GROUP_ID_FIELD_NUMBER = 4;
+  @SuppressWarnings("serial")
+  private volatile java.lang.Object groupId_ = "";
+  /**
+   * <code>string group_id = 4 [json_name = "groupId"];</code>
+   * @return The groupId.
+   */
+  @java.lang.Override
+  public java.lang.String getGroupId() {
+    java.lang.Object ref = groupId_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      com.google.protobuf.ByteString bs = 
+          (com.google.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      groupId_ = s;
+      return s;
+    }
+  }
+  /**
+   * <code>string group_id = 4 [json_name = "groupId"];</code>
+   * @return The bytes for groupId.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getGroupIdBytes() {
+    java.lang.Object ref = groupId_;
+    if (ref instanceof java.lang.String) {
+      com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      groupId_ = b;
+      return b;
+    } else {
+      return (com.google.protobuf.ByteString) ref;
+    }
+  }
+
+  public static final int DESCRIPTION_FIELD_NUMBER = 5;
+  @SuppressWarnings("serial")
+  private volatile java.lang.Object description_ = "";
+  /**
+   * <code>string description = 5 [json_name = "description"];</code>
+   * @return The description.
+   */
+  @java.lang.Override
+  public java.lang.String getDescription() {
+    java.lang.Object ref = description_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      com.google.protobuf.ByteString bs = 
+          (com.google.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      description_ = s;
+      return s;
+    }
+  }
+  /**
+   * <code>string description = 5 [json_name = "description"];</code>
+   * @return The bytes for description.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getDescriptionBytes() {
+    java.lang.Object ref = description_;
+    if (ref instanceof java.lang.String) {
+      com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      description_ = b;
       return b;
     } else {
       return (com.google.protobuf.ByteString) ref;
@@ -196,8 +273,14 @@ private static final long serialVersionUID = 0L;
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(name_)) {
       com.google.protobuf.GeneratedMessage.writeString(output, 2, name_);
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(bodyJson_)) {
-      com.google.protobuf.GeneratedMessage.writeString(output, 3, bodyJson_);
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(clientId_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 3, clientId_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(groupId_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 4, groupId_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(description_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 5, description_);
     }
     getUnknownFields().writeTo(output);
   }
@@ -214,8 +297,14 @@ private static final long serialVersionUID = 0L;
     if (!com.google.protobuf.GeneratedMessage.isStringEmpty(name_)) {
       size += com.google.protobuf.GeneratedMessage.computeStringSize(2, name_);
     }
-    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(bodyJson_)) {
-      size += com.google.protobuf.GeneratedMessage.computeStringSize(3, bodyJson_);
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(clientId_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(3, clientId_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(groupId_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(4, groupId_);
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(description_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(5, description_);
     }
     size += getUnknownFields().getSerializedSize();
     memoizedSize = size;
@@ -227,17 +316,21 @@ private static final long serialVersionUID = 0L;
     if (obj == this) {
      return true;
     }
-    if (!(obj instanceof com.jervis.contracts.server.UpdateProjectResponse)) {
+    if (!(obj instanceof com.jervis.contracts.server.Project)) {
       return super.equals(obj);
     }
-    com.jervis.contracts.server.UpdateProjectResponse other = (com.jervis.contracts.server.UpdateProjectResponse) obj;
+    com.jervis.contracts.server.Project other = (com.jervis.contracts.server.Project) obj;
 
     if (!getId()
         .equals(other.getId())) return false;
     if (!getName()
         .equals(other.getName())) return false;
-    if (!getBodyJson()
-        .equals(other.getBodyJson())) return false;
+    if (!getClientId()
+        .equals(other.getClientId())) return false;
+    if (!getGroupId()
+        .equals(other.getGroupId())) return false;
+    if (!getDescription()
+        .equals(other.getDescription())) return false;
     if (!getUnknownFields().equals(other.getUnknownFields())) return false;
     return true;
   }
@@ -253,51 +346,55 @@ private static final long serialVersionUID = 0L;
     hash = (53 * hash) + getId().hashCode();
     hash = (37 * hash) + NAME_FIELD_NUMBER;
     hash = (53 * hash) + getName().hashCode();
-    hash = (37 * hash) + BODY_JSON_FIELD_NUMBER;
-    hash = (53 * hash) + getBodyJson().hashCode();
+    hash = (37 * hash) + CLIENT_ID_FIELD_NUMBER;
+    hash = (53 * hash) + getClientId().hashCode();
+    hash = (37 * hash) + GROUP_ID_FIELD_NUMBER;
+    hash = (53 * hash) + getGroupId().hashCode();
+    hash = (37 * hash) + DESCRIPTION_FIELD_NUMBER;
+    hash = (53 * hash) + getDescription().hashCode();
     hash = (29 * hash) + getUnknownFields().hashCode();
     memoizedHashCode = hash;
     return hash;
   }
 
-  public static com.jervis.contracts.server.UpdateProjectResponse parseFrom(
+  public static com.jervis.contracts.server.Project parseFrom(
       java.nio.ByteBuffer data)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data);
   }
-  public static com.jervis.contracts.server.UpdateProjectResponse parseFrom(
+  public static com.jervis.contracts.server.Project parseFrom(
       java.nio.ByteBuffer data,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data, extensionRegistry);
   }
-  public static com.jervis.contracts.server.UpdateProjectResponse parseFrom(
+  public static com.jervis.contracts.server.Project parseFrom(
       com.google.protobuf.ByteString data)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data);
   }
-  public static com.jervis.contracts.server.UpdateProjectResponse parseFrom(
+  public static com.jervis.contracts.server.Project parseFrom(
       com.google.protobuf.ByteString data,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data, extensionRegistry);
   }
-  public static com.jervis.contracts.server.UpdateProjectResponse parseFrom(byte[] data)
+  public static com.jervis.contracts.server.Project parseFrom(byte[] data)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data);
   }
-  public static com.jervis.contracts.server.UpdateProjectResponse parseFrom(
+  public static com.jervis.contracts.server.Project parseFrom(
       byte[] data,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws com.google.protobuf.InvalidProtocolBufferException {
     return PARSER.parseFrom(data, extensionRegistry);
   }
-  public static com.jervis.contracts.server.UpdateProjectResponse parseFrom(java.io.InputStream input)
+  public static com.jervis.contracts.server.Project parseFrom(java.io.InputStream input)
       throws java.io.IOException {
     return com.google.protobuf.GeneratedMessage
         .parseWithIOException(PARSER, input);
   }
-  public static com.jervis.contracts.server.UpdateProjectResponse parseFrom(
+  public static com.jervis.contracts.server.Project parseFrom(
       java.io.InputStream input,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws java.io.IOException {
@@ -305,26 +402,26 @@ private static final long serialVersionUID = 0L;
         .parseWithIOException(PARSER, input, extensionRegistry);
   }
 
-  public static com.jervis.contracts.server.UpdateProjectResponse parseDelimitedFrom(java.io.InputStream input)
+  public static com.jervis.contracts.server.Project parseDelimitedFrom(java.io.InputStream input)
       throws java.io.IOException {
     return com.google.protobuf.GeneratedMessage
         .parseDelimitedWithIOException(PARSER, input);
   }
 
-  public static com.jervis.contracts.server.UpdateProjectResponse parseDelimitedFrom(
+  public static com.jervis.contracts.server.Project parseDelimitedFrom(
       java.io.InputStream input,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws java.io.IOException {
     return com.google.protobuf.GeneratedMessage
         .parseDelimitedWithIOException(PARSER, input, extensionRegistry);
   }
-  public static com.jervis.contracts.server.UpdateProjectResponse parseFrom(
+  public static com.jervis.contracts.server.Project parseFrom(
       com.google.protobuf.CodedInputStream input)
       throws java.io.IOException {
     return com.google.protobuf.GeneratedMessage
         .parseWithIOException(PARSER, input);
   }
-  public static com.jervis.contracts.server.UpdateProjectResponse parseFrom(
+  public static com.jervis.contracts.server.Project parseFrom(
       com.google.protobuf.CodedInputStream input,
       com.google.protobuf.ExtensionRegistryLite extensionRegistry)
       throws java.io.IOException {
@@ -337,7 +434,7 @@ private static final long serialVersionUID = 0L;
   public static Builder newBuilder() {
     return DEFAULT_INSTANCE.toBuilder();
   }
-  public static Builder newBuilder(com.jervis.contracts.server.UpdateProjectResponse prototype) {
+  public static Builder newBuilder(com.jervis.contracts.server.Project prototype) {
     return DEFAULT_INSTANCE.toBuilder().mergeFrom(prototype);
   }
   @java.lang.Override
@@ -353,26 +450,31 @@ private static final long serialVersionUID = 0L;
     return builder;
   }
   /**
-   * Protobuf type {@code jervis.server.UpdateProjectResponse}
+   * <pre>
+   * Project — subset of com.jervis.dto.project.ProjectDto the orchestrator
+   * + MCP consumers read over the pod-to-pod wire.
+   * </pre>
+   *
+   * Protobuf type {@code jervis.server.Project}
    */
   public static final class Builder extends
       com.google.protobuf.GeneratedMessage.Builder<Builder> implements
-      // @@protoc_insertion_point(builder_implements:jervis.server.UpdateProjectResponse)
-      com.jervis.contracts.server.UpdateProjectResponseOrBuilder {
+      // @@protoc_insertion_point(builder_implements:jervis.server.Project)
+      com.jervis.contracts.server.ProjectOrBuilder {
     public static final com.google.protobuf.Descriptors.Descriptor
         getDescriptor() {
-      return com.jervis.contracts.server.ServerProjectManagementProto.internal_static_jervis_server_UpdateProjectResponse_descriptor;
+      return com.jervis.contracts.server.ServerProjectManagementProto.internal_static_jervis_server_Project_descriptor;
     }
 
     @java.lang.Override
     protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
         internalGetFieldAccessorTable() {
-      return com.jervis.contracts.server.ServerProjectManagementProto.internal_static_jervis_server_UpdateProjectResponse_fieldAccessorTable
+      return com.jervis.contracts.server.ServerProjectManagementProto.internal_static_jervis_server_Project_fieldAccessorTable
           .ensureFieldAccessorsInitialized(
-              com.jervis.contracts.server.UpdateProjectResponse.class, com.jervis.contracts.server.UpdateProjectResponse.Builder.class);
+              com.jervis.contracts.server.Project.class, com.jervis.contracts.server.Project.Builder.class);
     }
 
-    // Construct using com.jervis.contracts.server.UpdateProjectResponse.newBuilder()
+    // Construct using com.jervis.contracts.server.Project.newBuilder()
     private Builder() {
 
     }
@@ -388,24 +490,26 @@ private static final long serialVersionUID = 0L;
       bitField0_ = 0;
       id_ = "";
       name_ = "";
-      bodyJson_ = "";
+      clientId_ = "";
+      groupId_ = "";
+      description_ = "";
       return this;
     }
 
     @java.lang.Override
     public com.google.protobuf.Descriptors.Descriptor
         getDescriptorForType() {
-      return com.jervis.contracts.server.ServerProjectManagementProto.internal_static_jervis_server_UpdateProjectResponse_descriptor;
+      return com.jervis.contracts.server.ServerProjectManagementProto.internal_static_jervis_server_Project_descriptor;
     }
 
     @java.lang.Override
-    public com.jervis.contracts.server.UpdateProjectResponse getDefaultInstanceForType() {
-      return com.jervis.contracts.server.UpdateProjectResponse.getDefaultInstance();
+    public com.jervis.contracts.server.Project getDefaultInstanceForType() {
+      return com.jervis.contracts.server.Project.getDefaultInstance();
     }
 
     @java.lang.Override
-    public com.jervis.contracts.server.UpdateProjectResponse build() {
-      com.jervis.contracts.server.UpdateProjectResponse result = buildPartial();
+    public com.jervis.contracts.server.Project build() {
+      com.jervis.contracts.server.Project result = buildPartial();
       if (!result.isInitialized()) {
         throw newUninitializedMessageException(result);
       }
@@ -413,14 +517,14 @@ private static final long serialVersionUID = 0L;
     }
 
     @java.lang.Override
-    public com.jervis.contracts.server.UpdateProjectResponse buildPartial() {
-      com.jervis.contracts.server.UpdateProjectResponse result = new com.jervis.contracts.server.UpdateProjectResponse(this);
+    public com.jervis.contracts.server.Project buildPartial() {
+      com.jervis.contracts.server.Project result = new com.jervis.contracts.server.Project(this);
       if (bitField0_ != 0) { buildPartial0(result); }
       onBuilt();
       return result;
     }
 
-    private void buildPartial0(com.jervis.contracts.server.UpdateProjectResponse result) {
+    private void buildPartial0(com.jervis.contracts.server.Project result) {
       int from_bitField0_ = bitField0_;
       if (((from_bitField0_ & 0x00000001) != 0)) {
         result.id_ = id_;
@@ -429,22 +533,28 @@ private static final long serialVersionUID = 0L;
         result.name_ = name_;
       }
       if (((from_bitField0_ & 0x00000004) != 0)) {
-        result.bodyJson_ = bodyJson_;
+        result.clientId_ = clientId_;
+      }
+      if (((from_bitField0_ & 0x00000008) != 0)) {
+        result.groupId_ = groupId_;
+      }
+      if (((from_bitField0_ & 0x00000010) != 0)) {
+        result.description_ = description_;
       }
     }
 
     @java.lang.Override
     public Builder mergeFrom(com.google.protobuf.Message other) {
-      if (other instanceof com.jervis.contracts.server.UpdateProjectResponse) {
-        return mergeFrom((com.jervis.contracts.server.UpdateProjectResponse)other);
+      if (other instanceof com.jervis.contracts.server.Project) {
+        return mergeFrom((com.jervis.contracts.server.Project)other);
       } else {
         super.mergeFrom(other);
         return this;
       }
     }
 
-    public Builder mergeFrom(com.jervis.contracts.server.UpdateProjectResponse other) {
-      if (other == com.jervis.contracts.server.UpdateProjectResponse.getDefaultInstance()) return this;
+    public Builder mergeFrom(com.jervis.contracts.server.Project other) {
+      if (other == com.jervis.contracts.server.Project.getDefaultInstance()) return this;
       if (!other.getId().isEmpty()) {
         id_ = other.id_;
         bitField0_ |= 0x00000001;
@@ -455,9 +565,19 @@ private static final long serialVersionUID = 0L;
         bitField0_ |= 0x00000002;
         onChanged();
       }
-      if (!other.getBodyJson().isEmpty()) {
-        bodyJson_ = other.bodyJson_;
+      if (!other.getClientId().isEmpty()) {
+        clientId_ = other.clientId_;
         bitField0_ |= 0x00000004;
+        onChanged();
+      }
+      if (!other.getGroupId().isEmpty()) {
+        groupId_ = other.groupId_;
+        bitField0_ |= 0x00000008;
+        onChanged();
+      }
+      if (!other.getDescription().isEmpty()) {
+        description_ = other.description_;
+        bitField0_ |= 0x00000010;
         onChanged();
       }
       this.mergeUnknownFields(other.getUnknownFields());
@@ -497,10 +617,20 @@ private static final long serialVersionUID = 0L;
               break;
             } // case 18
             case 26: {
-              bodyJson_ = input.readStringRequireUtf8();
+              clientId_ = input.readStringRequireUtf8();
               bitField0_ |= 0x00000004;
               break;
             } // case 26
+            case 34: {
+              groupId_ = input.readStringRequireUtf8();
+              bitField0_ |= 0x00000008;
+              break;
+            } // case 34
+            case 42: {
+              description_ = input.readStringRequireUtf8();
+              bitField0_ |= 0x00000010;
+              break;
+            } // case 42
             default: {
               if (!super.parseUnknownField(input, extensionRegistry, tag)) {
                 done = true; // was an endgroup tag
@@ -662,115 +792,239 @@ private static final long serialVersionUID = 0L;
       return this;
     }
 
-    private java.lang.Object bodyJson_ = "";
+    private java.lang.Object clientId_ = "";
     /**
-     * <pre>
-     * Full ProjectDto after update (same shape as list items).
-     * </pre>
-     *
-     * <code>string body_json = 3 [json_name = "bodyJson"];</code>
-     * @return The bodyJson.
+     * <code>string client_id = 3 [json_name = "clientId"];</code>
+     * @return The clientId.
      */
-    public java.lang.String getBodyJson() {
-      java.lang.Object ref = bodyJson_;
+    public java.lang.String getClientId() {
+      java.lang.Object ref = clientId_;
       if (!(ref instanceof java.lang.String)) {
         com.google.protobuf.ByteString bs =
             (com.google.protobuf.ByteString) ref;
         java.lang.String s = bs.toStringUtf8();
-        bodyJson_ = s;
+        clientId_ = s;
         return s;
       } else {
         return (java.lang.String) ref;
       }
     }
     /**
-     * <pre>
-     * Full ProjectDto after update (same shape as list items).
-     * </pre>
-     *
-     * <code>string body_json = 3 [json_name = "bodyJson"];</code>
-     * @return The bytes for bodyJson.
+     * <code>string client_id = 3 [json_name = "clientId"];</code>
+     * @return The bytes for clientId.
      */
     public com.google.protobuf.ByteString
-        getBodyJsonBytes() {
-      java.lang.Object ref = bodyJson_;
+        getClientIdBytes() {
+      java.lang.Object ref = clientId_;
       if (ref instanceof String) {
         com.google.protobuf.ByteString b = 
             com.google.protobuf.ByteString.copyFromUtf8(
                 (java.lang.String) ref);
-        bodyJson_ = b;
+        clientId_ = b;
         return b;
       } else {
         return (com.google.protobuf.ByteString) ref;
       }
     }
     /**
-     * <pre>
-     * Full ProjectDto after update (same shape as list items).
-     * </pre>
-     *
-     * <code>string body_json = 3 [json_name = "bodyJson"];</code>
-     * @param value The bodyJson to set.
+     * <code>string client_id = 3 [json_name = "clientId"];</code>
+     * @param value The clientId to set.
      * @return This builder for chaining.
      */
-    public Builder setBodyJson(
+    public Builder setClientId(
         java.lang.String value) {
       if (value == null) { throw new NullPointerException(); }
-      bodyJson_ = value;
+      clientId_ = value;
       bitField0_ |= 0x00000004;
       onChanged();
       return this;
     }
     /**
-     * <pre>
-     * Full ProjectDto after update (same shape as list items).
-     * </pre>
-     *
-     * <code>string body_json = 3 [json_name = "bodyJson"];</code>
+     * <code>string client_id = 3 [json_name = "clientId"];</code>
      * @return This builder for chaining.
      */
-    public Builder clearBodyJson() {
-      bodyJson_ = getDefaultInstance().getBodyJson();
+    public Builder clearClientId() {
+      clientId_ = getDefaultInstance().getClientId();
       bitField0_ = (bitField0_ & ~0x00000004);
       onChanged();
       return this;
     }
     /**
-     * <pre>
-     * Full ProjectDto after update (same shape as list items).
-     * </pre>
-     *
-     * <code>string body_json = 3 [json_name = "bodyJson"];</code>
-     * @param value The bytes for bodyJson to set.
+     * <code>string client_id = 3 [json_name = "clientId"];</code>
+     * @param value The bytes for clientId to set.
      * @return This builder for chaining.
      */
-    public Builder setBodyJsonBytes(
+    public Builder setClientIdBytes(
         com.google.protobuf.ByteString value) {
       if (value == null) { throw new NullPointerException(); }
       checkByteStringIsUtf8(value);
-      bodyJson_ = value;
+      clientId_ = value;
       bitField0_ |= 0x00000004;
       onChanged();
       return this;
     }
 
-    // @@protoc_insertion_point(builder_scope:jervis.server.UpdateProjectResponse)
+    private java.lang.Object groupId_ = "";
+    /**
+     * <code>string group_id = 4 [json_name = "groupId"];</code>
+     * @return The groupId.
+     */
+    public java.lang.String getGroupId() {
+      java.lang.Object ref = groupId_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        groupId_ = s;
+        return s;
+      } else {
+        return (java.lang.String) ref;
+      }
+    }
+    /**
+     * <code>string group_id = 4 [json_name = "groupId"];</code>
+     * @return The bytes for groupId.
+     */
+    public com.google.protobuf.ByteString
+        getGroupIdBytes() {
+      java.lang.Object ref = groupId_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        groupId_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+    /**
+     * <code>string group_id = 4 [json_name = "groupId"];</code>
+     * @param value The groupId to set.
+     * @return This builder for chaining.
+     */
+    public Builder setGroupId(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      groupId_ = value;
+      bitField0_ |= 0x00000008;
+      onChanged();
+      return this;
+    }
+    /**
+     * <code>string group_id = 4 [json_name = "groupId"];</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearGroupId() {
+      groupId_ = getDefaultInstance().getGroupId();
+      bitField0_ = (bitField0_ & ~0x00000008);
+      onChanged();
+      return this;
+    }
+    /**
+     * <code>string group_id = 4 [json_name = "groupId"];</code>
+     * @param value The bytes for groupId to set.
+     * @return This builder for chaining.
+     */
+    public Builder setGroupIdBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      groupId_ = value;
+      bitField0_ |= 0x00000008;
+      onChanged();
+      return this;
+    }
+
+    private java.lang.Object description_ = "";
+    /**
+     * <code>string description = 5 [json_name = "description"];</code>
+     * @return The description.
+     */
+    public java.lang.String getDescription() {
+      java.lang.Object ref = description_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        description_ = s;
+        return s;
+      } else {
+        return (java.lang.String) ref;
+      }
+    }
+    /**
+     * <code>string description = 5 [json_name = "description"];</code>
+     * @return The bytes for description.
+     */
+    public com.google.protobuf.ByteString
+        getDescriptionBytes() {
+      java.lang.Object ref = description_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        description_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+    /**
+     * <code>string description = 5 [json_name = "description"];</code>
+     * @param value The description to set.
+     * @return This builder for chaining.
+     */
+    public Builder setDescription(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      description_ = value;
+      bitField0_ |= 0x00000010;
+      onChanged();
+      return this;
+    }
+    /**
+     * <code>string description = 5 [json_name = "description"];</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearDescription() {
+      description_ = getDefaultInstance().getDescription();
+      bitField0_ = (bitField0_ & ~0x00000010);
+      onChanged();
+      return this;
+    }
+    /**
+     * <code>string description = 5 [json_name = "description"];</code>
+     * @param value The bytes for description to set.
+     * @return This builder for chaining.
+     */
+    public Builder setDescriptionBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      description_ = value;
+      bitField0_ |= 0x00000010;
+      onChanged();
+      return this;
+    }
+
+    // @@protoc_insertion_point(builder_scope:jervis.server.Project)
   }
 
-  // @@protoc_insertion_point(class_scope:jervis.server.UpdateProjectResponse)
-  private static final com.jervis.contracts.server.UpdateProjectResponse DEFAULT_INSTANCE;
+  // @@protoc_insertion_point(class_scope:jervis.server.Project)
+  private static final com.jervis.contracts.server.Project DEFAULT_INSTANCE;
   static {
-    DEFAULT_INSTANCE = new com.jervis.contracts.server.UpdateProjectResponse();
+    DEFAULT_INSTANCE = new com.jervis.contracts.server.Project();
   }
 
-  public static com.jervis.contracts.server.UpdateProjectResponse getDefaultInstance() {
+  public static com.jervis.contracts.server.Project getDefaultInstance() {
     return DEFAULT_INSTANCE;
   }
 
-  private static final com.google.protobuf.Parser<UpdateProjectResponse>
-      PARSER = new com.google.protobuf.AbstractParser<UpdateProjectResponse>() {
+  private static final com.google.protobuf.Parser<Project>
+      PARSER = new com.google.protobuf.AbstractParser<Project>() {
     @java.lang.Override
-    public UpdateProjectResponse parsePartialFrom(
+    public Project parsePartialFrom(
         com.google.protobuf.CodedInputStream input,
         com.google.protobuf.ExtensionRegistryLite extensionRegistry)
         throws com.google.protobuf.InvalidProtocolBufferException {
@@ -789,17 +1043,17 @@ private static final long serialVersionUID = 0L;
     }
   };
 
-  public static com.google.protobuf.Parser<UpdateProjectResponse> parser() {
+  public static com.google.protobuf.Parser<Project> parser() {
     return PARSER;
   }
 
   @java.lang.Override
-  public com.google.protobuf.Parser<UpdateProjectResponse> getParserForType() {
+  public com.google.protobuf.Parser<Project> getParserForType() {
     return PARSER;
   }
 
   @java.lang.Override
-  public com.jervis.contracts.server.UpdateProjectResponse getDefaultInstanceForType() {
+  public com.jervis.contracts.server.Project getDefaultInstanceForType() {
     return DEFAULT_INSTANCE;
   }
 

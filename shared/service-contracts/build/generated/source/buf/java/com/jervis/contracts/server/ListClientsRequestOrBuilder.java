@@ -27,8 +27,7 @@ public interface ListClientsRequestOrBuilder extends
 
   /**
    * <pre>
-   * Optional tenant filter. Orchestrator passes its current client_id; MCP
-   * passes empty for the unfiltered list.
+   * empty = unfiltered
    * </pre>
    *
    * <code>string client_id = 2 [json_name = "clientId"];</code>
@@ -37,8 +36,7 @@ public interface ListClientsRequestOrBuilder extends
   java.lang.String getClientId();
   /**
    * <pre>
-   * Optional tenant filter. Orchestrator passes its current client_id; MCP
-   * passes empty for the unfiltered list.
+   * empty = unfiltered
    * </pre>
    *
    * <code>string client_id = 2 [json_name = "clientId"];</code>

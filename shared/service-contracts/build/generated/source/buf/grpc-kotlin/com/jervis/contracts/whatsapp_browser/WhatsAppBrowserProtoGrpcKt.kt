@@ -23,8 +23,7 @@ import kotlin.jvm.JvmOverloads
 import kotlin.jvm.JvmStatic
 
 /**
- * Holder for Kotlin coroutine-based client and server APIs for
- * jervis.whatsapp_browser.WhatsAppBrowserService.
+ * Holder for Kotlin coroutine-based client and server APIs for jervis.whatsapp_browser.WhatsAppBrowserService.
  */
 public object WhatsAppBrowserServiceGrpcKt {
   public const val SERVICE_NAME: String = WhatsAppBrowserServiceGrpc.SERVICE_NAME
@@ -54,22 +53,18 @@ public object WhatsAppBrowserServiceGrpcKt {
     get() = WhatsAppBrowserServiceGrpc.getCreateVncTokenMethod()
 
   /**
-   * A stub for issuing RPCs to a(n) jervis.whatsapp_browser.WhatsAppBrowserService service as
-   * suspending coroutines.
+   * A stub for issuing RPCs to a(n) jervis.whatsapp_browser.WhatsAppBrowserService service as suspending coroutines.
    */
   @StubFor(WhatsAppBrowserServiceGrpc::class)
   public class WhatsAppBrowserServiceCoroutineStub @JvmOverloads constructor(
     channel: Channel,
     callOptions: CallOptions = DEFAULT,
   ) : AbstractCoroutineStub<WhatsAppBrowserServiceCoroutineStub>(channel, callOptions) {
-    override fun build(channel: Channel, callOptions: CallOptions):
-        WhatsAppBrowserServiceCoroutineStub = WhatsAppBrowserServiceCoroutineStub(channel,
-        callOptions)
+    override fun build(channel: Channel, callOptions: CallOptions): WhatsAppBrowserServiceCoroutineStub = WhatsAppBrowserServiceCoroutineStub(channel, callOptions)
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -79,8 +74,7 @@ public object WhatsAppBrowserServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun getSession(request: SessionRef, headers: Metadata = Metadata()):
-        SessionStatus = unaryRpc(
+    public suspend fun getSession(request: SessionRef, headers: Metadata = Metadata()): SessionStatus = unaryRpc(
       channel,
       WhatsAppBrowserServiceGrpc.getGetSessionMethod(),
       request,
@@ -90,8 +84,7 @@ public object WhatsAppBrowserServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -101,8 +94,7 @@ public object WhatsAppBrowserServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun initSession(request: InitSessionRequest, headers: Metadata = Metadata()):
-        InitSessionResponse = unaryRpc(
+    public suspend fun initSession(request: InitSessionRequest, headers: Metadata = Metadata()): InitSessionResponse = unaryRpc(
       channel,
       WhatsAppBrowserServiceGrpc.getInitSessionMethod(),
       request,
@@ -112,8 +104,7 @@ public object WhatsAppBrowserServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -123,8 +114,7 @@ public object WhatsAppBrowserServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun triggerScrape(request: TriggerScrapeRequest, headers: Metadata = Metadata()):
-        TriggerScrapeResponse = unaryRpc(
+    public suspend fun triggerScrape(request: TriggerScrapeRequest, headers: Metadata = Metadata()): TriggerScrapeResponse = unaryRpc(
       channel,
       WhatsAppBrowserServiceGrpc.getTriggerScrapeMethod(),
       request,
@@ -134,8 +124,7 @@ public object WhatsAppBrowserServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -145,8 +134,7 @@ public object WhatsAppBrowserServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun getLatestScrape(request: SessionRef, headers: Metadata = Metadata()):
-        LatestScrapeResponse = unaryRpc(
+    public suspend fun getLatestScrape(request: SessionRef, headers: Metadata = Metadata()): LatestScrapeResponse = unaryRpc(
       channel,
       WhatsAppBrowserServiceGrpc.getGetLatestScrapeMethod(),
       request,
@@ -156,8 +144,7 @@ public object WhatsAppBrowserServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -167,8 +154,7 @@ public object WhatsAppBrowserServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun createVncToken(request: SessionRef, headers: Metadata = Metadata()):
-        VncTokenResponse = unaryRpc(
+    public suspend fun createVncToken(request: SessionRef, headers: Metadata = Metadata()): VncTokenResponse = unaryRpc(
       channel,
       WhatsAppBrowserServiceGrpc.getCreateVncTokenMethod(),
       request,
@@ -178,8 +164,7 @@ public object WhatsAppBrowserServiceGrpcKt {
   }
 
   /**
-   * Skeletal implementation of the jervis.whatsapp_browser.WhatsAppBrowserService service based on
-   * Kotlin coroutines.
+   * Skeletal implementation of the jervis.whatsapp_browser.WhatsAppBrowserService service based on Kotlin coroutines.
    */
   public abstract class WhatsAppBrowserServiceCoroutineImplBase(
     coroutineContext: CoroutineContext = EmptyCoroutineContext,
@@ -188,76 +173,61 @@ public object WhatsAppBrowserServiceGrpcKt {
      * Returns the response to an RPC for jervis.whatsapp_browser.WhatsAppBrowserService.GetSession.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun getSession(request: SessionRef): SessionStatus = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.whatsapp_browser.WhatsAppBrowserService.GetSession is unimplemented"))
+    public open suspend fun getSession(request: SessionRef): SessionStatus = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.whatsapp_browser.WhatsAppBrowserService.GetSession is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.whatsapp_browser.WhatsAppBrowserService.InitSession.
+     * Returns the response to an RPC for jervis.whatsapp_browser.WhatsAppBrowserService.InitSession.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun initSession(request: InitSessionRequest): InitSessionResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.whatsapp_browser.WhatsAppBrowserService.InitSession is unimplemented"))
+    public open suspend fun initSession(request: InitSessionRequest): InitSessionResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.whatsapp_browser.WhatsAppBrowserService.InitSession is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.whatsapp_browser.WhatsAppBrowserService.TriggerScrape.
+     * Returns the response to an RPC for jervis.whatsapp_browser.WhatsAppBrowserService.TriggerScrape.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun triggerScrape(request: TriggerScrapeRequest): TriggerScrapeResponse =
-        throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.whatsapp_browser.WhatsAppBrowserService.TriggerScrape is unimplemented"))
+    public open suspend fun triggerScrape(request: TriggerScrapeRequest): TriggerScrapeResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.whatsapp_browser.WhatsAppBrowserService.TriggerScrape is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.whatsapp_browser.WhatsAppBrowserService.GetLatestScrape.
+     * Returns the response to an RPC for jervis.whatsapp_browser.WhatsAppBrowserService.GetLatestScrape.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun getLatestScrape(request: SessionRef): LatestScrapeResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.whatsapp_browser.WhatsAppBrowserService.GetLatestScrape is unimplemented"))
+    public open suspend fun getLatestScrape(request: SessionRef): LatestScrapeResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.whatsapp_browser.WhatsAppBrowserService.GetLatestScrape is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.whatsapp_browser.WhatsAppBrowserService.CreateVncToken.
+     * Returns the response to an RPC for jervis.whatsapp_browser.WhatsAppBrowserService.CreateVncToken.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun createVncToken(request: SessionRef): VncTokenResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.whatsapp_browser.WhatsAppBrowserService.CreateVncToken is unimplemented"))
+    public open suspend fun createVncToken(request: SessionRef): VncTokenResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.whatsapp_browser.WhatsAppBrowserService.CreateVncToken is unimplemented"))
 
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(

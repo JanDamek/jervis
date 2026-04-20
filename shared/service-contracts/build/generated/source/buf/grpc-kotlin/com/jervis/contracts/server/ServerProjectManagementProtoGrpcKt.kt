@@ -32,7 +32,7 @@ public object ServerProjectManagementServiceGrpcKt {
   public val serviceDescriptor: ServiceDescriptor
     get() = getServiceDescriptor()
 
-  public val listClientsMethod: MethodDescriptor<ListClientsRequest, ListClientsResponse>
+  public val listClientsMethod: MethodDescriptor<ListClientsRequest, ClientList>
     @JvmStatic
     get() = ServerProjectManagementServiceGrpc.getListClientsMethod()
 
@@ -40,7 +40,7 @@ public object ServerProjectManagementServiceGrpcKt {
     @JvmStatic
     get() = ServerProjectManagementServiceGrpc.getCreateClientMethod()
 
-  public val listProjectsMethod: MethodDescriptor<ListProjectsRequest, ListProjectsResponse>
+  public val listProjectsMethod: MethodDescriptor<ListProjectsRequest, ProjectList>
     @JvmStatic
     get() = ServerProjectManagementServiceGrpc.getListProjectsMethod()
 
@@ -48,12 +48,11 @@ public object ServerProjectManagementServiceGrpcKt {
     @JvmStatic
     get() = ServerProjectManagementServiceGrpc.getCreateProjectMethod()
 
-  public val updateProjectMethod: MethodDescriptor<UpdateProjectRequest, UpdateProjectResponse>
+  public val updateProjectMethod: MethodDescriptor<UpdateProjectRequest, Project>
     @JvmStatic
     get() = ServerProjectManagementServiceGrpc.getUpdateProjectMethod()
 
-  public val listConnectionsMethod:
-      MethodDescriptor<ListConnectionsRequest, ListConnectionsResponse>
+  public val listConnectionsMethod: MethodDescriptor<ListConnectionsRequest, ConnectionSummaryList>
     @JvmStatic
     get() = ServerProjectManagementServiceGrpc.getListConnectionsMethod()
 
@@ -63,7 +62,7 @@ public object ServerProjectManagementServiceGrpcKt {
     get() = ServerProjectManagementServiceGrpc.getCreateConnectionMethod()
 
   public val getStackRecommendationsMethod:
-      MethodDescriptor<GetStackRecommendationsRequest, GetStackRecommendationsResponse>
+      MethodDescriptor<GetStackRecommendationsRequest, ProjectRecommendations>
     @JvmStatic
     get() = ServerProjectManagementServiceGrpc.getGetStackRecommendationsMethod()
 
@@ -89,7 +88,7 @@ public object ServerProjectManagementServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun listClients(request: ListClientsRequest, headers: Metadata = Metadata()): ListClientsResponse = unaryRpc(
+    public suspend fun listClients(request: ListClientsRequest, headers: Metadata = Metadata()): ClientList = unaryRpc(
       channel,
       ServerProjectManagementServiceGrpc.getListClientsMethod(),
       request,
@@ -129,7 +128,7 @@ public object ServerProjectManagementServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun listProjects(request: ListProjectsRequest, headers: Metadata = Metadata()): ListProjectsResponse = unaryRpc(
+    public suspend fun listProjects(request: ListProjectsRequest, headers: Metadata = Metadata()): ProjectList = unaryRpc(
       channel,
       ServerProjectManagementServiceGrpc.getListProjectsMethod(),
       request,
@@ -169,7 +168,7 @@ public object ServerProjectManagementServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun updateProject(request: UpdateProjectRequest, headers: Metadata = Metadata()): UpdateProjectResponse = unaryRpc(
+    public suspend fun updateProject(request: UpdateProjectRequest, headers: Metadata = Metadata()): Project = unaryRpc(
       channel,
       ServerProjectManagementServiceGrpc.getUpdateProjectMethod(),
       request,
@@ -189,7 +188,7 @@ public object ServerProjectManagementServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun listConnections(request: ListConnectionsRequest, headers: Metadata = Metadata()): ListConnectionsResponse = unaryRpc(
+    public suspend fun listConnections(request: ListConnectionsRequest, headers: Metadata = Metadata()): ConnectionSummaryList = unaryRpc(
       channel,
       ServerProjectManagementServiceGrpc.getListConnectionsMethod(),
       request,
@@ -229,7 +228,7 @@ public object ServerProjectManagementServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun getStackRecommendations(request: GetStackRecommendationsRequest, headers: Metadata = Metadata()): GetStackRecommendationsResponse = unaryRpc(
+    public suspend fun getStackRecommendations(request: GetStackRecommendationsRequest, headers: Metadata = Metadata()): ProjectRecommendations = unaryRpc(
       channel,
       ServerProjectManagementServiceGrpc.getGetStackRecommendationsMethod(),
       request,
@@ -254,7 +253,7 @@ public object ServerProjectManagementServiceGrpcKt {
      *
      * @param request The request from the client.
      */
-    public open suspend fun listClients(request: ListClientsRequest): ListClientsResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerProjectManagementService.ListClients is unimplemented"))
+    public open suspend fun listClients(request: ListClientsRequest): ClientList = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerProjectManagementService.ListClients is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerProjectManagementService.CreateClient.
@@ -278,7 +277,7 @@ public object ServerProjectManagementServiceGrpcKt {
      *
      * @param request The request from the client.
      */
-    public open suspend fun listProjects(request: ListProjectsRequest): ListProjectsResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerProjectManagementService.ListProjects is unimplemented"))
+    public open suspend fun listProjects(request: ListProjectsRequest): ProjectList = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerProjectManagementService.ListProjects is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerProjectManagementService.CreateProject.
@@ -302,7 +301,7 @@ public object ServerProjectManagementServiceGrpcKt {
      *
      * @param request The request from the client.
      */
-    public open suspend fun updateProject(request: UpdateProjectRequest): UpdateProjectResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerProjectManagementService.UpdateProject is unimplemented"))
+    public open suspend fun updateProject(request: UpdateProjectRequest): Project = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerProjectManagementService.UpdateProject is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerProjectManagementService.ListConnections.
@@ -314,7 +313,7 @@ public object ServerProjectManagementServiceGrpcKt {
      *
      * @param request The request from the client.
      */
-    public open suspend fun listConnections(request: ListConnectionsRequest): ListConnectionsResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerProjectManagementService.ListConnections is unimplemented"))
+    public open suspend fun listConnections(request: ListConnectionsRequest): ConnectionSummaryList = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerProjectManagementService.ListConnections is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerProjectManagementService.CreateConnection.
@@ -338,7 +337,7 @@ public object ServerProjectManagementServiceGrpcKt {
      *
      * @param request The request from the client.
      */
-    public open suspend fun getStackRecommendations(request: GetStackRecommendationsRequest): GetStackRecommendationsResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerProjectManagementService.GetStackRecommendations is unimplemented"))
+    public open suspend fun getStackRecommendations(request: GetStackRecommendationsRequest): ProjectRecommendations = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerProjectManagementService.GetStackRecommendations is unimplemented"))
 
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(

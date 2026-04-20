@@ -38,19 +38,11 @@ public interface CreateConnectionRequestOrBuilder extends
       getNameBytes();
 
   /**
-   * <pre>
-   * ProviderEnum name
-   * </pre>
-   *
    * <code>string provider = 3 [json_name = "provider"];</code>
    * @return The provider.
    */
   java.lang.String getProvider();
   /**
-   * <pre>
-   * ProviderEnum name
-   * </pre>
-   *
    * <code>string provider = 3 [json_name = "provider"];</code>
    * @return The bytes for provider.
    */
@@ -58,19 +50,11 @@ public interface CreateConnectionRequestOrBuilder extends
       getProviderBytes();
 
   /**
-   * <pre>
-   * ProtocolEnum name, default HTTP
-   * </pre>
-   *
    * <code>string protocol = 4 [json_name = "protocol"];</code>
    * @return The protocol.
    */
   java.lang.String getProtocol();
   /**
-   * <pre>
-   * ProtocolEnum name, default HTTP
-   * </pre>
-   *
    * <code>string protocol = 4 [json_name = "protocol"];</code>
    * @return The bytes for protocol.
    */
@@ -78,19 +62,11 @@ public interface CreateConnectionRequestOrBuilder extends
       getProtocolBytes();
 
   /**
-   * <pre>
-   * AuthTypeEnum name, default BEARER
-   * </pre>
-   *
    * <code>string auth_type = 5 [json_name = "authType"];</code>
    * @return The authType.
    */
   java.lang.String getAuthType();
   /**
-   * <pre>
-   * AuthTypeEnum name, default BEARER
-   * </pre>
-   *
    * <code>string auth_type = 5 [json_name = "authType"];</code>
    * @return The bytes for authType.
    */
@@ -152,19 +128,11 @@ public interface CreateConnectionRequestOrBuilder extends
       getPasswordBytes();
 
   /**
-   * <pre>
-   * If present, links the new connection to the given client after save.
-   * </pre>
-   *
    * <code>string client_id = 11 [json_name = "clientId"];</code>
    * @return The clientId.
    */
   java.lang.String getClientId();
   /**
-   * <pre>
-   * If present, links the new connection to the given client after save.
-   * </pre>
-   *
    * <code>string client_id = 11 [json_name = "clientId"];</code>
    * @return The bytes for clientId.
    */

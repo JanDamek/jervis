@@ -11,9 +11,6 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
  * (/vnc-login, /vnc-auth) stay HTTP — browser-facing, not pod-to-pod.
  * </pre>
  */
-@javax.annotation.Generated(
-    value = "by gRPC proto compiler (version 1.68.0)",
-    comments = "Source: jervis/whatsapp_browser/whatsapp.proto")
 @io.grpc.stub.annotations.GrpcGenerated
 public final class WhatsAppBrowserServiceGrpc {
 
@@ -192,6 +189,21 @@ public final class WhatsAppBrowserServiceGrpc {
   }
 
   /**
+   * Creates a new blocking-style stub that supports all types of calls on the service
+   */
+  public static WhatsAppBrowserServiceBlockingV2Stub newBlockingV2Stub(
+      io.grpc.Channel channel) {
+    io.grpc.stub.AbstractStub.StubFactory<WhatsAppBrowserServiceBlockingV2Stub> factory =
+      new io.grpc.stub.AbstractStub.StubFactory<WhatsAppBrowserServiceBlockingV2Stub>() {
+        @java.lang.Override
+        public WhatsAppBrowserServiceBlockingV2Stub newStub(io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+          return new WhatsAppBrowserServiceBlockingV2Stub(channel, callOptions);
+        }
+      };
+    return WhatsAppBrowserServiceBlockingV2Stub.newStub(factory, channel);
+  }
+
+  /**
    * Creates a new blocking-style stub that supports unary and streaming output calls on the service
    */
   public static WhatsAppBrowserServiceBlockingStub newBlockingStub(
@@ -352,6 +364,65 @@ public final class WhatsAppBrowserServiceGrpc {
 
   /**
    * A stub to allow clients to do synchronous rpc calls to service WhatsAppBrowserService.
+   * <pre>
+   * WhatsAppBrowserService — typed wrapper over the jervis-whatsapp-browser
+   * pod. Replaces the former REST surface consumed by the Kotlin server
+   * (/session/{cid}, /session/{cid}/init, /scrape/{cid}/trigger,
+   * /scrape/{cid}/latest, /vnc-token/{cid}). The VNC proxy routes
+   * (/vnc-login, /vnc-auth) stay HTTP — browser-facing, not pod-to-pod.
+   * </pre>
+   */
+  public static final class WhatsAppBrowserServiceBlockingV2Stub
+      extends io.grpc.stub.AbstractBlockingStub<WhatsAppBrowserServiceBlockingV2Stub> {
+    private WhatsAppBrowserServiceBlockingV2Stub(
+        io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+      super(channel, callOptions);
+    }
+
+    @java.lang.Override
+    protected WhatsAppBrowserServiceBlockingV2Stub build(
+        io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+      return new WhatsAppBrowserServiceBlockingV2Stub(channel, callOptions);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.whatsapp_browser.SessionStatus getSession(com.jervis.contracts.whatsapp_browser.SessionRef request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getGetSessionMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.whatsapp_browser.InitSessionResponse initSession(com.jervis.contracts.whatsapp_browser.InitSessionRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getInitSessionMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.whatsapp_browser.TriggerScrapeResponse triggerScrape(com.jervis.contracts.whatsapp_browser.TriggerScrapeRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getTriggerScrapeMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.whatsapp_browser.LatestScrapeResponse getLatestScrape(com.jervis.contracts.whatsapp_browser.SessionRef request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getGetLatestScrapeMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.whatsapp_browser.VncTokenResponse createVncToken(com.jervis.contracts.whatsapp_browser.SessionRef request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getCreateVncTokenMethod(), getCallOptions(), request);
+    }
+  }
+
+  /**
+   * A stub to allow clients to do limited synchronous rpc calls to service WhatsAppBrowserService.
    * <pre>
    * WhatsAppBrowserService — typed wrapper over the jervis-whatsapp-browser
    * pod. Replaces the former REST surface consumed by the Kotlin server

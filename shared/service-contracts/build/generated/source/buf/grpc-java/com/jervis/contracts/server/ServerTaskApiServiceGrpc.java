@@ -6,9 +6,9 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
  * <pre>
  * ServerTaskApiService covers the full task surface — CRUD, queue,
  * coding-agent dispatch + completion callbacks, user-task helpers,
- * chat-agent plumbing. Task list responses use `items_json` because
- * TaskDocument is a deep tree that Python only reads at the surface
- * (id/title/state/clientId). Typed fields live on requests only.
+ * chat-agent plumbing. Task list responses return `repeated TaskSummary`
+ * — a projection of TaskDocument carrying exactly the fields the
+ * orchestrator + MCP consumers read (id/title/state/client_id/...).
  * </pre>
  */
 @io.grpc.stub.annotations.GrpcGenerated
@@ -826,9 +826,9 @@ public final class ServerTaskApiServiceGrpc {
    * <pre>
    * ServerTaskApiService covers the full task surface — CRUD, queue,
    * coding-agent dispatch + completion callbacks, user-task helpers,
-   * chat-agent plumbing. Task list responses use `items_json` because
-   * TaskDocument is a deep tree that Python only reads at the surface
-   * (id/title/state/clientId). Typed fields live on requests only.
+   * chat-agent plumbing. Task list responses return `repeated TaskSummary`
+   * — a projection of TaskDocument carrying exactly the fields the
+   * orchestrator + MCP consumers read (id/title/state/client_id/...).
    * </pre>
    */
   public interface AsyncService {
@@ -1019,9 +1019,9 @@ public final class ServerTaskApiServiceGrpc {
    * <pre>
    * ServerTaskApiService covers the full task surface — CRUD, queue,
    * coding-agent dispatch + completion callbacks, user-task helpers,
-   * chat-agent plumbing. Task list responses use `items_json` because
-   * TaskDocument is a deep tree that Python only reads at the surface
-   * (id/title/state/clientId). Typed fields live on requests only.
+   * chat-agent plumbing. Task list responses return `repeated TaskSummary`
+   * — a projection of TaskDocument carrying exactly the fields the
+   * orchestrator + MCP consumers read (id/title/state/client_id/...).
    * </pre>
    */
   public static abstract class ServerTaskApiServiceImplBase
@@ -1037,9 +1037,9 @@ public final class ServerTaskApiServiceGrpc {
    * <pre>
    * ServerTaskApiService covers the full task surface — CRUD, queue,
    * coding-agent dispatch + completion callbacks, user-task helpers,
-   * chat-agent plumbing. Task list responses use `items_json` because
-   * TaskDocument is a deep tree that Python only reads at the surface
-   * (id/title/state/clientId). Typed fields live on requests only.
+   * chat-agent plumbing. Task list responses return `repeated TaskSummary`
+   * — a projection of TaskDocument carrying exactly the fields the
+   * orchestrator + MCP consumers read (id/title/state/client_id/...).
    * </pre>
    */
   public static final class ServerTaskApiServiceStub
@@ -1265,9 +1265,9 @@ public final class ServerTaskApiServiceGrpc {
    * <pre>
    * ServerTaskApiService covers the full task surface — CRUD, queue,
    * coding-agent dispatch + completion callbacks, user-task helpers,
-   * chat-agent plumbing. Task list responses use `items_json` because
-   * TaskDocument is a deep tree that Python only reads at the surface
-   * (id/title/state/clientId). Typed fields live on requests only.
+   * chat-agent plumbing. Task list responses return `repeated TaskSummary`
+   * — a projection of TaskDocument carrying exactly the fields the
+   * orchestrator + MCP consumers read (id/title/state/client_id/...).
    * </pre>
    */
   public static final class ServerTaskApiServiceBlockingV2Stub
@@ -1469,9 +1469,9 @@ public final class ServerTaskApiServiceGrpc {
    * <pre>
    * ServerTaskApiService covers the full task surface — CRUD, queue,
    * coding-agent dispatch + completion callbacks, user-task helpers,
-   * chat-agent plumbing. Task list responses use `items_json` because
-   * TaskDocument is a deep tree that Python only reads at the surface
-   * (id/title/state/clientId). Typed fields live on requests only.
+   * chat-agent plumbing. Task list responses return `repeated TaskSummary`
+   * — a projection of TaskDocument carrying exactly the fields the
+   * orchestrator + MCP consumers read (id/title/state/client_id/...).
    * </pre>
    */
   public static final class ServerTaskApiServiceBlockingStub
@@ -1673,9 +1673,9 @@ public final class ServerTaskApiServiceGrpc {
    * <pre>
    * ServerTaskApiService covers the full task surface — CRUD, queue,
    * coding-agent dispatch + completion callbacks, user-task helpers,
-   * chat-agent plumbing. Task list responses use `items_json` because
-   * TaskDocument is a deep tree that Python only reads at the surface
-   * (id/title/state/clientId). Typed fields live on requests only.
+   * chat-agent plumbing. Task list responses return `repeated TaskSummary`
+   * — a projection of TaskDocument carrying exactly the fields the
+   * orchestrator + MCP consumers read (id/title/state/client_id/...).
    * </pre>
    */
   public static final class ServerTaskApiServiceFutureStub

@@ -23,8 +23,7 @@ import kotlin.jvm.JvmOverloads
 import kotlin.jvm.JvmStatic
 
 /**
- * Holder for Kotlin coroutine-based client and server APIs for
- * jervis.document_extraction.DocumentExtractionService.
+ * Holder for Kotlin coroutine-based client and server APIs for jervis.document_extraction.DocumentExtractionService.
  */
 public object DocumentExtractionServiceGrpcKt {
   public const val SERVICE_NAME: String = DocumentExtractionServiceGrpc.SERVICE_NAME
@@ -42,22 +41,18 @@ public object DocumentExtractionServiceGrpcKt {
     get() = DocumentExtractionServiceGrpc.getHealthMethod()
 
   /**
-   * A stub for issuing RPCs to a(n) jervis.document_extraction.DocumentExtractionService service as
-   * suspending coroutines.
+   * A stub for issuing RPCs to a(n) jervis.document_extraction.DocumentExtractionService service as suspending coroutines.
    */
   @StubFor(DocumentExtractionServiceGrpc::class)
   public class DocumentExtractionServiceCoroutineStub @JvmOverloads constructor(
     channel: Channel,
     callOptions: CallOptions = DEFAULT,
   ) : AbstractCoroutineStub<DocumentExtractionServiceCoroutineStub>(channel, callOptions) {
-    override fun build(channel: Channel, callOptions: CallOptions):
-        DocumentExtractionServiceCoroutineStub = DocumentExtractionServiceCoroutineStub(channel,
-        callOptions)
+    override fun build(channel: Channel, callOptions: CallOptions): DocumentExtractionServiceCoroutineStub = DocumentExtractionServiceCoroutineStub(channel, callOptions)
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -67,8 +62,7 @@ public object DocumentExtractionServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun extract(request: ExtractRequest, headers: Metadata = Metadata()):
-        ExtractResponse = unaryRpc(
+    public suspend fun extract(request: ExtractRequest, headers: Metadata = Metadata()): ExtractResponse = unaryRpc(
       channel,
       DocumentExtractionServiceGrpc.getExtractMethod(),
       request,
@@ -78,8 +72,7 @@ public object DocumentExtractionServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -89,8 +82,7 @@ public object DocumentExtractionServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun health(request: HealthRequest, headers: Metadata = Metadata()):
-        HealthResponse = unaryRpc(
+    public suspend fun health(request: HealthRequest, headers: Metadata = Metadata()): HealthResponse = unaryRpc(
       channel,
       DocumentExtractionServiceGrpc.getHealthMethod(),
       request,
@@ -100,41 +92,34 @@ public object DocumentExtractionServiceGrpcKt {
   }
 
   /**
-   * Skeletal implementation of the jervis.document_extraction.DocumentExtractionService service
-   * based on Kotlin coroutines.
+   * Skeletal implementation of the jervis.document_extraction.DocumentExtractionService service based on Kotlin coroutines.
    */
   public abstract class DocumentExtractionServiceCoroutineImplBase(
     coroutineContext: CoroutineContext = EmptyCoroutineContext,
   ) : AbstractCoroutineServerImpl(coroutineContext) {
     /**
-     * Returns the response to an RPC for
-     * jervis.document_extraction.DocumentExtractionService.Extract.
+     * Returns the response to an RPC for jervis.document_extraction.DocumentExtractionService.Extract.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun extract(request: ExtractRequest): ExtractResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.document_extraction.DocumentExtractionService.Extract is unimplemented"))
+    public open suspend fun extract(request: ExtractRequest): ExtractResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.document_extraction.DocumentExtractionService.Extract is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.document_extraction.DocumentExtractionService.Health.
+     * Returns the response to an RPC for jervis.document_extraction.DocumentExtractionService.Health.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun health(request: HealthRequest): HealthResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.document_extraction.DocumentExtractionService.Health is unimplemented"))
+    public open suspend fun health(request: HealthRequest): HealthResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.document_extraction.DocumentExtractionService.Health is unimplemented"))
 
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(

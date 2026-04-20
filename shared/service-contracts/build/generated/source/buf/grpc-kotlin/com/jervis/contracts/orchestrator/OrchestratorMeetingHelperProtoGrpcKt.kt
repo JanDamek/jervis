@@ -23,8 +23,7 @@ import kotlin.jvm.JvmOverloads
 import kotlin.jvm.JvmStatic
 
 /**
- * Holder for Kotlin coroutine-based client and server APIs for
- * jervis.orchestrator.OrchestratorMeetingHelperService.
+ * Holder for Kotlin coroutine-based client and server APIs for jervis.orchestrator.OrchestratorMeetingHelperService.
  */
 public object OrchestratorMeetingHelperServiceGrpcKt {
   public const val SERVICE_NAME: String = OrchestratorMeetingHelperServiceGrpc.SERVICE_NAME
@@ -50,22 +49,18 @@ public object OrchestratorMeetingHelperServiceGrpcKt {
     get() = OrchestratorMeetingHelperServiceGrpc.getStatusMethod()
 
   /**
-   * A stub for issuing RPCs to a(n) jervis.orchestrator.OrchestratorMeetingHelperService service as
-   * suspending coroutines.
+   * A stub for issuing RPCs to a(n) jervis.orchestrator.OrchestratorMeetingHelperService service as suspending coroutines.
    */
   @StubFor(OrchestratorMeetingHelperServiceGrpc::class)
   public class OrchestratorMeetingHelperServiceCoroutineStub @JvmOverloads constructor(
     channel: Channel,
     callOptions: CallOptions = DEFAULT,
   ) : AbstractCoroutineStub<OrchestratorMeetingHelperServiceCoroutineStub>(channel, callOptions) {
-    override fun build(channel: Channel, callOptions: CallOptions):
-        OrchestratorMeetingHelperServiceCoroutineStub =
-        OrchestratorMeetingHelperServiceCoroutineStub(channel, callOptions)
+    override fun build(channel: Channel, callOptions: CallOptions): OrchestratorMeetingHelperServiceCoroutineStub = OrchestratorMeetingHelperServiceCoroutineStub(channel, callOptions)
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -75,8 +70,7 @@ public object OrchestratorMeetingHelperServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun start(request: StartHelperRequest, headers: Metadata = Metadata()):
-        StartHelperResponse = unaryRpc(
+    public suspend fun start(request: StartHelperRequest, headers: Metadata = Metadata()): StartHelperResponse = unaryRpc(
       channel,
       OrchestratorMeetingHelperServiceGrpc.getStartMethod(),
       request,
@@ -86,8 +80,7 @@ public object OrchestratorMeetingHelperServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -97,8 +90,7 @@ public object OrchestratorMeetingHelperServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun stop(request: StopHelperRequest, headers: Metadata = Metadata()):
-        StopHelperResponse = unaryRpc(
+    public suspend fun stop(request: StopHelperRequest, headers: Metadata = Metadata()): StopHelperResponse = unaryRpc(
       channel,
       OrchestratorMeetingHelperServiceGrpc.getStopMethod(),
       request,
@@ -108,8 +100,7 @@ public object OrchestratorMeetingHelperServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -119,8 +110,7 @@ public object OrchestratorMeetingHelperServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun chunk(request: HelperChunkRequest, headers: Metadata = Metadata()):
-        HelperChunkResponse = unaryRpc(
+    public suspend fun chunk(request: HelperChunkRequest, headers: Metadata = Metadata()): HelperChunkResponse = unaryRpc(
       channel,
       OrchestratorMeetingHelperServiceGrpc.getChunkMethod(),
       request,
@@ -130,8 +120,7 @@ public object OrchestratorMeetingHelperServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -141,8 +130,7 @@ public object OrchestratorMeetingHelperServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun status(request: HelperStatusRequest, headers: Metadata = Metadata()):
-        HelperStatusResponse = unaryRpc(
+    public suspend fun status(request: HelperStatusRequest, headers: Metadata = Metadata()): HelperStatusResponse = unaryRpc(
       channel,
       OrchestratorMeetingHelperServiceGrpc.getStatusMethod(),
       request,
@@ -152,70 +140,58 @@ public object OrchestratorMeetingHelperServiceGrpcKt {
   }
 
   /**
-   * Skeletal implementation of the jervis.orchestrator.OrchestratorMeetingHelperService service
-   * based on Kotlin coroutines.
+   * Skeletal implementation of the jervis.orchestrator.OrchestratorMeetingHelperService service based on Kotlin coroutines.
    */
   public abstract class OrchestratorMeetingHelperServiceCoroutineImplBase(
     coroutineContext: CoroutineContext = EmptyCoroutineContext,
   ) : AbstractCoroutineServerImpl(coroutineContext) {
     /**
-     * Returns the response to an RPC for
-     * jervis.orchestrator.OrchestratorMeetingHelperService.Start.
+     * Returns the response to an RPC for jervis.orchestrator.OrchestratorMeetingHelperService.Start.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun start(request: StartHelperRequest): StartHelperResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.orchestrator.OrchestratorMeetingHelperService.Start is unimplemented"))
+    public open suspend fun start(request: StartHelperRequest): StartHelperResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.orchestrator.OrchestratorMeetingHelperService.Start is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.orchestrator.OrchestratorMeetingHelperService.Stop.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun stop(request: StopHelperRequest): StopHelperResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.orchestrator.OrchestratorMeetingHelperService.Stop is unimplemented"))
+    public open suspend fun stop(request: StopHelperRequest): StopHelperResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.orchestrator.OrchestratorMeetingHelperService.Stop is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.orchestrator.OrchestratorMeetingHelperService.Chunk.
+     * Returns the response to an RPC for jervis.orchestrator.OrchestratorMeetingHelperService.Chunk.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun chunk(request: HelperChunkRequest): HelperChunkResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.orchestrator.OrchestratorMeetingHelperService.Chunk is unimplemented"))
+    public open suspend fun chunk(request: HelperChunkRequest): HelperChunkResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.orchestrator.OrchestratorMeetingHelperService.Chunk is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.orchestrator.OrchestratorMeetingHelperService.Status.
+     * Returns the response to an RPC for jervis.orchestrator.OrchestratorMeetingHelperService.Status.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun status(request: HelperStatusRequest): HelperStatusResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.orchestrator.OrchestratorMeetingHelperService.Status is unimplemented"))
+    public open suspend fun status(request: HelperStatusRequest): HelperStatusResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.orchestrator.OrchestratorMeetingHelperService.Status is unimplemented"))
 
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(

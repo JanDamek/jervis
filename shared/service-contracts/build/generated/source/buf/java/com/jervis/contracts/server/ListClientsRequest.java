@@ -81,8 +81,7 @@ private static final long serialVersionUID = 0L;
   private volatile java.lang.Object clientId_ = "";
   /**
    * <pre>
-   * Optional tenant filter. Orchestrator passes its current client_id; MCP
-   * passes empty for the unfiltered list.
+   * empty = unfiltered
    * </pre>
    *
    * <code>string client_id = 2 [json_name = "clientId"];</code>
@@ -103,8 +102,7 @@ private static final long serialVersionUID = 0L;
   }
   /**
    * <pre>
-   * Optional tenant filter. Orchestrator passes its current client_id; MCP
-   * passes empty for the unfiltered list.
+   * empty = unfiltered
    * </pre>
    *
    * <code>string client_id = 2 [json_name = "clientId"];</code>
@@ -588,8 +586,7 @@ private static final long serialVersionUID = 0L;
     private java.lang.Object clientId_ = "";
     /**
      * <pre>
-     * Optional tenant filter. Orchestrator passes its current client_id; MCP
-     * passes empty for the unfiltered list.
+     * empty = unfiltered
      * </pre>
      *
      * <code>string client_id = 2 [json_name = "clientId"];</code>
@@ -609,8 +606,7 @@ private static final long serialVersionUID = 0L;
     }
     /**
      * <pre>
-     * Optional tenant filter. Orchestrator passes its current client_id; MCP
-     * passes empty for the unfiltered list.
+     * empty = unfiltered
      * </pre>
      *
      * <code>string client_id = 2 [json_name = "clientId"];</code>
@@ -631,8 +627,7 @@ private static final long serialVersionUID = 0L;
     }
     /**
      * <pre>
-     * Optional tenant filter. Orchestrator passes its current client_id; MCP
-     * passes empty for the unfiltered list.
+     * empty = unfiltered
      * </pre>
      *
      * <code>string client_id = 2 [json_name = "clientId"];</code>
@@ -649,8 +644,7 @@ private static final long serialVersionUID = 0L;
     }
     /**
      * <pre>
-     * Optional tenant filter. Orchestrator passes its current client_id; MCP
-     * passes empty for the unfiltered list.
+     * empty = unfiltered
      * </pre>
      *
      * <code>string client_id = 2 [json_name = "clientId"];</code>
@@ -664,8 +658,7 @@ private static final long serialVersionUID = 0L;
     }
     /**
      * <pre>
-     * Optional tenant filter. Orchestrator passes its current client_id; MCP
-     * passes empty for the unfiltered list.
+     * empty = unfiltered
      * </pre>
      *
      * <code>string client_id = 2 [json_name = "clientId"];</code>

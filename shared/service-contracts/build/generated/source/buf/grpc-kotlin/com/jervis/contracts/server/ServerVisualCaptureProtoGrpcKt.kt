@@ -23,8 +23,7 @@ import kotlin.jvm.JvmOverloads
 import kotlin.jvm.JvmStatic
 
 /**
- * Holder for Kotlin coroutine-based client and server APIs for
- * jervis.server.ServerVisualCaptureService.
+ * Holder for Kotlin coroutine-based client and server APIs for jervis.server.ServerVisualCaptureService.
  */
 public object ServerVisualCaptureServiceGrpcKt {
   public const val SERVICE_NAME: String = ServerVisualCaptureServiceGrpc.SERVICE_NAME
@@ -46,22 +45,18 @@ public object ServerVisualCaptureServiceGrpcKt {
     get() = ServerVisualCaptureServiceGrpc.getPtzMethod()
 
   /**
-   * A stub for issuing RPCs to a(n) jervis.server.ServerVisualCaptureService service as suspending
-   * coroutines.
+   * A stub for issuing RPCs to a(n) jervis.server.ServerVisualCaptureService service as suspending coroutines.
    */
   @StubFor(ServerVisualCaptureServiceGrpc::class)
   public class ServerVisualCaptureServiceCoroutineStub @JvmOverloads constructor(
     channel: Channel,
     callOptions: CallOptions = DEFAULT,
   ) : AbstractCoroutineStub<ServerVisualCaptureServiceCoroutineStub>(channel, callOptions) {
-    override fun build(channel: Channel, callOptions: CallOptions):
-        ServerVisualCaptureServiceCoroutineStub = ServerVisualCaptureServiceCoroutineStub(channel,
-        callOptions)
+    override fun build(channel: Channel, callOptions: CallOptions): ServerVisualCaptureServiceCoroutineStub = ServerVisualCaptureServiceCoroutineStub(channel, callOptions)
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -71,8 +66,7 @@ public object ServerVisualCaptureServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun postResult(request: VisualResultRequest, headers: Metadata = Metadata()):
-        VisualResultResponse = unaryRpc(
+    public suspend fun postResult(request: VisualResultRequest, headers: Metadata = Metadata()): VisualResultResponse = unaryRpc(
       channel,
       ServerVisualCaptureServiceGrpc.getPostResultMethod(),
       request,
@@ -82,8 +76,7 @@ public object ServerVisualCaptureServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -93,8 +86,7 @@ public object ServerVisualCaptureServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun snapshot(request: ProxySnapshotRequest, headers: Metadata = Metadata()):
-        ProxySnapshotResponse = unaryRpc(
+    public suspend fun snapshot(request: ProxySnapshotRequest, headers: Metadata = Metadata()): ProxySnapshotResponse = unaryRpc(
       channel,
       ServerVisualCaptureServiceGrpc.getSnapshotMethod(),
       request,
@@ -104,8 +96,7 @@ public object ServerVisualCaptureServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -115,8 +106,7 @@ public object ServerVisualCaptureServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun ptz(request: ProxyPtzRequest, headers: Metadata = Metadata()):
-        ProxyPtzResponse = unaryRpc(
+    public suspend fun ptz(request: ProxyPtzRequest, headers: Metadata = Metadata()): ProxyPtzResponse = unaryRpc(
       channel,
       ServerVisualCaptureServiceGrpc.getPtzMethod(),
       request,
@@ -126,8 +116,7 @@ public object ServerVisualCaptureServiceGrpcKt {
   }
 
   /**
-   * Skeletal implementation of the jervis.server.ServerVisualCaptureService service based on Kotlin
-   * coroutines.
+   * Skeletal implementation of the jervis.server.ServerVisualCaptureService service based on Kotlin coroutines.
    */
   public abstract class ServerVisualCaptureServiceCoroutineImplBase(
     coroutineContext: CoroutineContext = EmptyCoroutineContext,
@@ -136,43 +125,37 @@ public object ServerVisualCaptureServiceGrpcKt {
      * Returns the response to an RPC for jervis.server.ServerVisualCaptureService.PostResult.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun postResult(request: VisualResultRequest): VisualResultResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerVisualCaptureService.PostResult is unimplemented"))
+    public open suspend fun postResult(request: VisualResultRequest): VisualResultResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerVisualCaptureService.PostResult is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerVisualCaptureService.Snapshot.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun snapshot(request: ProxySnapshotRequest): ProxySnapshotResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerVisualCaptureService.Snapshot is unimplemented"))
+    public open suspend fun snapshot(request: ProxySnapshotRequest): ProxySnapshotResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerVisualCaptureService.Snapshot is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerVisualCaptureService.Ptz.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun ptz(request: ProxyPtzRequest): ProxyPtzResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerVisualCaptureService.Ptz is unimplemented"))
+    public open suspend fun ptz(request: ProxyPtzRequest): ProxyPtzResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerVisualCaptureService.Ptz is unimplemented"))
 
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(

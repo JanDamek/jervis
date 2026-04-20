@@ -23,8 +23,7 @@ import kotlin.jvm.JvmOverloads
 import kotlin.jvm.JvmStatic
 
 /**
- * Holder for Kotlin coroutine-based client and server APIs for
- * jervis.knowledgebase.KnowledgeMaintenanceService.
+ * Holder for Kotlin coroutine-based client and server APIs for jervis.knowledgebase.KnowledgeMaintenanceService.
  */
 public object KnowledgeMaintenanceServiceGrpcKt {
   public const val SERVICE_NAME: String = KnowledgeMaintenanceServiceGrpc.SERVICE_NAME
@@ -46,22 +45,18 @@ public object KnowledgeMaintenanceServiceGrpcKt {
     get() = KnowledgeMaintenanceServiceGrpc.getRetagGroupMethod()
 
   /**
-   * A stub for issuing RPCs to a(n) jervis.knowledgebase.KnowledgeMaintenanceService service as
-   * suspending coroutines.
+   * A stub for issuing RPCs to a(n) jervis.knowledgebase.KnowledgeMaintenanceService service as suspending coroutines.
    */
   @StubFor(KnowledgeMaintenanceServiceGrpc::class)
   public class KnowledgeMaintenanceServiceCoroutineStub @JvmOverloads constructor(
     channel: Channel,
     callOptions: CallOptions = DEFAULT,
   ) : AbstractCoroutineStub<KnowledgeMaintenanceServiceCoroutineStub>(channel, callOptions) {
-    override fun build(channel: Channel, callOptions: CallOptions):
-        KnowledgeMaintenanceServiceCoroutineStub = KnowledgeMaintenanceServiceCoroutineStub(channel,
-        callOptions)
+    override fun build(channel: Channel, callOptions: CallOptions): KnowledgeMaintenanceServiceCoroutineStub = KnowledgeMaintenanceServiceCoroutineStub(channel, callOptions)
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -71,8 +66,7 @@ public object KnowledgeMaintenanceServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun runBatch(request: MaintenanceBatchRequest, headers: Metadata = Metadata()):
-        MaintenanceBatchResult = unaryRpc(
+    public suspend fun runBatch(request: MaintenanceBatchRequest, headers: Metadata = Metadata()): MaintenanceBatchResult = unaryRpc(
       channel,
       KnowledgeMaintenanceServiceGrpc.getRunBatchMethod(),
       request,
@@ -82,8 +76,7 @@ public object KnowledgeMaintenanceServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -93,8 +86,7 @@ public object KnowledgeMaintenanceServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun retagProject(request: RetagProjectRequest, headers: Metadata = Metadata()):
-        RetagResult = unaryRpc(
+    public suspend fun retagProject(request: RetagProjectRequest, headers: Metadata = Metadata()): RetagResult = unaryRpc(
       channel,
       KnowledgeMaintenanceServiceGrpc.getRetagProjectMethod(),
       request,
@@ -104,8 +96,7 @@ public object KnowledgeMaintenanceServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -115,8 +106,7 @@ public object KnowledgeMaintenanceServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun retagGroup(request: RetagGroupRequest, headers: Metadata = Metadata()):
-        RetagResult = unaryRpc(
+    public suspend fun retagGroup(request: RetagGroupRequest, headers: Metadata = Metadata()): RetagResult = unaryRpc(
       channel,
       KnowledgeMaintenanceServiceGrpc.getRetagGroupMethod(),
       request,
@@ -126,8 +116,7 @@ public object KnowledgeMaintenanceServiceGrpcKt {
   }
 
   /**
-   * Skeletal implementation of the jervis.knowledgebase.KnowledgeMaintenanceService service based
-   * on Kotlin coroutines.
+   * Skeletal implementation of the jervis.knowledgebase.KnowledgeMaintenanceService service based on Kotlin coroutines.
    */
   public abstract class KnowledgeMaintenanceServiceCoroutineImplBase(
     coroutineContext: CoroutineContext = EmptyCoroutineContext,
@@ -136,46 +125,37 @@ public object KnowledgeMaintenanceServiceGrpcKt {
      * Returns the response to an RPC for jervis.knowledgebase.KnowledgeMaintenanceService.RunBatch.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun runBatch(request: MaintenanceBatchRequest): MaintenanceBatchResult =
-        throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeMaintenanceService.RunBatch is unimplemented"))
+    public open suspend fun runBatch(request: MaintenanceBatchRequest): MaintenanceBatchResult = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeMaintenanceService.RunBatch is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.knowledgebase.KnowledgeMaintenanceService.RetagProject.
+     * Returns the response to an RPC for jervis.knowledgebase.KnowledgeMaintenanceService.RetagProject.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun retagProject(request: RetagProjectRequest): RetagResult = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeMaintenanceService.RetagProject is unimplemented"))
+    public open suspend fun retagProject(request: RetagProjectRequest): RetagResult = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeMaintenanceService.RetagProject is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.knowledgebase.KnowledgeMaintenanceService.RetagGroup.
+     * Returns the response to an RPC for jervis.knowledgebase.KnowledgeMaintenanceService.RetagGroup.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun retagGroup(request: RetagGroupRequest): RetagResult = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeMaintenanceService.RetagGroup is unimplemented"))
+    public open suspend fun retagGroup(request: RetagGroupRequest): RetagResult = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeMaintenanceService.RetagGroup is unimplemented"))
 
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(

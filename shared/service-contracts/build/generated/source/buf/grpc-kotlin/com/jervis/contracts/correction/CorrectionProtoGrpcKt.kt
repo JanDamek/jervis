@@ -66,21 +66,18 @@ public object CorrectionServiceGrpcKt {
     get() = CorrectionServiceGrpc.getDeleteCorrectionMethod()
 
   /**
-   * A stub for issuing RPCs to a(n) jervis.correction.CorrectionService service as suspending
-   * coroutines.
+   * A stub for issuing RPCs to a(n) jervis.correction.CorrectionService service as suspending coroutines.
    */
   @StubFor(CorrectionServiceGrpc::class)
   public class CorrectionServiceCoroutineStub @JvmOverloads constructor(
     channel: Channel,
     callOptions: CallOptions = DEFAULT,
   ) : AbstractCoroutineStub<CorrectionServiceCoroutineStub>(channel, callOptions) {
-    override fun build(channel: Channel, callOptions: CallOptions): CorrectionServiceCoroutineStub =
-        CorrectionServiceCoroutineStub(channel, callOptions)
+    override fun build(channel: Channel, callOptions: CallOptions): CorrectionServiceCoroutineStub = CorrectionServiceCoroutineStub(channel, callOptions)
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -90,8 +87,7 @@ public object CorrectionServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun submitCorrection(request: SubmitCorrectionRequest, headers: Metadata =
-        Metadata()): SubmitCorrectionResponse = unaryRpc(
+    public suspend fun submitCorrection(request: SubmitCorrectionRequest, headers: Metadata = Metadata()): SubmitCorrectionResponse = unaryRpc(
       channel,
       CorrectionServiceGrpc.getSubmitCorrectionMethod(),
       request,
@@ -101,8 +97,7 @@ public object CorrectionServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -112,8 +107,7 @@ public object CorrectionServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun correctTranscript(request: CorrectTranscriptRequest, headers: Metadata =
-        Metadata()): CorrectResult = unaryRpc(
+    public suspend fun correctTranscript(request: CorrectTranscriptRequest, headers: Metadata = Metadata()): CorrectResult = unaryRpc(
       channel,
       CorrectionServiceGrpc.getCorrectTranscriptMethod(),
       request,
@@ -123,8 +117,7 @@ public object CorrectionServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -134,8 +127,7 @@ public object CorrectionServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun listCorrections(request: ListCorrectionsRequest, headers: Metadata =
-        Metadata()): ListCorrectionsResponse = unaryRpc(
+    public suspend fun listCorrections(request: ListCorrectionsRequest, headers: Metadata = Metadata()): ListCorrectionsResponse = unaryRpc(
       channel,
       CorrectionServiceGrpc.getListCorrectionsMethod(),
       request,
@@ -145,8 +137,7 @@ public object CorrectionServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -156,8 +147,7 @@ public object CorrectionServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun answerCorrectionQuestions(request: AnswerCorrectionsRequest,
-        headers: Metadata = Metadata()): AnswerCorrectionsResponse = unaryRpc(
+    public suspend fun answerCorrectionQuestions(request: AnswerCorrectionsRequest, headers: Metadata = Metadata()): AnswerCorrectionsResponse = unaryRpc(
       channel,
       CorrectionServiceGrpc.getAnswerCorrectionQuestionsMethod(),
       request,
@@ -167,8 +157,7 @@ public object CorrectionServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -178,8 +167,7 @@ public object CorrectionServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun correctWithInstruction(request: CorrectWithInstructionRequest,
-        headers: Metadata = Metadata()): CorrectWithInstructionResponse = unaryRpc(
+    public suspend fun correctWithInstruction(request: CorrectWithInstructionRequest, headers: Metadata = Metadata()): CorrectWithInstructionResponse = unaryRpc(
       channel,
       CorrectionServiceGrpc.getCorrectWithInstructionMethod(),
       request,
@@ -189,8 +177,7 @@ public object CorrectionServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -200,8 +187,7 @@ public object CorrectionServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun correctTargeted(request: CorrectTargetedRequest, headers: Metadata =
-        Metadata()): CorrectResult = unaryRpc(
+    public suspend fun correctTargeted(request: CorrectTargetedRequest, headers: Metadata = Metadata()): CorrectResult = unaryRpc(
       channel,
       CorrectionServiceGrpc.getCorrectTargetedMethod(),
       request,
@@ -211,8 +197,7 @@ public object CorrectionServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -222,8 +207,7 @@ public object CorrectionServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun deleteCorrection(request: DeleteCorrectionRequest, headers: Metadata =
-        Metadata()): DeleteCorrectionResponse = unaryRpc(
+    public suspend fun deleteCorrection(request: DeleteCorrectionRequest, headers: Metadata = Metadata()): DeleteCorrectionResponse = unaryRpc(
       channel,
       CorrectionServiceGrpc.getDeleteCorrectionMethod(),
       request,
@@ -233,8 +217,7 @@ public object CorrectionServiceGrpcKt {
   }
 
   /**
-   * Skeletal implementation of the jervis.correction.CorrectionService service based on Kotlin
-   * coroutines.
+   * Skeletal implementation of the jervis.correction.CorrectionService service based on Kotlin coroutines.
    */
   public abstract class CorrectionServiceCoroutineImplBase(
     coroutineContext: CoroutineContext = EmptyCoroutineContext,
@@ -243,107 +226,85 @@ public object CorrectionServiceGrpcKt {
      * Returns the response to an RPC for jervis.correction.CorrectionService.SubmitCorrection.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun submitCorrection(request: SubmitCorrectionRequest):
-        SubmitCorrectionResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.correction.CorrectionService.SubmitCorrection is unimplemented"))
+    public open suspend fun submitCorrection(request: SubmitCorrectionRequest): SubmitCorrectionResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.correction.CorrectionService.SubmitCorrection is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.correction.CorrectionService.CorrectTranscript.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun correctTranscript(request: CorrectTranscriptRequest): CorrectResult =
-        throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.correction.CorrectionService.CorrectTranscript is unimplemented"))
+    public open suspend fun correctTranscript(request: CorrectTranscriptRequest): CorrectResult = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.correction.CorrectionService.CorrectTranscript is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.correction.CorrectionService.ListCorrections.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun listCorrections(request: ListCorrectionsRequest):
-        ListCorrectionsResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.correction.CorrectionService.ListCorrections is unimplemented"))
+    public open suspend fun listCorrections(request: ListCorrectionsRequest): ListCorrectionsResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.correction.CorrectionService.ListCorrections is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.correction.CorrectionService.AnswerCorrectionQuestions.
+     * Returns the response to an RPC for jervis.correction.CorrectionService.AnswerCorrectionQuestions.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun answerCorrectionQuestions(request: AnswerCorrectionsRequest):
-        AnswerCorrectionsResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.correction.CorrectionService.AnswerCorrectionQuestions is unimplemented"))
+    public open suspend fun answerCorrectionQuestions(request: AnswerCorrectionsRequest): AnswerCorrectionsResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.correction.CorrectionService.AnswerCorrectionQuestions is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.correction.CorrectionService.CorrectWithInstruction.
+     * Returns the response to an RPC for jervis.correction.CorrectionService.CorrectWithInstruction.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun correctWithInstruction(request: CorrectWithInstructionRequest):
-        CorrectWithInstructionResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.correction.CorrectionService.CorrectWithInstruction is unimplemented"))
+    public open suspend fun correctWithInstruction(request: CorrectWithInstructionRequest): CorrectWithInstructionResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.correction.CorrectionService.CorrectWithInstruction is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.correction.CorrectionService.CorrectTargeted.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun correctTargeted(request: CorrectTargetedRequest): CorrectResult = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.correction.CorrectionService.CorrectTargeted is unimplemented"))
+    public open suspend fun correctTargeted(request: CorrectTargetedRequest): CorrectResult = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.correction.CorrectionService.CorrectTargeted is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.correction.CorrectionService.DeleteCorrection.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun deleteCorrection(request: DeleteCorrectionRequest):
-        DeleteCorrectionResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.correction.CorrectionService.DeleteCorrection is unimplemented"))
+    public open suspend fun deleteCorrection(request: DeleteCorrectionRequest): DeleteCorrectionResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.correction.CorrectionService.DeleteCorrection is unimplemented"))
 
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(

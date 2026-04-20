@@ -5,13 +5,8 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
 /**
  * <pre>
  * ServerProjectManagementService is the pod-to-pod surface for creating
- * and listing clients, projects and connections. List responses carry the
- * full DTO tree as JSON (`items_json`) because Python callers only read
- * a handful of surface fields (id, name, provider, capabilities). Create
- * responses stay typed — Python confirms id/name/provider only.
- * The `project-advisor/archetypes` endpoint had no Python consumer and is
- * dropped; recommendations remain available as typed JSON (the orchestrator
- * formats deeply-nested fields for the LLM prompt).
+ * and listing clients, projects and connections, plus the project-advisor
+ * stack recommendations.
  * </pre>
  */
 @io.grpc.stub.annotations.GrpcGenerated
@@ -23,28 +18,28 @@ public final class ServerProjectManagementServiceGrpc {
 
   // Static method descriptors that strictly reflect the proto.
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.ListClientsRequest,
-      com.jervis.contracts.server.ListClientsResponse> getListClientsMethod;
+      com.jervis.contracts.server.ClientList> getListClientsMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "ListClients",
       requestType = com.jervis.contracts.server.ListClientsRequest.class,
-      responseType = com.jervis.contracts.server.ListClientsResponse.class,
+      responseType = com.jervis.contracts.server.ClientList.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.server.ListClientsRequest,
-      com.jervis.contracts.server.ListClientsResponse> getListClientsMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.server.ListClientsRequest, com.jervis.contracts.server.ListClientsResponse> getListClientsMethod;
+      com.jervis.contracts.server.ClientList> getListClientsMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.ListClientsRequest, com.jervis.contracts.server.ClientList> getListClientsMethod;
     if ((getListClientsMethod = ServerProjectManagementServiceGrpc.getListClientsMethod) == null) {
       synchronized (ServerProjectManagementServiceGrpc.class) {
         if ((getListClientsMethod = ServerProjectManagementServiceGrpc.getListClientsMethod) == null) {
           ServerProjectManagementServiceGrpc.getListClientsMethod = getListClientsMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.server.ListClientsRequest, com.jervis.contracts.server.ListClientsResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.ListClientsRequest, com.jervis.contracts.server.ClientList>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "ListClients"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.server.ListClientsRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.ListClientsResponse.getDefaultInstance()))
+                  com.jervis.contracts.server.ClientList.getDefaultInstance()))
               .setSchemaDescriptor(new ServerProjectManagementServiceMethodDescriptorSupplier("ListClients"))
               .build();
         }
@@ -85,28 +80,28 @@ public final class ServerProjectManagementServiceGrpc {
   }
 
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.ListProjectsRequest,
-      com.jervis.contracts.server.ListProjectsResponse> getListProjectsMethod;
+      com.jervis.contracts.server.ProjectList> getListProjectsMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "ListProjects",
       requestType = com.jervis.contracts.server.ListProjectsRequest.class,
-      responseType = com.jervis.contracts.server.ListProjectsResponse.class,
+      responseType = com.jervis.contracts.server.ProjectList.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.server.ListProjectsRequest,
-      com.jervis.contracts.server.ListProjectsResponse> getListProjectsMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.server.ListProjectsRequest, com.jervis.contracts.server.ListProjectsResponse> getListProjectsMethod;
+      com.jervis.contracts.server.ProjectList> getListProjectsMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.ListProjectsRequest, com.jervis.contracts.server.ProjectList> getListProjectsMethod;
     if ((getListProjectsMethod = ServerProjectManagementServiceGrpc.getListProjectsMethod) == null) {
       synchronized (ServerProjectManagementServiceGrpc.class) {
         if ((getListProjectsMethod = ServerProjectManagementServiceGrpc.getListProjectsMethod) == null) {
           ServerProjectManagementServiceGrpc.getListProjectsMethod = getListProjectsMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.server.ListProjectsRequest, com.jervis.contracts.server.ListProjectsResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.ListProjectsRequest, com.jervis.contracts.server.ProjectList>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "ListProjects"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.server.ListProjectsRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.ListProjectsResponse.getDefaultInstance()))
+                  com.jervis.contracts.server.ProjectList.getDefaultInstance()))
               .setSchemaDescriptor(new ServerProjectManagementServiceMethodDescriptorSupplier("ListProjects"))
               .build();
         }
@@ -147,28 +142,28 @@ public final class ServerProjectManagementServiceGrpc {
   }
 
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.UpdateProjectRequest,
-      com.jervis.contracts.server.UpdateProjectResponse> getUpdateProjectMethod;
+      com.jervis.contracts.server.Project> getUpdateProjectMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "UpdateProject",
       requestType = com.jervis.contracts.server.UpdateProjectRequest.class,
-      responseType = com.jervis.contracts.server.UpdateProjectResponse.class,
+      responseType = com.jervis.contracts.server.Project.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.server.UpdateProjectRequest,
-      com.jervis.contracts.server.UpdateProjectResponse> getUpdateProjectMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.server.UpdateProjectRequest, com.jervis.contracts.server.UpdateProjectResponse> getUpdateProjectMethod;
+      com.jervis.contracts.server.Project> getUpdateProjectMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.UpdateProjectRequest, com.jervis.contracts.server.Project> getUpdateProjectMethod;
     if ((getUpdateProjectMethod = ServerProjectManagementServiceGrpc.getUpdateProjectMethod) == null) {
       synchronized (ServerProjectManagementServiceGrpc.class) {
         if ((getUpdateProjectMethod = ServerProjectManagementServiceGrpc.getUpdateProjectMethod) == null) {
           ServerProjectManagementServiceGrpc.getUpdateProjectMethod = getUpdateProjectMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.server.UpdateProjectRequest, com.jervis.contracts.server.UpdateProjectResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.UpdateProjectRequest, com.jervis.contracts.server.Project>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "UpdateProject"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.server.UpdateProjectRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.UpdateProjectResponse.getDefaultInstance()))
+                  com.jervis.contracts.server.Project.getDefaultInstance()))
               .setSchemaDescriptor(new ServerProjectManagementServiceMethodDescriptorSupplier("UpdateProject"))
               .build();
         }
@@ -178,28 +173,28 @@ public final class ServerProjectManagementServiceGrpc {
   }
 
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.ListConnectionsRequest,
-      com.jervis.contracts.server.ListConnectionsResponse> getListConnectionsMethod;
+      com.jervis.contracts.server.ConnectionSummaryList> getListConnectionsMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "ListConnections",
       requestType = com.jervis.contracts.server.ListConnectionsRequest.class,
-      responseType = com.jervis.contracts.server.ListConnectionsResponse.class,
+      responseType = com.jervis.contracts.server.ConnectionSummaryList.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.server.ListConnectionsRequest,
-      com.jervis.contracts.server.ListConnectionsResponse> getListConnectionsMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.server.ListConnectionsRequest, com.jervis.contracts.server.ListConnectionsResponse> getListConnectionsMethod;
+      com.jervis.contracts.server.ConnectionSummaryList> getListConnectionsMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.ListConnectionsRequest, com.jervis.contracts.server.ConnectionSummaryList> getListConnectionsMethod;
     if ((getListConnectionsMethod = ServerProjectManagementServiceGrpc.getListConnectionsMethod) == null) {
       synchronized (ServerProjectManagementServiceGrpc.class) {
         if ((getListConnectionsMethod = ServerProjectManagementServiceGrpc.getListConnectionsMethod) == null) {
           ServerProjectManagementServiceGrpc.getListConnectionsMethod = getListConnectionsMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.server.ListConnectionsRequest, com.jervis.contracts.server.ListConnectionsResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.ListConnectionsRequest, com.jervis.contracts.server.ConnectionSummaryList>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "ListConnections"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.server.ListConnectionsRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.ListConnectionsResponse.getDefaultInstance()))
+                  com.jervis.contracts.server.ConnectionSummaryList.getDefaultInstance()))
               .setSchemaDescriptor(new ServerProjectManagementServiceMethodDescriptorSupplier("ListConnections"))
               .build();
         }
@@ -240,28 +235,28 @@ public final class ServerProjectManagementServiceGrpc {
   }
 
   private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.GetStackRecommendationsRequest,
-      com.jervis.contracts.server.GetStackRecommendationsResponse> getGetStackRecommendationsMethod;
+      com.jervis.contracts.server.ProjectRecommendations> getGetStackRecommendationsMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "GetStackRecommendations",
       requestType = com.jervis.contracts.server.GetStackRecommendationsRequest.class,
-      responseType = com.jervis.contracts.server.GetStackRecommendationsResponse.class,
+      responseType = com.jervis.contracts.server.ProjectRecommendations.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<com.jervis.contracts.server.GetStackRecommendationsRequest,
-      com.jervis.contracts.server.GetStackRecommendationsResponse> getGetStackRecommendationsMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.server.GetStackRecommendationsRequest, com.jervis.contracts.server.GetStackRecommendationsResponse> getGetStackRecommendationsMethod;
+      com.jervis.contracts.server.ProjectRecommendations> getGetStackRecommendationsMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.GetStackRecommendationsRequest, com.jervis.contracts.server.ProjectRecommendations> getGetStackRecommendationsMethod;
     if ((getGetStackRecommendationsMethod = ServerProjectManagementServiceGrpc.getGetStackRecommendationsMethod) == null) {
       synchronized (ServerProjectManagementServiceGrpc.class) {
         if ((getGetStackRecommendationsMethod = ServerProjectManagementServiceGrpc.getGetStackRecommendationsMethod) == null) {
           ServerProjectManagementServiceGrpc.getGetStackRecommendationsMethod = getGetStackRecommendationsMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.server.GetStackRecommendationsRequest, com.jervis.contracts.server.GetStackRecommendationsResponse>newBuilder()
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.GetStackRecommendationsRequest, com.jervis.contracts.server.ProjectRecommendations>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "GetStackRecommendations"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   com.jervis.contracts.server.GetStackRecommendationsRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.server.GetStackRecommendationsResponse.getDefaultInstance()))
+                  com.jervis.contracts.server.ProjectRecommendations.getDefaultInstance()))
               .setSchemaDescriptor(new ServerProjectManagementServiceMethodDescriptorSupplier("GetStackRecommendations"))
               .build();
         }
@@ -332,13 +327,8 @@ public final class ServerProjectManagementServiceGrpc {
   /**
    * <pre>
    * ServerProjectManagementService is the pod-to-pod surface for creating
-   * and listing clients, projects and connections. List responses carry the
-   * full DTO tree as JSON (`items_json`) because Python callers only read
-   * a handful of surface fields (id, name, provider, capabilities). Create
-   * responses stay typed — Python confirms id/name/provider only.
-   * The `project-advisor/archetypes` endpoint had no Python consumer and is
-   * dropped; recommendations remain available as typed JSON (the orchestrator
-   * formats deeply-nested fields for the LLM prompt).
+   * and listing clients, projects and connections, plus the project-advisor
+   * stack recommendations.
    * </pre>
    */
   public interface AsyncService {
@@ -346,7 +336,7 @@ public final class ServerProjectManagementServiceGrpc {
     /**
      */
     default void listClients(com.jervis.contracts.server.ListClientsRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.ListClientsResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.ClientList> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getListClientsMethod(), responseObserver);
     }
 
@@ -360,7 +350,7 @@ public final class ServerProjectManagementServiceGrpc {
     /**
      */
     default void listProjects(com.jervis.contracts.server.ListProjectsRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.ListProjectsResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.ProjectList> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getListProjectsMethod(), responseObserver);
     }
 
@@ -374,14 +364,14 @@ public final class ServerProjectManagementServiceGrpc {
     /**
      */
     default void updateProject(com.jervis.contracts.server.UpdateProjectRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.UpdateProjectResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.Project> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getUpdateProjectMethod(), responseObserver);
     }
 
     /**
      */
     default void listConnections(com.jervis.contracts.server.ListConnectionsRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.ListConnectionsResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.ConnectionSummaryList> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getListConnectionsMethod(), responseObserver);
     }
 
@@ -395,7 +385,7 @@ public final class ServerProjectManagementServiceGrpc {
     /**
      */
     default void getStackRecommendations(com.jervis.contracts.server.GetStackRecommendationsRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.GetStackRecommendationsResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.ProjectRecommendations> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetStackRecommendationsMethod(), responseObserver);
     }
   }
@@ -404,13 +394,8 @@ public final class ServerProjectManagementServiceGrpc {
    * Base class for the server implementation of the service ServerProjectManagementService.
    * <pre>
    * ServerProjectManagementService is the pod-to-pod surface for creating
-   * and listing clients, projects and connections. List responses carry the
-   * full DTO tree as JSON (`items_json`) because Python callers only read
-   * a handful of surface fields (id, name, provider, capabilities). Create
-   * responses stay typed — Python confirms id/name/provider only.
-   * The `project-advisor/archetypes` endpoint had no Python consumer and is
-   * dropped; recommendations remain available as typed JSON (the orchestrator
-   * formats deeply-nested fields for the LLM prompt).
+   * and listing clients, projects and connections, plus the project-advisor
+   * stack recommendations.
    * </pre>
    */
   public static abstract class ServerProjectManagementServiceImplBase
@@ -425,13 +410,8 @@ public final class ServerProjectManagementServiceGrpc {
    * A stub to allow clients to do asynchronous rpc calls to service ServerProjectManagementService.
    * <pre>
    * ServerProjectManagementService is the pod-to-pod surface for creating
-   * and listing clients, projects and connections. List responses carry the
-   * full DTO tree as JSON (`items_json`) because Python callers only read
-   * a handful of surface fields (id, name, provider, capabilities). Create
-   * responses stay typed — Python confirms id/name/provider only.
-   * The `project-advisor/archetypes` endpoint had no Python consumer and is
-   * dropped; recommendations remain available as typed JSON (the orchestrator
-   * formats deeply-nested fields for the LLM prompt).
+   * and listing clients, projects and connections, plus the project-advisor
+   * stack recommendations.
    * </pre>
    */
   public static final class ServerProjectManagementServiceStub
@@ -450,7 +430,7 @@ public final class ServerProjectManagementServiceGrpc {
     /**
      */
     public void listClients(com.jervis.contracts.server.ListClientsRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.ListClientsResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.ClientList> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getListClientsMethod(), getCallOptions()), request, responseObserver);
     }
@@ -466,7 +446,7 @@ public final class ServerProjectManagementServiceGrpc {
     /**
      */
     public void listProjects(com.jervis.contracts.server.ListProjectsRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.ListProjectsResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.ProjectList> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getListProjectsMethod(), getCallOptions()), request, responseObserver);
     }
@@ -482,7 +462,7 @@ public final class ServerProjectManagementServiceGrpc {
     /**
      */
     public void updateProject(com.jervis.contracts.server.UpdateProjectRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.UpdateProjectResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.Project> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getUpdateProjectMethod(), getCallOptions()), request, responseObserver);
     }
@@ -490,7 +470,7 @@ public final class ServerProjectManagementServiceGrpc {
     /**
      */
     public void listConnections(com.jervis.contracts.server.ListConnectionsRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.ListConnectionsResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.ConnectionSummaryList> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getListConnectionsMethod(), getCallOptions()), request, responseObserver);
     }
@@ -506,7 +486,7 @@ public final class ServerProjectManagementServiceGrpc {
     /**
      */
     public void getStackRecommendations(com.jervis.contracts.server.GetStackRecommendationsRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.server.GetStackRecommendationsResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.ProjectRecommendations> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetStackRecommendationsMethod(), getCallOptions()), request, responseObserver);
     }
@@ -516,13 +496,8 @@ public final class ServerProjectManagementServiceGrpc {
    * A stub to allow clients to do synchronous rpc calls to service ServerProjectManagementService.
    * <pre>
    * ServerProjectManagementService is the pod-to-pod surface for creating
-   * and listing clients, projects and connections. List responses carry the
-   * full DTO tree as JSON (`items_json`) because Python callers only read
-   * a handful of surface fields (id, name, provider, capabilities). Create
-   * responses stay typed — Python confirms id/name/provider only.
-   * The `project-advisor/archetypes` endpoint had no Python consumer and is
-   * dropped; recommendations remain available as typed JSON (the orchestrator
-   * formats deeply-nested fields for the LLM prompt).
+   * and listing clients, projects and connections, plus the project-advisor
+   * stack recommendations.
    * </pre>
    */
   public static final class ServerProjectManagementServiceBlockingV2Stub
@@ -540,7 +515,7 @@ public final class ServerProjectManagementServiceGrpc {
 
     /**
      */
-    public com.jervis.contracts.server.ListClientsResponse listClients(com.jervis.contracts.server.ListClientsRequest request) throws io.grpc.StatusException {
+    public com.jervis.contracts.server.ClientList listClients(com.jervis.contracts.server.ListClientsRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getListClientsMethod(), getCallOptions(), request);
     }
@@ -554,7 +529,7 @@ public final class ServerProjectManagementServiceGrpc {
 
     /**
      */
-    public com.jervis.contracts.server.ListProjectsResponse listProjects(com.jervis.contracts.server.ListProjectsRequest request) throws io.grpc.StatusException {
+    public com.jervis.contracts.server.ProjectList listProjects(com.jervis.contracts.server.ListProjectsRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getListProjectsMethod(), getCallOptions(), request);
     }
@@ -568,14 +543,14 @@ public final class ServerProjectManagementServiceGrpc {
 
     /**
      */
-    public com.jervis.contracts.server.UpdateProjectResponse updateProject(com.jervis.contracts.server.UpdateProjectRequest request) throws io.grpc.StatusException {
+    public com.jervis.contracts.server.Project updateProject(com.jervis.contracts.server.UpdateProjectRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getUpdateProjectMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.ListConnectionsResponse listConnections(com.jervis.contracts.server.ListConnectionsRequest request) throws io.grpc.StatusException {
+    public com.jervis.contracts.server.ConnectionSummaryList listConnections(com.jervis.contracts.server.ListConnectionsRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getListConnectionsMethod(), getCallOptions(), request);
     }
@@ -589,7 +564,7 @@ public final class ServerProjectManagementServiceGrpc {
 
     /**
      */
-    public com.jervis.contracts.server.GetStackRecommendationsResponse getStackRecommendations(com.jervis.contracts.server.GetStackRecommendationsRequest request) throws io.grpc.StatusException {
+    public com.jervis.contracts.server.ProjectRecommendations getStackRecommendations(com.jervis.contracts.server.GetStackRecommendationsRequest request) throws io.grpc.StatusException {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getGetStackRecommendationsMethod(), getCallOptions(), request);
     }
@@ -599,13 +574,8 @@ public final class ServerProjectManagementServiceGrpc {
    * A stub to allow clients to do limited synchronous rpc calls to service ServerProjectManagementService.
    * <pre>
    * ServerProjectManagementService is the pod-to-pod surface for creating
-   * and listing clients, projects and connections. List responses carry the
-   * full DTO tree as JSON (`items_json`) because Python callers only read
-   * a handful of surface fields (id, name, provider, capabilities). Create
-   * responses stay typed — Python confirms id/name/provider only.
-   * The `project-advisor/archetypes` endpoint had no Python consumer and is
-   * dropped; recommendations remain available as typed JSON (the orchestrator
-   * formats deeply-nested fields for the LLM prompt).
+   * and listing clients, projects and connections, plus the project-advisor
+   * stack recommendations.
    * </pre>
    */
   public static final class ServerProjectManagementServiceBlockingStub
@@ -623,7 +593,7 @@ public final class ServerProjectManagementServiceGrpc {
 
     /**
      */
-    public com.jervis.contracts.server.ListClientsResponse listClients(com.jervis.contracts.server.ListClientsRequest request) {
+    public com.jervis.contracts.server.ClientList listClients(com.jervis.contracts.server.ListClientsRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getListClientsMethod(), getCallOptions(), request);
     }
@@ -637,7 +607,7 @@ public final class ServerProjectManagementServiceGrpc {
 
     /**
      */
-    public com.jervis.contracts.server.ListProjectsResponse listProjects(com.jervis.contracts.server.ListProjectsRequest request) {
+    public com.jervis.contracts.server.ProjectList listProjects(com.jervis.contracts.server.ListProjectsRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getListProjectsMethod(), getCallOptions(), request);
     }
@@ -651,14 +621,14 @@ public final class ServerProjectManagementServiceGrpc {
 
     /**
      */
-    public com.jervis.contracts.server.UpdateProjectResponse updateProject(com.jervis.contracts.server.UpdateProjectRequest request) {
+    public com.jervis.contracts.server.Project updateProject(com.jervis.contracts.server.UpdateProjectRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getUpdateProjectMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public com.jervis.contracts.server.ListConnectionsResponse listConnections(com.jervis.contracts.server.ListConnectionsRequest request) {
+    public com.jervis.contracts.server.ConnectionSummaryList listConnections(com.jervis.contracts.server.ListConnectionsRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getListConnectionsMethod(), getCallOptions(), request);
     }
@@ -672,7 +642,7 @@ public final class ServerProjectManagementServiceGrpc {
 
     /**
      */
-    public com.jervis.contracts.server.GetStackRecommendationsResponse getStackRecommendations(com.jervis.contracts.server.GetStackRecommendationsRequest request) {
+    public com.jervis.contracts.server.ProjectRecommendations getStackRecommendations(com.jervis.contracts.server.GetStackRecommendationsRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetStackRecommendationsMethod(), getCallOptions(), request);
     }
@@ -682,13 +652,8 @@ public final class ServerProjectManagementServiceGrpc {
    * A stub to allow clients to do ListenableFuture-style rpc calls to service ServerProjectManagementService.
    * <pre>
    * ServerProjectManagementService is the pod-to-pod surface for creating
-   * and listing clients, projects and connections. List responses carry the
-   * full DTO tree as JSON (`items_json`) because Python callers only read
-   * a handful of surface fields (id, name, provider, capabilities). Create
-   * responses stay typed — Python confirms id/name/provider only.
-   * The `project-advisor/archetypes` endpoint had no Python consumer and is
-   * dropped; recommendations remain available as typed JSON (the orchestrator
-   * formats deeply-nested fields for the LLM prompt).
+   * and listing clients, projects and connections, plus the project-advisor
+   * stack recommendations.
    * </pre>
    */
   public static final class ServerProjectManagementServiceFutureStub
@@ -706,7 +671,7 @@ public final class ServerProjectManagementServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.ListClientsResponse> listClients(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.ClientList> listClients(
         com.jervis.contracts.server.ListClientsRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getListClientsMethod(), getCallOptions()), request);
@@ -722,7 +687,7 @@ public final class ServerProjectManagementServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.ListProjectsResponse> listProjects(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.ProjectList> listProjects(
         com.jervis.contracts.server.ListProjectsRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getListProjectsMethod(), getCallOptions()), request);
@@ -738,7 +703,7 @@ public final class ServerProjectManagementServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.UpdateProjectResponse> updateProject(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.Project> updateProject(
         com.jervis.contracts.server.UpdateProjectRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getUpdateProjectMethod(), getCallOptions()), request);
@@ -746,7 +711,7 @@ public final class ServerProjectManagementServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.ListConnectionsResponse> listConnections(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.ConnectionSummaryList> listConnections(
         com.jervis.contracts.server.ListConnectionsRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getListConnectionsMethod(), getCallOptions()), request);
@@ -762,7 +727,7 @@ public final class ServerProjectManagementServiceGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.GetStackRecommendationsResponse> getStackRecommendations(
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.ProjectRecommendations> getStackRecommendations(
         com.jervis.contracts.server.GetStackRecommendationsRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetStackRecommendationsMethod(), getCallOptions()), request);
@@ -797,7 +762,7 @@ public final class ServerProjectManagementServiceGrpc {
       switch (methodId) {
         case METHODID_LIST_CLIENTS:
           serviceImpl.listClients((com.jervis.contracts.server.ListClientsRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.ListClientsResponse>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.ClientList>) responseObserver);
           break;
         case METHODID_CREATE_CLIENT:
           serviceImpl.createClient((com.jervis.contracts.server.CreateClientRequest) request,
@@ -805,7 +770,7 @@ public final class ServerProjectManagementServiceGrpc {
           break;
         case METHODID_LIST_PROJECTS:
           serviceImpl.listProjects((com.jervis.contracts.server.ListProjectsRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.ListProjectsResponse>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.ProjectList>) responseObserver);
           break;
         case METHODID_CREATE_PROJECT:
           serviceImpl.createProject((com.jervis.contracts.server.CreateProjectRequest) request,
@@ -813,11 +778,11 @@ public final class ServerProjectManagementServiceGrpc {
           break;
         case METHODID_UPDATE_PROJECT:
           serviceImpl.updateProject((com.jervis.contracts.server.UpdateProjectRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.UpdateProjectResponse>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.Project>) responseObserver);
           break;
         case METHODID_LIST_CONNECTIONS:
           serviceImpl.listConnections((com.jervis.contracts.server.ListConnectionsRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.ListConnectionsResponse>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.ConnectionSummaryList>) responseObserver);
           break;
         case METHODID_CREATE_CONNECTION:
           serviceImpl.createConnection((com.jervis.contracts.server.CreateConnectionRequest) request,
@@ -825,7 +790,7 @@ public final class ServerProjectManagementServiceGrpc {
           break;
         case METHODID_GET_STACK_RECOMMENDATIONS:
           serviceImpl.getStackRecommendations((com.jervis.contracts.server.GetStackRecommendationsRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.GetStackRecommendationsResponse>) responseObserver);
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.ProjectRecommendations>) responseObserver);
           break;
         default:
           throw new AssertionError();
@@ -850,7 +815,7 @@ public final class ServerProjectManagementServiceGrpc {
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.server.ListClientsRequest,
-              com.jervis.contracts.server.ListClientsResponse>(
+              com.jervis.contracts.server.ClientList>(
                 service, METHODID_LIST_CLIENTS)))
         .addMethod(
           getCreateClientMethod(),
@@ -864,7 +829,7 @@ public final class ServerProjectManagementServiceGrpc {
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.server.ListProjectsRequest,
-              com.jervis.contracts.server.ListProjectsResponse>(
+              com.jervis.contracts.server.ProjectList>(
                 service, METHODID_LIST_PROJECTS)))
         .addMethod(
           getCreateProjectMethod(),
@@ -878,14 +843,14 @@ public final class ServerProjectManagementServiceGrpc {
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.server.UpdateProjectRequest,
-              com.jervis.contracts.server.UpdateProjectResponse>(
+              com.jervis.contracts.server.Project>(
                 service, METHODID_UPDATE_PROJECT)))
         .addMethod(
           getListConnectionsMethod(),
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.server.ListConnectionsRequest,
-              com.jervis.contracts.server.ListConnectionsResponse>(
+              com.jervis.contracts.server.ConnectionSummaryList>(
                 service, METHODID_LIST_CONNECTIONS)))
         .addMethod(
           getCreateConnectionMethod(),
@@ -899,7 +864,7 @@ public final class ServerProjectManagementServiceGrpc {
           io.grpc.stub.ServerCalls.asyncUnaryCall(
             new MethodHandlers<
               com.jervis.contracts.server.GetStackRecommendationsRequest,
-              com.jervis.contracts.server.GetStackRecommendationsResponse>(
+              com.jervis.contracts.server.ProjectRecommendations>(
                 service, METHODID_GET_STACK_RECOMMENDATIONS)))
         .build();
   }

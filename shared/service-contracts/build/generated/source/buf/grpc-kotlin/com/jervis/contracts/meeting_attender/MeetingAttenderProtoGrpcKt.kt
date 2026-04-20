@@ -23,8 +23,7 @@ import kotlin.jvm.JvmOverloads
 import kotlin.jvm.JvmStatic
 
 /**
- * Holder for Kotlin coroutine-based client and server APIs for
- * jervis.meeting_attender.MeetingAttenderService.
+ * Holder for Kotlin coroutine-based client and server APIs for jervis.meeting_attender.MeetingAttenderService.
  */
 public object MeetingAttenderServiceGrpcKt {
   public const val SERVICE_NAME: String = MeetingAttenderServiceGrpc.SERVICE_NAME
@@ -42,22 +41,18 @@ public object MeetingAttenderServiceGrpcKt {
     get() = MeetingAttenderServiceGrpc.getStopMethod()
 
   /**
-   * A stub for issuing RPCs to a(n) jervis.meeting_attender.MeetingAttenderService service as
-   * suspending coroutines.
+   * A stub for issuing RPCs to a(n) jervis.meeting_attender.MeetingAttenderService service as suspending coroutines.
    */
   @StubFor(MeetingAttenderServiceGrpc::class)
   public class MeetingAttenderServiceCoroutineStub @JvmOverloads constructor(
     channel: Channel,
     callOptions: CallOptions = DEFAULT,
   ) : AbstractCoroutineStub<MeetingAttenderServiceCoroutineStub>(channel, callOptions) {
-    override fun build(channel: Channel, callOptions: CallOptions):
-        MeetingAttenderServiceCoroutineStub = MeetingAttenderServiceCoroutineStub(channel,
-        callOptions)
+    override fun build(channel: Channel, callOptions: CallOptions): MeetingAttenderServiceCoroutineStub = MeetingAttenderServiceCoroutineStub(channel, callOptions)
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -67,8 +62,7 @@ public object MeetingAttenderServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun attend(request: AttendRequest, headers: Metadata = Metadata()):
-        AttendResponse = unaryRpc(
+    public suspend fun attend(request: AttendRequest, headers: Metadata = Metadata()): AttendResponse = unaryRpc(
       channel,
       MeetingAttenderServiceGrpc.getAttendMethod(),
       request,
@@ -78,8 +72,7 @@ public object MeetingAttenderServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -89,8 +82,7 @@ public object MeetingAttenderServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun stop(request: StopRequest, headers: Metadata = Metadata()): StopResponse =
-        unaryRpc(
+    public suspend fun stop(request: StopRequest, headers: Metadata = Metadata()): StopResponse = unaryRpc(
       channel,
       MeetingAttenderServiceGrpc.getStopMethod(),
       request,
@@ -100,8 +92,7 @@ public object MeetingAttenderServiceGrpcKt {
   }
 
   /**
-   * Skeletal implementation of the jervis.meeting_attender.MeetingAttenderService service based on
-   * Kotlin coroutines.
+   * Skeletal implementation of the jervis.meeting_attender.MeetingAttenderService service based on Kotlin coroutines.
    */
   public abstract class MeetingAttenderServiceCoroutineImplBase(
     coroutineContext: CoroutineContext = EmptyCoroutineContext,
@@ -110,29 +101,25 @@ public object MeetingAttenderServiceGrpcKt {
      * Returns the response to an RPC for jervis.meeting_attender.MeetingAttenderService.Attend.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun attend(request: AttendRequest): AttendResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.meeting_attender.MeetingAttenderService.Attend is unimplemented"))
+    public open suspend fun attend(request: AttendRequest): AttendResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.meeting_attender.MeetingAttenderService.Attend is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.meeting_attender.MeetingAttenderService.Stop.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun stop(request: StopRequest): StopResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.meeting_attender.MeetingAttenderService.Stop is unimplemented"))
+    public open suspend fun stop(request: StopRequest): StopResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.meeting_attender.MeetingAttenderService.Stop is unimplemented"))
 
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(

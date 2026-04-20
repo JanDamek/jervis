@@ -10,9 +10,6 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
  * helper messages back over ServerMeetingHelperCallbacksService.
  * </pre>
  */
-@javax.annotation.Generated(
-    value = "by gRPC proto compiler (version 1.68.0)",
-    comments = "Source: jervis/orchestrator/meeting_helper.proto")
 @io.grpc.stub.annotations.GrpcGenerated
 public final class OrchestratorMeetingHelperServiceGrpc {
 
@@ -160,6 +157,21 @@ public final class OrchestratorMeetingHelperServiceGrpc {
   }
 
   /**
+   * Creates a new blocking-style stub that supports all types of calls on the service
+   */
+  public static OrchestratorMeetingHelperServiceBlockingV2Stub newBlockingV2Stub(
+      io.grpc.Channel channel) {
+    io.grpc.stub.AbstractStub.StubFactory<OrchestratorMeetingHelperServiceBlockingV2Stub> factory =
+      new io.grpc.stub.AbstractStub.StubFactory<OrchestratorMeetingHelperServiceBlockingV2Stub>() {
+        @java.lang.Override
+        public OrchestratorMeetingHelperServiceBlockingV2Stub newStub(io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+          return new OrchestratorMeetingHelperServiceBlockingV2Stub(channel, callOptions);
+        }
+      };
+    return OrchestratorMeetingHelperServiceBlockingV2Stub.newStub(factory, channel);
+  }
+
+  /**
    * Creates a new blocking-style stub that supports unary and streaming output calls on the service
    */
   public static OrchestratorMeetingHelperServiceBlockingStub newBlockingStub(
@@ -302,6 +314,57 @@ public final class OrchestratorMeetingHelperServiceGrpc {
 
   /**
    * A stub to allow clients to do synchronous rpc calls to service OrchestratorMeetingHelperService.
+   * <pre>
+   * OrchestratorMeetingHelperService — live meeting assistance pipeline.
+   * Kotlin server drives Start/Stop around a meeting recording, forwards
+   * transcript chunks via Chunk, and polls Status. The orchestrator pushes
+   * helper messages back over ServerMeetingHelperCallbacksService.
+   * </pre>
+   */
+  public static final class OrchestratorMeetingHelperServiceBlockingV2Stub
+      extends io.grpc.stub.AbstractBlockingStub<OrchestratorMeetingHelperServiceBlockingV2Stub> {
+    private OrchestratorMeetingHelperServiceBlockingV2Stub(
+        io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+      super(channel, callOptions);
+    }
+
+    @java.lang.Override
+    protected OrchestratorMeetingHelperServiceBlockingV2Stub build(
+        io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+      return new OrchestratorMeetingHelperServiceBlockingV2Stub(channel, callOptions);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.orchestrator.StartHelperResponse start(com.jervis.contracts.orchestrator.StartHelperRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getStartMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.orchestrator.StopHelperResponse stop(com.jervis.contracts.orchestrator.StopHelperRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getStopMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.orchestrator.HelperChunkResponse chunk(com.jervis.contracts.orchestrator.HelperChunkRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getChunkMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.orchestrator.HelperStatusResponse status(com.jervis.contracts.orchestrator.HelperStatusRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getStatusMethod(), getCallOptions(), request);
+    }
+  }
+
+  /**
+   * A stub to allow clients to do limited synchronous rpc calls to service OrchestratorMeetingHelperService.
    * <pre>
    * OrchestratorMeetingHelperService — live meeting assistance pipeline.
    * Kotlin server drives Start/Stop around a meeting recording, forwards

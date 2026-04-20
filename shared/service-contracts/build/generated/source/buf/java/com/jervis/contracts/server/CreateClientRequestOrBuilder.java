@@ -38,19 +38,11 @@ public interface CreateClientRequestOrBuilder extends
       getNameBytes();
 
   /**
-   * <pre>
-   * empty = null
-   * </pre>
-   *
    * <code>string description = 3 [json_name = "description"];</code>
    * @return The description.
    */
   java.lang.String getDescription();
   /**
-   * <pre>
-   * empty = null
-   * </pre>
-   *
    * <code>string description = 3 [json_name = "description"];</code>
    * @return The bytes for description.
    */

@@ -120,10 +120,6 @@ private static final long serialVersionUID = 0L;
   @SuppressWarnings("serial")
   private volatile java.lang.Object description_ = "";
   /**
-   * <pre>
-   * empty = null
-   * </pre>
-   *
    * <code>string description = 3 [json_name = "description"];</code>
    * @return The description.
    */
@@ -141,10 +137,6 @@ private static final long serialVersionUID = 0L;
     }
   }
   /**
-   * <pre>
-   * empty = null
-   * </pre>
-   *
    * <code>string description = 3 [json_name = "description"];</code>
    * @return The bytes for description.
    */
@@ -721,10 +713,6 @@ private static final long serialVersionUID = 0L;
 
     private java.lang.Object description_ = "";
     /**
-     * <pre>
-     * empty = null
-     * </pre>
-     *
      * <code>string description = 3 [json_name = "description"];</code>
      * @return The description.
      */
@@ -741,10 +729,6 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
-     * <pre>
-     * empty = null
-     * </pre>
-     *
      * <code>string description = 3 [json_name = "description"];</code>
      * @return The bytes for description.
      */
@@ -762,10 +746,6 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
-     * <pre>
-     * empty = null
-     * </pre>
-     *
      * <code>string description = 3 [json_name = "description"];</code>
      * @param value The description to set.
      * @return This builder for chaining.
@@ -779,10 +759,6 @@ private static final long serialVersionUID = 0L;
       return this;
     }
     /**
-     * <pre>
-     * empty = null
-     * </pre>
-     *
      * <code>string description = 3 [json_name = "description"];</code>
      * @return This builder for chaining.
      */
@@ -793,10 +769,6 @@ private static final long serialVersionUID = 0L;
       return this;
     }
     /**
-     * <pre>
-     * empty = null
-     * </pre>
-     *
      * <code>string description = 3 [json_name = "description"];</code>
      * @param value The bytes for description to set.
      * @return This builder for chaining.

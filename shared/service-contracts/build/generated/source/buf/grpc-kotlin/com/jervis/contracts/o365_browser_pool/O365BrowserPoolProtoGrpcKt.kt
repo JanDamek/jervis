@@ -23,8 +23,7 @@ import kotlin.jvm.JvmOverloads
 import kotlin.jvm.JvmStatic
 
 /**
- * Holder for Kotlin coroutine-based client and server APIs for
- * jervis.o365_browser_pool.O365BrowserPoolService.
+ * Holder for Kotlin coroutine-based client and server APIs for jervis.o365_browser_pool.O365BrowserPoolService.
  */
 public object O365BrowserPoolServiceGrpcKt {
   public const val SERVICE_NAME: String = O365BrowserPoolServiceGrpc.SERVICE_NAME
@@ -58,22 +57,18 @@ public object O365BrowserPoolServiceGrpcKt {
     get() = O365BrowserPoolServiceGrpc.getPushInstructionMethod()
 
   /**
-   * A stub for issuing RPCs to a(n) jervis.o365_browser_pool.O365BrowserPoolService service as
-   * suspending coroutines.
+   * A stub for issuing RPCs to a(n) jervis.o365_browser_pool.O365BrowserPoolService service as suspending coroutines.
    */
   @StubFor(O365BrowserPoolServiceGrpc::class)
   public class O365BrowserPoolServiceCoroutineStub @JvmOverloads constructor(
     channel: Channel,
     callOptions: CallOptions = DEFAULT,
   ) : AbstractCoroutineStub<O365BrowserPoolServiceCoroutineStub>(channel, callOptions) {
-    override fun build(channel: Channel, callOptions: CallOptions):
-        O365BrowserPoolServiceCoroutineStub = O365BrowserPoolServiceCoroutineStub(channel,
-        callOptions)
+    override fun build(channel: Channel, callOptions: CallOptions): O365BrowserPoolServiceCoroutineStub = O365BrowserPoolServiceCoroutineStub(channel, callOptions)
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -83,8 +78,7 @@ public object O365BrowserPoolServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun health(request: HealthRequest, headers: Metadata = Metadata()):
-        HealthResponse = unaryRpc(
+    public suspend fun health(request: HealthRequest, headers: Metadata = Metadata()): HealthResponse = unaryRpc(
       channel,
       O365BrowserPoolServiceGrpc.getHealthMethod(),
       request,
@@ -94,8 +88,7 @@ public object O365BrowserPoolServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -105,8 +98,7 @@ public object O365BrowserPoolServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun getSession(request: SessionRef, headers: Metadata = Metadata()):
-        SessionStatus = unaryRpc(
+    public suspend fun getSession(request: SessionRef, headers: Metadata = Metadata()): SessionStatus = unaryRpc(
       channel,
       O365BrowserPoolServiceGrpc.getGetSessionMethod(),
       request,
@@ -116,8 +108,7 @@ public object O365BrowserPoolServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -127,8 +118,7 @@ public object O365BrowserPoolServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun initSession(request: InitSessionRequest, headers: Metadata = Metadata()):
-        InitSessionResponse = unaryRpc(
+    public suspend fun initSession(request: InitSessionRequest, headers: Metadata = Metadata()): InitSessionResponse = unaryRpc(
       channel,
       O365BrowserPoolServiceGrpc.getInitSessionMethod(),
       request,
@@ -138,8 +128,7 @@ public object O365BrowserPoolServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -149,8 +138,7 @@ public object O365BrowserPoolServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun submitMfa(request: SubmitMfaRequest, headers: Metadata = Metadata()):
-        InitSessionResponse = unaryRpc(
+    public suspend fun submitMfa(request: SubmitMfaRequest, headers: Metadata = Metadata()): InitSessionResponse = unaryRpc(
       channel,
       O365BrowserPoolServiceGrpc.getSubmitMfaMethod(),
       request,
@@ -160,8 +148,7 @@ public object O365BrowserPoolServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -171,8 +158,7 @@ public object O365BrowserPoolServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun createVncToken(request: SessionRef, headers: Metadata = Metadata()):
-        VncTokenResponse = unaryRpc(
+    public suspend fun createVncToken(request: SessionRef, headers: Metadata = Metadata()): VncTokenResponse = unaryRpc(
       channel,
       O365BrowserPoolServiceGrpc.getCreateVncTokenMethod(),
       request,
@@ -182,8 +168,7 @@ public object O365BrowserPoolServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -193,8 +178,7 @@ public object O365BrowserPoolServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun pushInstruction(request: InstructionRequest, headers: Metadata = Metadata()):
-        InstructionResponse = unaryRpc(
+    public suspend fun pushInstruction(request: InstructionRequest, headers: Metadata = Metadata()): InstructionResponse = unaryRpc(
       channel,
       O365BrowserPoolServiceGrpc.getPushInstructionMethod(),
       request,
@@ -204,8 +188,7 @@ public object O365BrowserPoolServiceGrpcKt {
   }
 
   /**
-   * Skeletal implementation of the jervis.o365_browser_pool.O365BrowserPoolService service based on
-   * Kotlin coroutines.
+   * Skeletal implementation of the jervis.o365_browser_pool.O365BrowserPoolService service based on Kotlin coroutines.
    */
   public abstract class O365BrowserPoolServiceCoroutineImplBase(
     coroutineContext: CoroutineContext = EmptyCoroutineContext,
@@ -214,90 +197,73 @@ public object O365BrowserPoolServiceGrpcKt {
      * Returns the response to an RPC for jervis.o365_browser_pool.O365BrowserPoolService.Health.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun health(request: HealthRequest): HealthResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_browser_pool.O365BrowserPoolService.Health is unimplemented"))
+    public open suspend fun health(request: HealthRequest): HealthResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_browser_pool.O365BrowserPoolService.Health is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.o365_browser_pool.O365BrowserPoolService.GetSession.
+     * Returns the response to an RPC for jervis.o365_browser_pool.O365BrowserPoolService.GetSession.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun getSession(request: SessionRef): SessionStatus = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_browser_pool.O365BrowserPoolService.GetSession is unimplemented"))
+    public open suspend fun getSession(request: SessionRef): SessionStatus = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_browser_pool.O365BrowserPoolService.GetSession is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.o365_browser_pool.O365BrowserPoolService.InitSession.
+     * Returns the response to an RPC for jervis.o365_browser_pool.O365BrowserPoolService.InitSession.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun initSession(request: InitSessionRequest): InitSessionResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_browser_pool.O365BrowserPoolService.InitSession is unimplemented"))
+    public open suspend fun initSession(request: InitSessionRequest): InitSessionResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_browser_pool.O365BrowserPoolService.InitSession is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.o365_browser_pool.O365BrowserPoolService.SubmitMfa.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun submitMfa(request: SubmitMfaRequest): InitSessionResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_browser_pool.O365BrowserPoolService.SubmitMfa is unimplemented"))
+    public open suspend fun submitMfa(request: SubmitMfaRequest): InitSessionResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_browser_pool.O365BrowserPoolService.SubmitMfa is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.o365_browser_pool.O365BrowserPoolService.CreateVncToken.
+     * Returns the response to an RPC for jervis.o365_browser_pool.O365BrowserPoolService.CreateVncToken.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun createVncToken(request: SessionRef): VncTokenResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_browser_pool.O365BrowserPoolService.CreateVncToken is unimplemented"))
+    public open suspend fun createVncToken(request: SessionRef): VncTokenResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_browser_pool.O365BrowserPoolService.CreateVncToken is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.o365_browser_pool.O365BrowserPoolService.PushInstruction.
+     * Returns the response to an RPC for jervis.o365_browser_pool.O365BrowserPoolService.PushInstruction.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun pushInstruction(request: InstructionRequest): InstructionResponse =
-        throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_browser_pool.O365BrowserPoolService.PushInstruction is unimplemented"))
+    public open suspend fun pushInstruction(request: InstructionRequest): InstructionResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.o365_browser_pool.O365BrowserPoolService.PushInstruction is unimplemented"))
 
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(

@@ -12,9 +12,6 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
  * not pod-to-pod.
  * </pre>
  */
-@javax.annotation.Generated(
-    value = "by gRPC proto compiler (version 1.68.0)",
-    comments = "Source: jervis/o365_browser_pool/pool.proto")
 @io.grpc.stub.annotations.GrpcGenerated
 public final class O365BrowserPoolServiceGrpc {
 
@@ -224,6 +221,21 @@ public final class O365BrowserPoolServiceGrpc {
   }
 
   /**
+   * Creates a new blocking-style stub that supports all types of calls on the service
+   */
+  public static O365BrowserPoolServiceBlockingV2Stub newBlockingV2Stub(
+      io.grpc.Channel channel) {
+    io.grpc.stub.AbstractStub.StubFactory<O365BrowserPoolServiceBlockingV2Stub> factory =
+      new io.grpc.stub.AbstractStub.StubFactory<O365BrowserPoolServiceBlockingV2Stub>() {
+        @java.lang.Override
+        public O365BrowserPoolServiceBlockingV2Stub newStub(io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+          return new O365BrowserPoolServiceBlockingV2Stub(channel, callOptions);
+        }
+      };
+    return O365BrowserPoolServiceBlockingV2Stub.newStub(factory, channel);
+  }
+
+  /**
    * Creates a new blocking-style stub that supports unary and streaming output calls on the service
    */
   public static O365BrowserPoolServiceBlockingStub newBlockingStub(
@@ -402,6 +414,73 @@ public final class O365BrowserPoolServiceGrpc {
 
   /**
    * A stub to allow clients to do synchronous rpc calls to service O365BrowserPoolService.
+   * <pre>
+   * O365BrowserPoolService — typed wrapper over the per-client browser pod.
+   * Replaces the former REST surface that was consumed by the Kotlin
+   * server (/health, /session/{cid}, /session/{cid}/init,
+   * /session/{cid}/mfa, /vnc-token/{cid}, /instruction/{cid}). The VNC
+   * proxy routes (/vnc-login, /vnc-auth) stay HTTP — they're browser-facing,
+   * not pod-to-pod.
+   * </pre>
+   */
+  public static final class O365BrowserPoolServiceBlockingV2Stub
+      extends io.grpc.stub.AbstractBlockingStub<O365BrowserPoolServiceBlockingV2Stub> {
+    private O365BrowserPoolServiceBlockingV2Stub(
+        io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+      super(channel, callOptions);
+    }
+
+    @java.lang.Override
+    protected O365BrowserPoolServiceBlockingV2Stub build(
+        io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+      return new O365BrowserPoolServiceBlockingV2Stub(channel, callOptions);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_browser_pool.HealthResponse health(com.jervis.contracts.o365_browser_pool.HealthRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getHealthMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_browser_pool.SessionStatus getSession(com.jervis.contracts.o365_browser_pool.SessionRef request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getGetSessionMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_browser_pool.InitSessionResponse initSession(com.jervis.contracts.o365_browser_pool.InitSessionRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getInitSessionMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_browser_pool.InitSessionResponse submitMfa(com.jervis.contracts.o365_browser_pool.SubmitMfaRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getSubmitMfaMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_browser_pool.VncTokenResponse createVncToken(com.jervis.contracts.o365_browser_pool.SessionRef request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getCreateVncTokenMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_browser_pool.InstructionResponse pushInstruction(com.jervis.contracts.o365_browser_pool.InstructionRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getPushInstructionMethod(), getCallOptions(), request);
+    }
+  }
+
+  /**
+   * A stub to allow clients to do limited synchronous rpc calls to service O365BrowserPoolService.
    * <pre>
    * O365BrowserPoolService — typed wrapper over the per-client browser pod.
    * Replaces the former REST surface that was consumed by the Kotlin

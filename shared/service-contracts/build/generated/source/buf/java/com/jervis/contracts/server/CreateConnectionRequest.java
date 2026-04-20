@@ -127,10 +127,6 @@ private static final long serialVersionUID = 0L;
   @SuppressWarnings("serial")
   private volatile java.lang.Object provider_ = "";
   /**
-   * <pre>
-   * ProviderEnum name
-   * </pre>
-   *
    * <code>string provider = 3 [json_name = "provider"];</code>
    * @return The provider.
    */
@@ -148,10 +144,6 @@ private static final long serialVersionUID = 0L;
     }
   }
   /**
-   * <pre>
-   * ProviderEnum name
-   * </pre>
-   *
    * <code>string provider = 3 [json_name = "provider"];</code>
    * @return The bytes for provider.
    */
@@ -174,10 +166,6 @@ private static final long serialVersionUID = 0L;
   @SuppressWarnings("serial")
   private volatile java.lang.Object protocol_ = "";
   /**
-   * <pre>
-   * ProtocolEnum name, default HTTP
-   * </pre>
-   *
    * <code>string protocol = 4 [json_name = "protocol"];</code>
    * @return The protocol.
    */
@@ -195,10 +183,6 @@ private static final long serialVersionUID = 0L;
     }
   }
   /**
-   * <pre>
-   * ProtocolEnum name, default HTTP
-   * </pre>
-   *
    * <code>string protocol = 4 [json_name = "protocol"];</code>
    * @return The bytes for protocol.
    */
@@ -221,10 +205,6 @@ private static final long serialVersionUID = 0L;
   @SuppressWarnings("serial")
   private volatile java.lang.Object authType_ = "";
   /**
-   * <pre>
-   * AuthTypeEnum name, default BEARER
-   * </pre>
-   *
    * <code>string auth_type = 5 [json_name = "authType"];</code>
    * @return The authType.
    */
@@ -242,10 +222,6 @@ private static final long serialVersionUID = 0L;
     }
   }
   /**
-   * <pre>
-   * AuthTypeEnum name, default BEARER
-   * </pre>
-   *
    * <code>string auth_type = 5 [json_name = "authType"];</code>
    * @return The bytes for authType.
    */
@@ -435,10 +411,6 @@ private static final long serialVersionUID = 0L;
   @SuppressWarnings("serial")
   private volatile java.lang.Object clientId_ = "";
   /**
-   * <pre>
-   * If present, links the new connection to the given client after save.
-   * </pre>
-   *
    * <code>string client_id = 11 [json_name = "clientId"];</code>
    * @return The clientId.
    */
@@ -456,10 +428,6 @@ private static final long serialVersionUID = 0L;
     }
   }
   /**
-   * <pre>
-   * If present, links the new connection to the given client after save.
-   * </pre>
-   *
    * <code>string client_id = 11 [json_name = "clientId"];</code>
    * @return The bytes for clientId.
    */
@@ -1228,10 +1196,6 @@ private static final long serialVersionUID = 0L;
 
     private java.lang.Object provider_ = "";
     /**
-     * <pre>
-     * ProviderEnum name
-     * </pre>
-     *
      * <code>string provider = 3 [json_name = "provider"];</code>
      * @return The provider.
      */
@@ -1248,10 +1212,6 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
-     * <pre>
-     * ProviderEnum name
-     * </pre>
-     *
      * <code>string provider = 3 [json_name = "provider"];</code>
      * @return The bytes for provider.
      */
@@ -1269,10 +1229,6 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
-     * <pre>
-     * ProviderEnum name
-     * </pre>
-     *
      * <code>string provider = 3 [json_name = "provider"];</code>
      * @param value The provider to set.
      * @return This builder for chaining.
@@ -1286,10 +1242,6 @@ private static final long serialVersionUID = 0L;
       return this;
     }
     /**
-     * <pre>
-     * ProviderEnum name
-     * </pre>
-     *
      * <code>string provider = 3 [json_name = "provider"];</code>
      * @return This builder for chaining.
      */
@@ -1300,10 +1252,6 @@ private static final long serialVersionUID = 0L;
       return this;
     }
     /**
-     * <pre>
-     * ProviderEnum name
-     * </pre>
-     *
      * <code>string provider = 3 [json_name = "provider"];</code>
      * @param value The bytes for provider to set.
      * @return This builder for chaining.
@@ -1320,10 +1268,6 @@ private static final long serialVersionUID = 0L;
 
     private java.lang.Object protocol_ = "";
     /**
-     * <pre>
-     * ProtocolEnum name, default HTTP
-     * </pre>
-     *
      * <code>string protocol = 4 [json_name = "protocol"];</code>
      * @return The protocol.
      */
@@ -1340,10 +1284,6 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
-     * <pre>
-     * ProtocolEnum name, default HTTP
-     * </pre>
-     *
      * <code>string protocol = 4 [json_name = "protocol"];</code>
      * @return The bytes for protocol.
      */
@@ -1361,10 +1301,6 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
-     * <pre>
-     * ProtocolEnum name, default HTTP
-     * </pre>
-     *
      * <code>string protocol = 4 [json_name = "protocol"];</code>
      * @param value The protocol to set.
      * @return This builder for chaining.
@@ -1378,10 +1314,6 @@ private static final long serialVersionUID = 0L;
       return this;
     }
     /**
-     * <pre>
-     * ProtocolEnum name, default HTTP
-     * </pre>
-     *
      * <code>string protocol = 4 [json_name = "protocol"];</code>
      * @return This builder for chaining.
      */
@@ -1392,10 +1324,6 @@ private static final long serialVersionUID = 0L;
       return this;
     }
     /**
-     * <pre>
-     * ProtocolEnum name, default HTTP
-     * </pre>
-     *
      * <code>string protocol = 4 [json_name = "protocol"];</code>
      * @param value The bytes for protocol to set.
      * @return This builder for chaining.
@@ -1412,10 +1340,6 @@ private static final long serialVersionUID = 0L;
 
     private java.lang.Object authType_ = "";
     /**
-     * <pre>
-     * AuthTypeEnum name, default BEARER
-     * </pre>
-     *
      * <code>string auth_type = 5 [json_name = "authType"];</code>
      * @return The authType.
      */
@@ -1432,10 +1356,6 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
-     * <pre>
-     * AuthTypeEnum name, default BEARER
-     * </pre>
-     *
      * <code>string auth_type = 5 [json_name = "authType"];</code>
      * @return The bytes for authType.
      */
@@ -1453,10 +1373,6 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
-     * <pre>
-     * AuthTypeEnum name, default BEARER
-     * </pre>
-     *
      * <code>string auth_type = 5 [json_name = "authType"];</code>
      * @param value The authType to set.
      * @return This builder for chaining.
@@ -1470,10 +1386,6 @@ private static final long serialVersionUID = 0L;
       return this;
     }
     /**
-     * <pre>
-     * AuthTypeEnum name, default BEARER
-     * </pre>
-     *
      * <code>string auth_type = 5 [json_name = "authType"];</code>
      * @return This builder for chaining.
      */
@@ -1484,10 +1396,6 @@ private static final long serialVersionUID = 0L;
       return this;
     }
     /**
-     * <pre>
-     * AuthTypeEnum name, default BEARER
-     * </pre>
-     *
      * <code>string auth_type = 5 [json_name = "authType"];</code>
      * @param value The bytes for authType to set.
      * @return This builder for chaining.
@@ -1824,10 +1732,6 @@ private static final long serialVersionUID = 0L;
 
     private java.lang.Object clientId_ = "";
     /**
-     * <pre>
-     * If present, links the new connection to the given client after save.
-     * </pre>
-     *
      * <code>string client_id = 11 [json_name = "clientId"];</code>
      * @return The clientId.
      */
@@ -1844,10 +1748,6 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
-     * <pre>
-     * If present, links the new connection to the given client after save.
-     * </pre>
-     *
      * <code>string client_id = 11 [json_name = "clientId"];</code>
      * @return The bytes for clientId.
      */
@@ -1865,10 +1765,6 @@ private static final long serialVersionUID = 0L;
       }
     }
     /**
-     * <pre>
-     * If present, links the new connection to the given client after save.
-     * </pre>
-     *
      * <code>string client_id = 11 [json_name = "clientId"];</code>
      * @param value The clientId to set.
      * @return This builder for chaining.
@@ -1882,10 +1778,6 @@ private static final long serialVersionUID = 0L;
       return this;
     }
     /**
-     * <pre>
-     * If present, links the new connection to the given client after save.
-     * </pre>
-     *
      * <code>string client_id = 11 [json_name = "clientId"];</code>
      * @return This builder for chaining.
      */
@@ -1896,10 +1788,6 @@ private static final long serialVersionUID = 0L;
       return this;
     }
     /**
-     * <pre>
-     * If present, links the new connection to the given client after save.
-     * </pre>
-     *
      * <code>string client_id = 11 [json_name = "clientId"];</code>
      * @param value The bytes for clientId to set.
      * @return This builder for chaining.

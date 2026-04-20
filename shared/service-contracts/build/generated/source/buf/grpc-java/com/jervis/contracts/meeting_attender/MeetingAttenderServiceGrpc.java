@@ -10,9 +10,6 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
  * approved calendar-driven meetings and Stop when the user cancels.
  * </pre>
  */
-@javax.annotation.Generated(
-    value = "by gRPC proto compiler (version 1.68.0)",
-    comments = "Source: jervis/meeting_attender/attender.proto")
 @io.grpc.stub.annotations.GrpcGenerated
 public final class MeetingAttenderServiceGrpc {
 
@@ -95,6 +92,21 @@ public final class MeetingAttenderServiceGrpc {
         }
       };
     return MeetingAttenderServiceStub.newStub(factory, channel);
+  }
+
+  /**
+   * Creates a new blocking-style stub that supports all types of calls on the service
+   */
+  public static MeetingAttenderServiceBlockingV2Stub newBlockingV2Stub(
+      io.grpc.Channel channel) {
+    io.grpc.stub.AbstractStub.StubFactory<MeetingAttenderServiceBlockingV2Stub> factory =
+      new io.grpc.stub.AbstractStub.StubFactory<MeetingAttenderServiceBlockingV2Stub>() {
+        @java.lang.Override
+        public MeetingAttenderServiceBlockingV2Stub newStub(io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+          return new MeetingAttenderServiceBlockingV2Stub(channel, callOptions);
+        }
+      };
+    return MeetingAttenderServiceBlockingV2Stub.newStub(factory, channel);
   }
 
   /**
@@ -210,6 +222,43 @@ public final class MeetingAttenderServiceGrpc {
 
   /**
    * A stub to allow clients to do synchronous rpc calls to service MeetingAttenderService.
+   * <pre>
+   * MeetingAttenderService — dispatch + lifecycle for the K8s
+   * `jervis-meeting-attender` pod. Replaces the POST /attend + POST /stop
+   * REST surface; the Kotlin MeetingRecordingDispatcher dials Attend for
+   * approved calendar-driven meetings and Stop when the user cancels.
+   * </pre>
+   */
+  public static final class MeetingAttenderServiceBlockingV2Stub
+      extends io.grpc.stub.AbstractBlockingStub<MeetingAttenderServiceBlockingV2Stub> {
+    private MeetingAttenderServiceBlockingV2Stub(
+        io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+      super(channel, callOptions);
+    }
+
+    @java.lang.Override
+    protected MeetingAttenderServiceBlockingV2Stub build(
+        io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+      return new MeetingAttenderServiceBlockingV2Stub(channel, callOptions);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.meeting_attender.AttendResponse attend(com.jervis.contracts.meeting_attender.AttendRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getAttendMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.meeting_attender.StopResponse stop(com.jervis.contracts.meeting_attender.StopRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getStopMethod(), getCallOptions(), request);
+    }
+  }
+
+  /**
+   * A stub to allow clients to do limited synchronous rpc calls to service MeetingAttenderService.
    * <pre>
    * MeetingAttenderService — dispatch + lifecycle for the K8s
    * `jervis-meeting-attender` pod. Replaces the POST /attend + POST /stop

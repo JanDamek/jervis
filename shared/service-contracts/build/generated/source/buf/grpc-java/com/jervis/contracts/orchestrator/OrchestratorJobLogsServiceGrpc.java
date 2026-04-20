@@ -10,9 +10,6 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
  * forwards the JobLogEvent flow to the UI.
  * </pre>
  */
-@javax.annotation.Generated(
-    value = "by gRPC proto compiler (version 1.68.0)",
-    comments = "Source: jervis/orchestrator/job_logs.proto")
 @io.grpc.stub.annotations.GrpcGenerated
 public final class OrchestratorJobLogsServiceGrpc {
 
@@ -64,6 +61,21 @@ public final class OrchestratorJobLogsServiceGrpc {
         }
       };
     return OrchestratorJobLogsServiceStub.newStub(factory, channel);
+  }
+
+  /**
+   * Creates a new blocking-style stub that supports all types of calls on the service
+   */
+  public static OrchestratorJobLogsServiceBlockingV2Stub newBlockingV2Stub(
+      io.grpc.Channel channel) {
+    io.grpc.stub.AbstractStub.StubFactory<OrchestratorJobLogsServiceBlockingV2Stub> factory =
+      new io.grpc.stub.AbstractStub.StubFactory<OrchestratorJobLogsServiceBlockingV2Stub>() {
+        @java.lang.Override
+        public OrchestratorJobLogsServiceBlockingV2Stub newStub(io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+          return new OrchestratorJobLogsServiceBlockingV2Stub(channel, callOptions);
+        }
+      };
+    return OrchestratorJobLogsServiceBlockingV2Stub.newStub(factory, channel);
   }
 
   /**
@@ -164,6 +176,38 @@ public final class OrchestratorJobLogsServiceGrpc {
 
   /**
    * A stub to allow clients to do synchronous rpc calls to service OrchestratorJobLogsService.
+   * <pre>
+   * OrchestratorJobLogsService — live K8s Job pod log streaming.
+   * Replaces the former FastAPI GET /job-logs/{task_id} SSE endpoint.
+   * The Kotlin server's kRPC JobLogsRpcImpl dials StreamLogs and
+   * forwards the JobLogEvent flow to the UI.
+   * </pre>
+   */
+  public static final class OrchestratorJobLogsServiceBlockingV2Stub
+      extends io.grpc.stub.AbstractBlockingStub<OrchestratorJobLogsServiceBlockingV2Stub> {
+    private OrchestratorJobLogsServiceBlockingV2Stub(
+        io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+      super(channel, callOptions);
+    }
+
+    @java.lang.Override
+    protected OrchestratorJobLogsServiceBlockingV2Stub build(
+        io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+      return new OrchestratorJobLogsServiceBlockingV2Stub(channel, callOptions);
+    }
+
+    /**
+     */
+    @io.grpc.ExperimentalApi("https://github.com/grpc/grpc-java/issues/10918")
+    public io.grpc.stub.BlockingClientCall<?, com.jervis.contracts.orchestrator.JobLogEvent>
+        streamLogs(com.jervis.contracts.orchestrator.JobLogsRequest request) {
+      return io.grpc.stub.ClientCalls.blockingV2ServerStreamingCall(
+          getChannel(), getStreamLogsMethod(), getCallOptions(), request);
+    }
+  }
+
+  /**
+   * A stub to allow clients to do limited synchronous rpc calls to service OrchestratorJobLogsService.
    * <pre>
    * OrchestratorJobLogsService — live K8s Job pod log streaming.
    * Replaces the former FastAPI GET /job-logs/{task_id} SSE endpoint.

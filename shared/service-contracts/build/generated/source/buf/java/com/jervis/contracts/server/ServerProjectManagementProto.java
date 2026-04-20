@@ -32,10 +32,15 @@ public final class ServerProjectManagementProto extends com.google.protobuf.Gene
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_jervis_server_ListClientsRequest_fieldAccessorTable;
   static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_jervis_server_ListClientsResponse_descriptor;
+    internal_static_jervis_server_Client_descriptor;
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
-      internal_static_jervis_server_ListClientsResponse_fieldAccessorTable;
+      internal_static_jervis_server_Client_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_ClientList_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_ClientList_fieldAccessorTable;
   static final com.google.protobuf.Descriptors.Descriptor
     internal_static_jervis_server_CreateClientRequest_descriptor;
   static final 
@@ -52,10 +57,15 @@ public final class ServerProjectManagementProto extends com.google.protobuf.Gene
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_jervis_server_ListProjectsRequest_fieldAccessorTable;
   static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_jervis_server_ListProjectsResponse_descriptor;
+    internal_static_jervis_server_Project_descriptor;
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
-      internal_static_jervis_server_ListProjectsResponse_fieldAccessorTable;
+      internal_static_jervis_server_Project_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_ProjectList_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_ProjectList_fieldAccessorTable;
   static final com.google.protobuf.Descriptors.Descriptor
     internal_static_jervis_server_CreateProjectRequest_descriptor;
   static final 
@@ -72,20 +82,20 @@ public final class ServerProjectManagementProto extends com.google.protobuf.Gene
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_jervis_server_UpdateProjectRequest_fieldAccessorTable;
   static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_jervis_server_UpdateProjectResponse_descriptor;
-  static final 
-    com.google.protobuf.GeneratedMessage.FieldAccessorTable
-      internal_static_jervis_server_UpdateProjectResponse_fieldAccessorTable;
-  static final com.google.protobuf.Descriptors.Descriptor
     internal_static_jervis_server_ListConnectionsRequest_descriptor;
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_jervis_server_ListConnectionsRequest_fieldAccessorTable;
   static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_jervis_server_ListConnectionsResponse_descriptor;
+    internal_static_jervis_server_ConnectionSummary_descriptor;
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
-      internal_static_jervis_server_ListConnectionsResponse_fieldAccessorTable;
+      internal_static_jervis_server_ConnectionSummary_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_ConnectionSummaryList_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_ConnectionSummaryList_fieldAccessorTable;
   static final com.google.protobuf.Descriptors.Descriptor
     internal_static_jervis_server_CreateConnectionRequest_descriptor;
   static final 
@@ -102,10 +112,35 @@ public final class ServerProjectManagementProto extends com.google.protobuf.Gene
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_jervis_server_GetStackRecommendationsRequest_fieldAccessorTable;
   static final com.google.protobuf.Descriptors.Descriptor
-    internal_static_jervis_server_GetStackRecommendationsResponse_descriptor;
+    internal_static_jervis_server_ProjectRecommendations_descriptor;
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
-      internal_static_jervis_server_GetStackRecommendationsResponse_fieldAccessorTable;
+      internal_static_jervis_server_ProjectRecommendations_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_StackArchetype_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_StackArchetype_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_PlatformRecommendation_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_PlatformRecommendation_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_StorageRecommendation_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_StorageRecommendation_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_FeatureRecommendation_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_FeatureRecommendation_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_Alternative_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_Alternative_fieldAccessorTable;
 
   public static com.google.protobuf.Descriptors.FileDescriptor
       getDescriptor() {
@@ -119,71 +154,106 @@ public final class ServerProjectManagementProto extends com.google.protobuf.Gene
       "\022\rjervis.server\032\031jervis/common/types.pro" +
       "to\"b\n\022ListClientsRequest\022/\n\003ctx\030\001 \001(\0132\035." +
       "jervis.common.RequestContextR\003ctx\022\033\n\tcli" +
-      "ent_id\030\002 \001(\tR\010clientId\"4\n\023ListClientsRes" +
-      "ponse\022\035\n\nitems_json\030\001 \001(\tR\titemsJson\"|\n\023" +
-      "CreateClientRequest\022/\n\003ctx\030\001 \001(\0132\035.jervi" +
-      "s.common.RequestContextR\003ctx\022\022\n\004name\030\002 \001" +
-      "(\tR\004name\022 \n\013description\030\003 \001(\tR\013descripti" +
-      "on\":\n\024CreateClientResponse\022\016\n\002id\030\001 \001(\tR\002" +
-      "id\022\022\n\004name\030\002 \001(\tR\004name\"c\n\023ListProjectsRe" +
-      "quest\022/\n\003ctx\030\001 \001(\0132\035.jervis.common.Reque" +
-      "stContextR\003ctx\022\033\n\tclient_id\030\002 \001(\tR\010clien" +
-      "tId\"5\n\024ListProjectsResponse\022\035\n\nitems_jso" +
-      "n\030\001 \001(\tR\titemsJson\"\232\001\n\024CreateProjectRequ" +
-      "est\022/\n\003ctx\030\001 \001(\0132\035.jervis.common.Request" +
-      "ContextR\003ctx\022\033\n\tclient_id\030\002 \001(\tR\010clientI" +
-      "d\022\022\n\004name\030\003 \001(\tR\004name\022 \n\013description\030\004 \001" +
-      "(\tR\013description\"X\n\025CreateProjectResponse" +
-      "\022\016\n\002id\030\001 \001(\tR\002id\022\022\n\004name\030\002 \001(\tR\004name\022\033\n\t" +
-      "client_id\030\003 \001(\tR\010clientId\"\323\001\n\024UpdateProj" +
-      "ectRequest\022/\n\003ctx\030\001 \001(\0132\035.jervis.common." +
-      "RequestContextR\003ctx\022\035\n\nproject_id\030\002 \001(\tR" +
-      "\tprojectId\022 \n\013description\030\003 \001(\tR\013descrip" +
-      "tion\022$\n\016git_remote_url\030\004 \001(\tR\014gitRemoteU" +
-      "rl\022#\n\rconnection_id\030\005 \001(\tR\014connectionId\"" +
-      "X\n\025UpdateProjectResponse\022\016\n\002id\030\001 \001(\tR\002id" +
-      "\022\022\n\004name\030\002 \001(\tR\004name\022\033\n\tbody_json\030\003 \001(\tR" +
-      "\010bodyJson\"f\n\026ListConnectionsRequest\022/\n\003c" +
-      "tx\030\001 \001(\0132\035.jervis.common.RequestContextR" +
-      "\003ctx\022\033\n\tclient_id\030\002 \001(\tR\010clientId\"8\n\027Lis" +
-      "tConnectionsResponse\022\035\n\nitems_json\030\001 \001(\t" +
-      "R\titemsJson\"\341\002\n\027CreateConnectionRequest\022" +
-      "/\n\003ctx\030\001 \001(\0132\035.jervis.common.RequestCont" +
-      "extR\003ctx\022\022\n\004name\030\002 \001(\tR\004name\022\032\n\010provider" +
-      "\030\003 \001(\tR\010provider\022\032\n\010protocol\030\004 \001(\tR\010prot" +
-      "ocol\022\033\n\tauth_type\030\005 \001(\tR\010authType\022\031\n\010bas" +
-      "e_url\030\006 \001(\tR\007baseUrl\022\031\n\010is_cloud\030\007 \001(\010R\007" +
-      "isCloud\022!\n\014bearer_token\030\010 \001(\tR\013bearerTok" +
-      "en\022\032\n\010username\030\t \001(\tR\010username\022\032\n\010passwo" +
-      "rd\030\n \001(\tR\010password\022\033\n\tclient_id\030\013 \001(\tR\010c" +
-      "lientId\"p\n\030CreateConnectionResponse\022\016\n\002i" +
-      "d\030\001 \001(\tR\002id\022\022\n\004name\030\002 \001(\tR\004name\022\032\n\010provi" +
-      "der\030\003 \001(\tR\010provider\022\024\n\005state\030\004 \001(\tR\005stat" +
-      "e\"u\n\036GetStackRecommendationsRequest\022/\n\003c" +
-      "tx\030\001 \001(\0132\035.jervis.common.RequestContextR" +
-      "\003ctx\022\"\n\014requirements\030\002 \001(\tR\014requirements" +
-      "\">\n\037GetStackRecommendationsResponse\022\033\n\tb" +
-      "ody_json\030\001 \001(\tR\010bodyJson2\241\006\n\036ServerProje" +
-      "ctManagementService\022T\n\013ListClients\022!.jer" +
-      "vis.server.ListClientsRequest\032\".jervis.s" +
-      "erver.ListClientsResponse\022W\n\014CreateClien" +
-      "t\022\".jervis.server.CreateClientRequest\032#." +
-      "jervis.server.CreateClientResponse\022W\n\014Li" +
-      "stProjects\022\".jervis.server.ListProjectsR" +
-      "equest\032#.jervis.server.ListProjectsRespo" +
-      "nse\022Z\n\rCreateProject\022#.jervis.server.Cre" +
-      "ateProjectRequest\032$.jervis.server.Create" +
-      "ProjectResponse\022Z\n\rUpdateProject\022#.jervi" +
-      "s.server.UpdateProjectRequest\032$.jervis.s" +
-      "erver.UpdateProjectResponse\022`\n\017ListConne" +
-      "ctions\022%.jervis.server.ListConnectionsRe" +
-      "quest\032&.jervis.server.ListConnectionsRes" +
-      "ponse\022c\n\020CreateConnection\022&.jervis.serve" +
-      "r.CreateConnectionRequest\032\'.jervis.serve" +
-      "r.CreateConnectionResponse\022x\n\027GetStackRe" +
-      "commendations\022-.jervis.server.GetStackRe" +
-      "commendationsRequest\032..jervis.server.Get" +
-      "StackRecommendationsResponseB=\n\033com.jerv" +
+      "ent_id\030\002 \001(\tR\010clientId\"\225\001\n\006Client\022\016\n\002id\030" +
+      "\001 \001(\tR\002id\022\022\n\004name\030\002 \001(\tR\004name\022 \n\013descrip" +
+      "tion\030\003 \001(\tR\013description\022\032\n\010archived\030\004 \001(" +
+      "\010R\010archived\022)\n\020default_language\030\005 \001(\tR\017d" +
+      "efaultLanguage\"9\n\nClientList\022+\n\005items\030\001 " +
+      "\003(\0132\025.jervis.server.ClientR\005items\"|\n\023Cre" +
+      "ateClientRequest\022/\n\003ctx\030\001 \001(\0132\035.jervis.c" +
+      "ommon.RequestContextR\003ctx\022\022\n\004name\030\002 \001(\tR" +
+      "\004name\022 \n\013description\030\003 \001(\tR\013description\"" +
+      ":\n\024CreateClientResponse\022\016\n\002id\030\001 \001(\tR\002id\022" +
+      "\022\n\004name\030\002 \001(\tR\004name\"c\n\023ListProjectsReque" +
+      "st\022/\n\003ctx\030\001 \001(\0132\035.jervis.common.RequestC" +
+      "ontextR\003ctx\022\033\n\tclient_id\030\002 \001(\tR\010clientId" +
+      "\"\207\001\n\007Project\022\016\n\002id\030\001 \001(\tR\002id\022\022\n\004name\030\002 \001" +
+      "(\tR\004name\022\033\n\tclient_id\030\003 \001(\tR\010clientId\022\031\n" +
+      "\010group_id\030\004 \001(\tR\007groupId\022 \n\013description\030" +
+      "\005 \001(\tR\013description\";\n\013ProjectList\022,\n\005ite" +
+      "ms\030\001 \003(\0132\026.jervis.server.ProjectR\005items\"" +
+      "\232\001\n\024CreateProjectRequest\022/\n\003ctx\030\001 \001(\0132\035." +
+      "jervis.common.RequestContextR\003ctx\022\033\n\tcli" +
+      "ent_id\030\002 \001(\tR\010clientId\022\022\n\004name\030\003 \001(\tR\004na" +
+      "me\022 \n\013description\030\004 \001(\tR\013description\"X\n\025" +
+      "CreateProjectResponse\022\016\n\002id\030\001 \001(\tR\002id\022\022\n" +
+      "\004name\030\002 \001(\tR\004name\022\033\n\tclient_id\030\003 \001(\tR\010cl" +
+      "ientId\"\323\001\n\024UpdateProjectRequest\022/\n\003ctx\030\001" +
+      " \001(\0132\035.jervis.common.RequestContextR\003ctx" +
+      "\022\035\n\nproject_id\030\002 \001(\tR\tprojectId\022 \n\013descr" +
+      "iption\030\003 \001(\tR\013description\022$\n\016git_remote_" +
+      "url\030\004 \001(\tR\014gitRemoteUrl\022#\n\rconnection_id" +
+      "\030\005 \001(\tR\014connectionId\"f\n\026ListConnectionsR" +
+      "equest\022/\n\003ctx\030\001 \001(\0132\035.jervis.common.Requ" +
+      "estContextR\003ctx\022\033\n\tclient_id\030\002 \001(\tR\010clie" +
+      "ntId\"\250\001\n\021ConnectionSummary\022\016\n\002id\030\001 \001(\tR\002" +
+      "id\022\022\n\004name\030\002 \001(\tR\004name\022\032\n\010provider\030\003 \001(\t" +
+      "R\010provider\022\024\n\005state\030\004 \001(\tR\005state\022\031\n\010base" +
+      "_url\030\005 \001(\tR\007baseUrl\022\"\n\014capabilities\030\006 \003(" +
+      "\tR\014capabilities\"O\n\025ConnectionSummaryList" +
+      "\0226\n\005items\030\001 \003(\0132 .jervis.server.Connecti" +
+      "onSummaryR\005items\"\341\002\n\027CreateConnectionReq" +
+      "uest\022/\n\003ctx\030\001 \001(\0132\035.jervis.common.Reques" +
+      "tContextR\003ctx\022\022\n\004name\030\002 \001(\tR\004name\022\032\n\010pro" +
+      "vider\030\003 \001(\tR\010provider\022\032\n\010protocol\030\004 \001(\tR" +
+      "\010protocol\022\033\n\tauth_type\030\005 \001(\tR\010authType\022\031" +
+      "\n\010base_url\030\006 \001(\tR\007baseUrl\022\031\n\010is_cloud\030\007 " +
+      "\001(\010R\007isCloud\022!\n\014bearer_token\030\010 \001(\tR\013bear" +
+      "erToken\022\032\n\010username\030\t \001(\tR\010username\022\032\n\010p" +
+      "assword\030\n \001(\tR\010password\022\033\n\tclient_id\030\013 \001" +
+      "(\tR\010clientId\"p\n\030CreateConnectionResponse" +
+      "\022\016\n\002id\030\001 \001(\tR\002id\022\022\n\004name\030\002 \001(\tR\004name\022\032\n\010" +
+      "provider\030\003 \001(\tR\010provider\022\024\n\005state\030\004 \001(\tR" +
+      "\005state\"u\n\036GetStackRecommendationsRequest" +
+      "\022/\n\003ctx\030\001 \001(\0132\035.jervis.common.RequestCon" +
+      "textR\003ctx\022\"\n\014requirements\030\002 \001(\tR\014require" +
+      "ments\"\327\002\n\026ProjectRecommendations\022;\n\tarch" +
+      "etype\030\001 \001(\0132\035.jervis.server.StackArchety" +
+      "peR\tarchetype\022C\n\tplatforms\030\002 \003(\0132%.jervi" +
+      "s.server.PlatformRecommendationR\tplatfor" +
+      "ms\022>\n\007storage\030\003 \003(\0132$.jervis.server.Stor" +
+      "ageRecommendationR\007storage\022@\n\010features\030\004" +
+      " \003(\0132$.jervis.server.FeatureRecommendati" +
+      "onR\010features\0229\n\030scaffolding_instructions" +
+      "\030\005 \001(\tR\027scaffoldingInstructions\"\235\001\n\016Stac" +
+      "kArchetype\022\022\n\004type\030\001 \001(\tR\004type\022\022\n\004name\030\002" +
+      " \001(\tR\004name\022 \n\013description\030\003 \001(\tR\013descrip" +
+      "tion\022\022\n\004pros\030\004 \003(\tR\004pros\022\022\n\004cons\030\005 \003(\tR\004" +
+      "cons\022\031\n\010best_for\030\006 \001(\tR\007bestFor\"\264\001\n\026Plat" +
+      "formRecommendation\022\032\n\010platform\030\001 \001(\tR\010pl" +
+      "atform\022 \n\013recommended\030\002 \001(\010R\013recommended" +
+      "\022\034\n\trationale\030\003 \001(\tR\trationale\022>\n\014altern" +
+      "atives\030\004 \003(\0132\032.jervis.server.Alternative" +
+      "R\014alternatives\"\311\001\n\025StorageRecommendation" +
+      "\022\036\n\ntechnology\030\001 \001(\tR\ntechnology\022 \n\013reco" +
+      "mmended\030\002 \001(\010R\013recommended\022\031\n\010use_case\030\003" +
+      " \001(\tR\007useCase\022+\n\021spring_dependency\030\004 \001(\t" +
+      "R\020springDependency\022\022\n\004pros\030\005 \003(\tR\004pros\022\022" +
+      "\n\004cons\030\006 \003(\tR\004cons\"\211\001\n\025FeatureRecommenda" +
+      "tion\022\030\n\007feature\030\001 \001(\tR\007feature\022 \n\013recomm" +
+      "ended\030\002 \001(\010R\013recommended\0224\n\007options\030\003 \003(" +
+      "\0132\032.jervis.server.AlternativeR\007options\"C" +
+      "\n\013Alternative\022\022\n\004name\030\001 \001(\tR\004name\022 \n\013des" +
+      "cription\030\002 \001(\tR\013description2\366\005\n\036ServerPr" +
+      "ojectManagementService\022K\n\013ListClients\022!." +
+      "jervis.server.ListClientsRequest\032\031.jervi" +
+      "s.server.ClientList\022W\n\014CreateClient\022\".je" +
+      "rvis.server.CreateClientRequest\032#.jervis" +
+      ".server.CreateClientResponse\022N\n\014ListProj" +
+      "ects\022\".jervis.server.ListProjectsRequest" +
+      "\032\032.jervis.server.ProjectList\022Z\n\rCreatePr" +
+      "oject\022#.jervis.server.CreateProjectReque" +
+      "st\032$.jervis.server.CreateProjectResponse" +
+      "\022L\n\rUpdateProject\022#.jervis.server.Update" +
+      "ProjectRequest\032\026.jervis.server.Project\022^" +
+      "\n\017ListConnections\022%.jervis.server.ListCo" +
+      "nnectionsRequest\032$.jervis.server.Connect" +
+      "ionSummaryList\022c\n\020CreateConnection\022&.jer" +
+      "vis.server.CreateConnectionRequest\032\'.jer" +
+      "vis.server.CreateConnectionResponse\022o\n\027G" +
+      "etStackRecommendations\022-.jervis.server.G" +
+      "etStackRecommendationsRequest\032%.jervis.s" +
+      "erver.ProjectRecommendationsB=\n\033com.jerv" +
       "is.contracts.serverB\034ServerProjectManage" +
       "mentProtoP\001b\006proto3"
     };
@@ -198,96 +268,138 @@ public final class ServerProjectManagementProto extends com.google.protobuf.Gene
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_server_ListClientsRequest_descriptor,
         new java.lang.String[] { "Ctx", "ClientId", });
-    internal_static_jervis_server_ListClientsResponse_descriptor =
+    internal_static_jervis_server_Client_descriptor =
       getDescriptor().getMessageType(1);
-    internal_static_jervis_server_ListClientsResponse_fieldAccessorTable = new
+    internal_static_jervis_server_Client_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-        internal_static_jervis_server_ListClientsResponse_descriptor,
-        new java.lang.String[] { "ItemsJson", });
-    internal_static_jervis_server_CreateClientRequest_descriptor =
+        internal_static_jervis_server_Client_descriptor,
+        new java.lang.String[] { "Id", "Name", "Description", "Archived", "DefaultLanguage", });
+    internal_static_jervis_server_ClientList_descriptor =
       getDescriptor().getMessageType(2);
+    internal_static_jervis_server_ClientList_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_ClientList_descriptor,
+        new java.lang.String[] { "Items", });
+    internal_static_jervis_server_CreateClientRequest_descriptor =
+      getDescriptor().getMessageType(3);
     internal_static_jervis_server_CreateClientRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_server_CreateClientRequest_descriptor,
         new java.lang.String[] { "Ctx", "Name", "Description", });
     internal_static_jervis_server_CreateClientResponse_descriptor =
-      getDescriptor().getMessageType(3);
+      getDescriptor().getMessageType(4);
     internal_static_jervis_server_CreateClientResponse_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_server_CreateClientResponse_descriptor,
         new java.lang.String[] { "Id", "Name", });
     internal_static_jervis_server_ListProjectsRequest_descriptor =
-      getDescriptor().getMessageType(4);
+      getDescriptor().getMessageType(5);
     internal_static_jervis_server_ListProjectsRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_server_ListProjectsRequest_descriptor,
         new java.lang.String[] { "Ctx", "ClientId", });
-    internal_static_jervis_server_ListProjectsResponse_descriptor =
-      getDescriptor().getMessageType(5);
-    internal_static_jervis_server_ListProjectsResponse_fieldAccessorTable = new
-      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-        internal_static_jervis_server_ListProjectsResponse_descriptor,
-        new java.lang.String[] { "ItemsJson", });
-    internal_static_jervis_server_CreateProjectRequest_descriptor =
+    internal_static_jervis_server_Project_descriptor =
       getDescriptor().getMessageType(6);
+    internal_static_jervis_server_Project_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_Project_descriptor,
+        new java.lang.String[] { "Id", "Name", "ClientId", "GroupId", "Description", });
+    internal_static_jervis_server_ProjectList_descriptor =
+      getDescriptor().getMessageType(7);
+    internal_static_jervis_server_ProjectList_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_ProjectList_descriptor,
+        new java.lang.String[] { "Items", });
+    internal_static_jervis_server_CreateProjectRequest_descriptor =
+      getDescriptor().getMessageType(8);
     internal_static_jervis_server_CreateProjectRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_server_CreateProjectRequest_descriptor,
         new java.lang.String[] { "Ctx", "ClientId", "Name", "Description", });
     internal_static_jervis_server_CreateProjectResponse_descriptor =
-      getDescriptor().getMessageType(7);
+      getDescriptor().getMessageType(9);
     internal_static_jervis_server_CreateProjectResponse_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_server_CreateProjectResponse_descriptor,
         new java.lang.String[] { "Id", "Name", "ClientId", });
     internal_static_jervis_server_UpdateProjectRequest_descriptor =
-      getDescriptor().getMessageType(8);
+      getDescriptor().getMessageType(10);
     internal_static_jervis_server_UpdateProjectRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_server_UpdateProjectRequest_descriptor,
         new java.lang.String[] { "Ctx", "ProjectId", "Description", "GitRemoteUrl", "ConnectionId", });
-    internal_static_jervis_server_UpdateProjectResponse_descriptor =
-      getDescriptor().getMessageType(9);
-    internal_static_jervis_server_UpdateProjectResponse_fieldAccessorTable = new
-      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-        internal_static_jervis_server_UpdateProjectResponse_descriptor,
-        new java.lang.String[] { "Id", "Name", "BodyJson", });
     internal_static_jervis_server_ListConnectionsRequest_descriptor =
-      getDescriptor().getMessageType(10);
+      getDescriptor().getMessageType(11);
     internal_static_jervis_server_ListConnectionsRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_server_ListConnectionsRequest_descriptor,
         new java.lang.String[] { "Ctx", "ClientId", });
-    internal_static_jervis_server_ListConnectionsResponse_descriptor =
-      getDescriptor().getMessageType(11);
-    internal_static_jervis_server_ListConnectionsResponse_fieldAccessorTable = new
-      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-        internal_static_jervis_server_ListConnectionsResponse_descriptor,
-        new java.lang.String[] { "ItemsJson", });
-    internal_static_jervis_server_CreateConnectionRequest_descriptor =
+    internal_static_jervis_server_ConnectionSummary_descriptor =
       getDescriptor().getMessageType(12);
+    internal_static_jervis_server_ConnectionSummary_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_ConnectionSummary_descriptor,
+        new java.lang.String[] { "Id", "Name", "Provider", "State", "BaseUrl", "Capabilities", });
+    internal_static_jervis_server_ConnectionSummaryList_descriptor =
+      getDescriptor().getMessageType(13);
+    internal_static_jervis_server_ConnectionSummaryList_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_ConnectionSummaryList_descriptor,
+        new java.lang.String[] { "Items", });
+    internal_static_jervis_server_CreateConnectionRequest_descriptor =
+      getDescriptor().getMessageType(14);
     internal_static_jervis_server_CreateConnectionRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_server_CreateConnectionRequest_descriptor,
         new java.lang.String[] { "Ctx", "Name", "Provider", "Protocol", "AuthType", "BaseUrl", "IsCloud", "BearerToken", "Username", "Password", "ClientId", });
     internal_static_jervis_server_CreateConnectionResponse_descriptor =
-      getDescriptor().getMessageType(13);
+      getDescriptor().getMessageType(15);
     internal_static_jervis_server_CreateConnectionResponse_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_server_CreateConnectionResponse_descriptor,
         new java.lang.String[] { "Id", "Name", "Provider", "State", });
     internal_static_jervis_server_GetStackRecommendationsRequest_descriptor =
-      getDescriptor().getMessageType(14);
+      getDescriptor().getMessageType(16);
     internal_static_jervis_server_GetStackRecommendationsRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_server_GetStackRecommendationsRequest_descriptor,
         new java.lang.String[] { "Ctx", "Requirements", });
-    internal_static_jervis_server_GetStackRecommendationsResponse_descriptor =
-      getDescriptor().getMessageType(15);
-    internal_static_jervis_server_GetStackRecommendationsResponse_fieldAccessorTable = new
+    internal_static_jervis_server_ProjectRecommendations_descriptor =
+      getDescriptor().getMessageType(17);
+    internal_static_jervis_server_ProjectRecommendations_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-        internal_static_jervis_server_GetStackRecommendationsResponse_descriptor,
-        new java.lang.String[] { "BodyJson", });
+        internal_static_jervis_server_ProjectRecommendations_descriptor,
+        new java.lang.String[] { "Archetype", "Platforms", "Storage", "Features", "ScaffoldingInstructions", });
+    internal_static_jervis_server_StackArchetype_descriptor =
+      getDescriptor().getMessageType(18);
+    internal_static_jervis_server_StackArchetype_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_StackArchetype_descriptor,
+        new java.lang.String[] { "Type", "Name", "Description", "Pros", "Cons", "BestFor", });
+    internal_static_jervis_server_PlatformRecommendation_descriptor =
+      getDescriptor().getMessageType(19);
+    internal_static_jervis_server_PlatformRecommendation_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_PlatformRecommendation_descriptor,
+        new java.lang.String[] { "Platform", "Recommended", "Rationale", "Alternatives", });
+    internal_static_jervis_server_StorageRecommendation_descriptor =
+      getDescriptor().getMessageType(20);
+    internal_static_jervis_server_StorageRecommendation_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_StorageRecommendation_descriptor,
+        new java.lang.String[] { "Technology", "Recommended", "UseCase", "SpringDependency", "Pros", "Cons", });
+    internal_static_jervis_server_FeatureRecommendation_descriptor =
+      getDescriptor().getMessageType(21);
+    internal_static_jervis_server_FeatureRecommendation_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_FeatureRecommendation_descriptor,
+        new java.lang.String[] { "Feature", "Recommended", "Options", });
+    internal_static_jervis_server_Alternative_descriptor =
+      getDescriptor().getMessageType(22);
+    internal_static_jervis_server_Alternative_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_Alternative_descriptor,
+        new java.lang.String[] { "Name", "Description", });
     descriptor.resolveAllFeaturesImmutable();
     com.jervis.contracts.common.TypesProto.getDescriptor();
   }

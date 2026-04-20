@@ -23,8 +23,7 @@ import kotlin.jvm.JvmOverloads
 import kotlin.jvm.JvmStatic
 
 /**
- * Holder for Kotlin coroutine-based client and server APIs for
- * jervis.knowledgebase.KnowledgeDocumentService.
+ * Holder for Kotlin coroutine-based client and server APIs for jervis.knowledgebase.KnowledgeDocumentService.
  */
 public object KnowledgeDocumentServiceGrpcKt {
   public const val SERVICE_NAME: String = KnowledgeDocumentServiceGrpc.SERVICE_NAME
@@ -66,22 +65,18 @@ public object KnowledgeDocumentServiceGrpcKt {
     get() = KnowledgeDocumentServiceGrpc.getExtractTextMethod()
 
   /**
-   * A stub for issuing RPCs to a(n) jervis.knowledgebase.KnowledgeDocumentService service as
-   * suspending coroutines.
+   * A stub for issuing RPCs to a(n) jervis.knowledgebase.KnowledgeDocumentService service as suspending coroutines.
    */
   @StubFor(KnowledgeDocumentServiceGrpc::class)
   public class KnowledgeDocumentServiceCoroutineStub @JvmOverloads constructor(
     channel: Channel,
     callOptions: CallOptions = DEFAULT,
   ) : AbstractCoroutineStub<KnowledgeDocumentServiceCoroutineStub>(channel, callOptions) {
-    override fun build(channel: Channel, callOptions: CallOptions):
-        KnowledgeDocumentServiceCoroutineStub = KnowledgeDocumentServiceCoroutineStub(channel,
-        callOptions)
+    override fun build(channel: Channel, callOptions: CallOptions): KnowledgeDocumentServiceCoroutineStub = KnowledgeDocumentServiceCoroutineStub(channel, callOptions)
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -91,8 +86,7 @@ public object KnowledgeDocumentServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun upload(request: DocumentUploadRequest, headers: Metadata = Metadata()):
-        Document = unaryRpc(
+    public suspend fun upload(request: DocumentUploadRequest, headers: Metadata = Metadata()): Document = unaryRpc(
       channel,
       KnowledgeDocumentServiceGrpc.getUploadMethod(),
       request,
@@ -102,8 +96,7 @@ public object KnowledgeDocumentServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -113,8 +106,7 @@ public object KnowledgeDocumentServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun register(request: DocumentRegisterRequest, headers: Metadata = Metadata()):
-        Document = unaryRpc(
+    public suspend fun register(request: DocumentRegisterRequest, headers: Metadata = Metadata()): Document = unaryRpc(
       channel,
       KnowledgeDocumentServiceGrpc.getRegisterMethod(),
       request,
@@ -124,8 +116,7 @@ public object KnowledgeDocumentServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -135,8 +126,7 @@ public object KnowledgeDocumentServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun list(request: DocumentListRequest, headers: Metadata = Metadata()):
-        DocumentList = unaryRpc(
+    public suspend fun list(request: DocumentListRequest, headers: Metadata = Metadata()): DocumentList = unaryRpc(
       channel,
       KnowledgeDocumentServiceGrpc.getListMethod(),
       request,
@@ -146,8 +136,7 @@ public object KnowledgeDocumentServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -157,8 +146,7 @@ public object KnowledgeDocumentServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun `get`(request: DocumentId, headers: Metadata = Metadata()): Document =
-        unaryRpc(
+    public suspend fun `get`(request: DocumentId, headers: Metadata = Metadata()): Document = unaryRpc(
       channel,
       KnowledgeDocumentServiceGrpc.getGetMethod(),
       request,
@@ -168,8 +156,7 @@ public object KnowledgeDocumentServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -179,8 +166,7 @@ public object KnowledgeDocumentServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun update(request: DocumentUpdateRequest, headers: Metadata = Metadata()):
-        Document = unaryRpc(
+    public suspend fun update(request: DocumentUpdateRequest, headers: Metadata = Metadata()): Document = unaryRpc(
       channel,
       KnowledgeDocumentServiceGrpc.getUpdateMethod(),
       request,
@@ -190,8 +176,7 @@ public object KnowledgeDocumentServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -201,8 +186,7 @@ public object KnowledgeDocumentServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun delete(request: DocumentId, headers: Metadata = Metadata()): DocumentAck =
-        unaryRpc(
+    public suspend fun delete(request: DocumentId, headers: Metadata = Metadata()): DocumentAck = unaryRpc(
       channel,
       KnowledgeDocumentServiceGrpc.getDeleteMethod(),
       request,
@@ -212,8 +196,7 @@ public object KnowledgeDocumentServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -223,8 +206,7 @@ public object KnowledgeDocumentServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun reindex(request: DocumentId, headers: Metadata = Metadata()): DocumentAck =
-        unaryRpc(
+    public suspend fun reindex(request: DocumentId, headers: Metadata = Metadata()): DocumentAck = unaryRpc(
       channel,
       KnowledgeDocumentServiceGrpc.getReindexMethod(),
       request,
@@ -234,8 +216,7 @@ public object KnowledgeDocumentServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -245,8 +226,7 @@ public object KnowledgeDocumentServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun extractText(request: DocumentExtractRequest, headers: Metadata = Metadata()):
-        DocumentExtractResult = unaryRpc(
+    public suspend fun extractText(request: DocumentExtractRequest, headers: Metadata = Metadata()): DocumentExtractResult = unaryRpc(
       channel,
       KnowledgeDocumentServiceGrpc.getExtractTextMethod(),
       request,
@@ -256,8 +236,7 @@ public object KnowledgeDocumentServiceGrpcKt {
   }
 
   /**
-   * Skeletal implementation of the jervis.knowledgebase.KnowledgeDocumentService service based on
-   * Kotlin coroutines.
+   * Skeletal implementation of the jervis.knowledgebase.KnowledgeDocumentService service based on Kotlin coroutines.
    */
   public abstract class KnowledgeDocumentServiceCoroutineImplBase(
     coroutineContext: CoroutineContext = EmptyCoroutineContext,
@@ -266,114 +245,97 @@ public object KnowledgeDocumentServiceGrpcKt {
      * Returns the response to an RPC for jervis.knowledgebase.KnowledgeDocumentService.Upload.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun upload(request: DocumentUploadRequest): Document = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeDocumentService.Upload is unimplemented"))
+    public open suspend fun upload(request: DocumentUploadRequest): Document = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeDocumentService.Upload is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.knowledgebase.KnowledgeDocumentService.Register.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun register(request: DocumentRegisterRequest): Document = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeDocumentService.Register is unimplemented"))
+    public open suspend fun register(request: DocumentRegisterRequest): Document = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeDocumentService.Register is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.knowledgebase.KnowledgeDocumentService.List.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun list(request: DocumentListRequest): DocumentList = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeDocumentService.List is unimplemented"))
+    public open suspend fun list(request: DocumentListRequest): DocumentList = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeDocumentService.List is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.knowledgebase.KnowledgeDocumentService.Get.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun `get`(request: DocumentId): Document = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeDocumentService.Get is unimplemented"))
+    public open suspend fun `get`(request: DocumentId): Document = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeDocumentService.Get is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.knowledgebase.KnowledgeDocumentService.Update.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun update(request: DocumentUpdateRequest): Document = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeDocumentService.Update is unimplemented"))
+    public open suspend fun update(request: DocumentUpdateRequest): Document = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeDocumentService.Update is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.knowledgebase.KnowledgeDocumentService.Delete.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun delete(request: DocumentId): DocumentAck = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeDocumentService.Delete is unimplemented"))
+    public open suspend fun delete(request: DocumentId): DocumentAck = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeDocumentService.Delete is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.knowledgebase.KnowledgeDocumentService.Reindex.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun reindex(request: DocumentId): DocumentAck = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeDocumentService.Reindex is unimplemented"))
+    public open suspend fun reindex(request: DocumentId): DocumentAck = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeDocumentService.Reindex is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.knowledgebase.KnowledgeDocumentService.ExtractText.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun extractText(request: DocumentExtractRequest): DocumentExtractResult =
-        throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeDocumentService.ExtractText is unimplemented"))
+    public open suspend fun extractText(request: DocumentExtractRequest): DocumentExtractResult = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.knowledgebase.KnowledgeDocumentService.ExtractText is unimplemented"))
 
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(

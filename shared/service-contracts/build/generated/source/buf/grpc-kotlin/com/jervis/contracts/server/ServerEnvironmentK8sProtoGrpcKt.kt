@@ -23,8 +23,7 @@ import kotlin.jvm.JvmOverloads
 import kotlin.jvm.JvmStatic
 
 /**
- * Holder for Kotlin coroutine-based client and server APIs for
- * jervis.server.ServerEnvironmentK8sService.
+ * Holder for Kotlin coroutine-based client and server APIs for jervis.server.ServerEnvironmentK8sService.
  */
 public object ServerEnvironmentK8sServiceGrpcKt {
   public const val SERVICE_NAME: String = ServerEnvironmentK8sServiceGrpc.SERVICE_NAME
@@ -63,22 +62,18 @@ public object ServerEnvironmentK8sServiceGrpcKt {
     get() = ServerEnvironmentK8sServiceGrpc.getGetNamespaceStatusMethod()
 
   /**
-   * A stub for issuing RPCs to a(n) jervis.server.ServerEnvironmentK8sService service as suspending
-   * coroutines.
+   * A stub for issuing RPCs to a(n) jervis.server.ServerEnvironmentK8sService service as suspending coroutines.
    */
   @StubFor(ServerEnvironmentK8sServiceGrpc::class)
   public class ServerEnvironmentK8sServiceCoroutineStub @JvmOverloads constructor(
     channel: Channel,
     callOptions: CallOptions = DEFAULT,
   ) : AbstractCoroutineStub<ServerEnvironmentK8sServiceCoroutineStub>(channel, callOptions) {
-    override fun build(channel: Channel, callOptions: CallOptions):
-        ServerEnvironmentK8sServiceCoroutineStub = ServerEnvironmentK8sServiceCoroutineStub(channel,
-        callOptions)
+    override fun build(channel: Channel, callOptions: CallOptions): ServerEnvironmentK8sServiceCoroutineStub = ServerEnvironmentK8sServiceCoroutineStub(channel, callOptions)
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -88,8 +83,7 @@ public object ServerEnvironmentK8sServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun listNamespaceResources(request: ListNamespaceResourcesRequest,
-        headers: Metadata = Metadata()): ListNamespaceResourcesResponse = unaryRpc(
+    public suspend fun listNamespaceResources(request: ListNamespaceResourcesRequest, headers: Metadata = Metadata()): ListNamespaceResourcesResponse = unaryRpc(
       channel,
       ServerEnvironmentK8sServiceGrpc.getListNamespaceResourcesMethod(),
       request,
@@ -99,8 +93,7 @@ public object ServerEnvironmentK8sServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -110,8 +103,7 @@ public object ServerEnvironmentK8sServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun getPodLogs(request: GetPodLogsRequest, headers: Metadata = Metadata()):
-        GetPodLogsResponse = unaryRpc(
+    public suspend fun getPodLogs(request: GetPodLogsRequest, headers: Metadata = Metadata()): GetPodLogsResponse = unaryRpc(
       channel,
       ServerEnvironmentK8sServiceGrpc.getGetPodLogsMethod(),
       request,
@@ -121,8 +113,7 @@ public object ServerEnvironmentK8sServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -132,8 +123,7 @@ public object ServerEnvironmentK8sServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun getDeploymentStatus(request: GetDeploymentStatusRequest, headers: Metadata =
-        Metadata()): GetDeploymentStatusResponse = unaryRpc(
+    public suspend fun getDeploymentStatus(request: GetDeploymentStatusRequest, headers: Metadata = Metadata()): GetDeploymentStatusResponse = unaryRpc(
       channel,
       ServerEnvironmentK8sServiceGrpc.getGetDeploymentStatusMethod(),
       request,
@@ -143,8 +133,7 @@ public object ServerEnvironmentK8sServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -154,8 +143,7 @@ public object ServerEnvironmentK8sServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun scaleDeployment(request: ScaleDeploymentRequest, headers: Metadata =
-        Metadata()): ScaleDeploymentResponse = unaryRpc(
+    public suspend fun scaleDeployment(request: ScaleDeploymentRequest, headers: Metadata = Metadata()): ScaleDeploymentResponse = unaryRpc(
       channel,
       ServerEnvironmentK8sServiceGrpc.getScaleDeploymentMethod(),
       request,
@@ -165,8 +153,7 @@ public object ServerEnvironmentK8sServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -176,8 +163,7 @@ public object ServerEnvironmentK8sServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun restartDeployment(request: RestartDeploymentRequest, headers: Metadata =
-        Metadata()): RestartDeploymentResponse = unaryRpc(
+    public suspend fun restartDeployment(request: RestartDeploymentRequest, headers: Metadata = Metadata()): RestartDeploymentResponse = unaryRpc(
       channel,
       ServerEnvironmentK8sServiceGrpc.getRestartDeploymentMethod(),
       request,
@@ -187,8 +173,7 @@ public object ServerEnvironmentK8sServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -198,8 +183,7 @@ public object ServerEnvironmentK8sServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun getNamespaceStatus(request: GetNamespaceStatusRequest, headers: Metadata =
-        Metadata()): GetNamespaceStatusResponse = unaryRpc(
+    public suspend fun getNamespaceStatus(request: GetNamespaceStatusRequest, headers: Metadata = Metadata()): GetNamespaceStatusResponse = unaryRpc(
       channel,
       ServerEnvironmentK8sServiceGrpc.getGetNamespaceStatusMethod(),
       request,
@@ -209,104 +193,82 @@ public object ServerEnvironmentK8sServiceGrpcKt {
   }
 
   /**
-   * Skeletal implementation of the jervis.server.ServerEnvironmentK8sService service based on
-   * Kotlin coroutines.
+   * Skeletal implementation of the jervis.server.ServerEnvironmentK8sService service based on Kotlin coroutines.
    */
   public abstract class ServerEnvironmentK8sServiceCoroutineImplBase(
     coroutineContext: CoroutineContext = EmptyCoroutineContext,
   ) : AbstractCoroutineServerImpl(coroutineContext) {
     /**
-     * Returns the response to an RPC for
-     * jervis.server.ServerEnvironmentK8sService.ListNamespaceResources.
+     * Returns the response to an RPC for jervis.server.ServerEnvironmentK8sService.ListNamespaceResources.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun listNamespaceResources(request: ListNamespaceResourcesRequest):
-        ListNamespaceResourcesResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerEnvironmentK8sService.ListNamespaceResources is unimplemented"))
+    public open suspend fun listNamespaceResources(request: ListNamespaceResourcesRequest): ListNamespaceResourcesResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerEnvironmentK8sService.ListNamespaceResources is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerEnvironmentK8sService.GetPodLogs.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun getPodLogs(request: GetPodLogsRequest): GetPodLogsResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerEnvironmentK8sService.GetPodLogs is unimplemented"))
+    public open suspend fun getPodLogs(request: GetPodLogsRequest): GetPodLogsResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerEnvironmentK8sService.GetPodLogs is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.server.ServerEnvironmentK8sService.GetDeploymentStatus.
+     * Returns the response to an RPC for jervis.server.ServerEnvironmentK8sService.GetDeploymentStatus.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun getDeploymentStatus(request: GetDeploymentStatusRequest):
-        GetDeploymentStatusResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerEnvironmentK8sService.GetDeploymentStatus is unimplemented"))
+    public open suspend fun getDeploymentStatus(request: GetDeploymentStatusRequest): GetDeploymentStatusResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerEnvironmentK8sService.GetDeploymentStatus is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerEnvironmentK8sService.ScaleDeployment.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun scaleDeployment(request: ScaleDeploymentRequest):
-        ScaleDeploymentResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerEnvironmentK8sService.ScaleDeployment is unimplemented"))
+    public open suspend fun scaleDeployment(request: ScaleDeploymentRequest): ScaleDeploymentResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerEnvironmentK8sService.ScaleDeployment is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.server.ServerEnvironmentK8sService.RestartDeployment.
+     * Returns the response to an RPC for jervis.server.ServerEnvironmentK8sService.RestartDeployment.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun restartDeployment(request: RestartDeploymentRequest):
-        RestartDeploymentResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerEnvironmentK8sService.RestartDeployment is unimplemented"))
+    public open suspend fun restartDeployment(request: RestartDeploymentRequest): RestartDeploymentResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerEnvironmentK8sService.RestartDeployment is unimplemented"))
 
     /**
-     * Returns the response to an RPC for
-     * jervis.server.ServerEnvironmentK8sService.GetNamespaceStatus.
+     * Returns the response to an RPC for jervis.server.ServerEnvironmentK8sService.GetNamespaceStatus.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun getNamespaceStatus(request: GetNamespaceStatusRequest):
-        GetNamespaceStatusResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerEnvironmentK8sService.GetNamespaceStatus is unimplemented"))
+    public open suspend fun getNamespaceStatus(request: GetNamespaceStatusRequest): GetNamespaceStatusResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerEnvironmentK8sService.GetNamespaceStatus is unimplemented"))
 
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(

@@ -26,19 +26,11 @@ public interface ListProjectsRequestOrBuilder extends
   com.jervis.contracts.common.RequestContextOrBuilder getCtxOrBuilder();
 
   /**
-   * <pre>
-   * empty = all projects across tenants
-   * </pre>
-   *
    * <code>string client_id = 2 [json_name = "clientId"];</code>
    * @return The clientId.
    */
   java.lang.String getClientId();
   /**
-   * <pre>
-   * empty = all projects across tenants
-   * </pre>
-   *
    * <code>string client_id = 2 [json_name = "clientId"];</code>
    * @return The bytes for clientId.
    */

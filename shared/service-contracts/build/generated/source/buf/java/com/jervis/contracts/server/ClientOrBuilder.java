@@ -6,8 +6,8 @@
 package com.jervis.contracts.server;
 
 @com.google.protobuf.Generated
-public interface UpdateProjectResponseOrBuilder extends
-    // @@protoc_insertion_point(interface_extends:jervis.server.UpdateProjectResponse)
+public interface ClientOrBuilder extends
+    // @@protoc_insertion_point(interface_extends:jervis.server.Client)
     com.google.protobuf.MessageOrBuilder {
 
   /**
@@ -35,22 +35,40 @@ public interface UpdateProjectResponseOrBuilder extends
       getNameBytes();
 
   /**
-   * <pre>
-   * Full ProjectDto after update (same shape as list items).
-   * </pre>
-   *
-   * <code>string body_json = 3 [json_name = "bodyJson"];</code>
-   * @return The bodyJson.
+   * <code>string description = 3 [json_name = "description"];</code>
+   * @return The description.
    */
-  java.lang.String getBodyJson();
+  java.lang.String getDescription();
   /**
-   * <pre>
-   * Full ProjectDto after update (same shape as list items).
-   * </pre>
-   *
-   * <code>string body_json = 3 [json_name = "bodyJson"];</code>
-   * @return The bytes for bodyJson.
+   * <code>string description = 3 [json_name = "description"];</code>
+   * @return The bytes for description.
    */
   com.google.protobuf.ByteString
-      getBodyJsonBytes();
+      getDescriptionBytes();
+
+  /**
+   * <code>bool archived = 4 [json_name = "archived"];</code>
+   * @return The archived.
+   */
+  boolean getArchived();
+
+  /**
+   * <pre>
+   * LanguageEnum name
+   * </pre>
+   *
+   * <code>string default_language = 5 [json_name = "defaultLanguage"];</code>
+   * @return The defaultLanguage.
+   */
+  java.lang.String getDefaultLanguage();
+  /**
+   * <pre>
+   * LanguageEnum name
+   * </pre>
+   *
+   * <code>string default_language = 5 [json_name = "defaultLanguage"];</code>
+   * @return The bytes for defaultLanguage.
+   */
+  com.google.protobuf.ByteString
+      getDefaultLanguageBytes();
 }

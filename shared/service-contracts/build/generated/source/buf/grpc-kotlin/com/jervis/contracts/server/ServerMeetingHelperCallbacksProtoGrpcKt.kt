@@ -23,8 +23,7 @@ import kotlin.jvm.JvmOverloads
 import kotlin.jvm.JvmStatic
 
 /**
- * Holder for Kotlin coroutine-based client and server APIs for
- * jervis.server.ServerMeetingHelperCallbacksService.
+ * Holder for Kotlin coroutine-based client and server APIs for jervis.server.ServerMeetingHelperCallbacksService.
  */
 public object ServerMeetingHelperCallbacksServiceGrpcKt {
   public const val SERVICE_NAME: String = ServerMeetingHelperCallbacksServiceGrpc.SERVICE_NAME
@@ -38,23 +37,18 @@ public object ServerMeetingHelperCallbacksServiceGrpcKt {
     get() = ServerMeetingHelperCallbacksServiceGrpc.getPushMessageMethod()
 
   /**
-   * A stub for issuing RPCs to a(n) jervis.server.ServerMeetingHelperCallbacksService service as
-   * suspending coroutines.
+   * A stub for issuing RPCs to a(n) jervis.server.ServerMeetingHelperCallbacksService service as suspending coroutines.
    */
   @StubFor(ServerMeetingHelperCallbacksServiceGrpc::class)
   public class ServerMeetingHelperCallbacksServiceCoroutineStub @JvmOverloads constructor(
     channel: Channel,
     callOptions: CallOptions = DEFAULT,
-  ) : AbstractCoroutineStub<ServerMeetingHelperCallbacksServiceCoroutineStub>(channel, callOptions)
-      {
-    override fun build(channel: Channel, callOptions: CallOptions):
-        ServerMeetingHelperCallbacksServiceCoroutineStub =
-        ServerMeetingHelperCallbacksServiceCoroutineStub(channel, callOptions)
+  ) : AbstractCoroutineStub<ServerMeetingHelperCallbacksServiceCoroutineStub>(channel, callOptions) {
+    override fun build(channel: Channel, callOptions: CallOptions): ServerMeetingHelperCallbacksServiceCoroutineStub = ServerMeetingHelperCallbacksServiceCoroutineStub(channel, callOptions)
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -64,8 +58,7 @@ public object ServerMeetingHelperCallbacksServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun pushMessage(request: HelperPushRequest, headers: Metadata = Metadata()):
-        HelperPushAck = unaryRpc(
+    public suspend fun pushMessage(request: HelperPushRequest, headers: Metadata = Metadata()): HelperPushAck = unaryRpc(
       channel,
       ServerMeetingHelperCallbacksServiceGrpc.getPushMessageMethod(),
       request,
@@ -75,26 +68,22 @@ public object ServerMeetingHelperCallbacksServiceGrpcKt {
   }
 
   /**
-   * Skeletal implementation of the jervis.server.ServerMeetingHelperCallbacksService service based
-   * on Kotlin coroutines.
+   * Skeletal implementation of the jervis.server.ServerMeetingHelperCallbacksService service based on Kotlin coroutines.
    */
   public abstract class ServerMeetingHelperCallbacksServiceCoroutineImplBase(
     coroutineContext: CoroutineContext = EmptyCoroutineContext,
   ) : AbstractCoroutineServerImpl(coroutineContext) {
     /**
-     * Returns the response to an RPC for
-     * jervis.server.ServerMeetingHelperCallbacksService.PushMessage.
+     * Returns the response to an RPC for jervis.server.ServerMeetingHelperCallbacksService.PushMessage.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun pushMessage(request: HelperPushRequest): HelperPushAck = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerMeetingHelperCallbacksService.PushMessage is unimplemented"))
+    public open suspend fun pushMessage(request: HelperPushRequest): HelperPushAck = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerMeetingHelperCallbacksService.PushMessage is unimplemented"))
 
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(

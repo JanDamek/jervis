@@ -14,9 +14,6 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
  * consumers actually read.
  * </pre>
  */
-@javax.annotation.Generated(
-    value = "by gRPC proto compiler (version 1.68.1)",
-    comments = "Source: jervis/o365_gateway/gateway.proto")
 @io.grpc.stub.annotations.GrpcGenerated
 public final class O365GatewayServiceGrpc {
 
@@ -691,6 +688,21 @@ public final class O365GatewayServiceGrpc {
   }
 
   /**
+   * Creates a new blocking-style stub that supports all types of calls on the service
+   */
+  public static O365GatewayServiceBlockingV2Stub newBlockingV2Stub(
+      io.grpc.Channel channel) {
+    io.grpc.stub.AbstractStub.StubFactory<O365GatewayServiceBlockingV2Stub> factory =
+      new io.grpc.stub.AbstractStub.StubFactory<O365GatewayServiceBlockingV2Stub>() {
+        @java.lang.Override
+        public O365GatewayServiceBlockingV2Stub newStub(io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+          return new O365GatewayServiceBlockingV2Stub(channel, callOptions);
+        }
+      };
+    return O365GatewayServiceBlockingV2Stub.newStub(factory, channel);
+  }
+
+  /**
    * Creates a new blocking-style stub that supports unary and streaming output calls on the service
    */
   public static O365GatewayServiceBlockingStub newBlockingStub(
@@ -1148,6 +1160,204 @@ public final class O365GatewayServiceGrpc {
 
   /**
    * A stub to allow clients to do synchronous rpc calls to service O365GatewayService.
+   * <pre>
+   * O365GatewayService — one umbrella gRPC for the O365 gateway pod. It
+   * fronts every Microsoft Graph call Jervis makes (Teams chats / channels,
+   * Mail, Calendar, Online meetings, Drive, session). Graph-specific DTOs
+   * are shared across RPC groups so the same `ChatMessage` is returned for
+   * Teams chats and channel reads.
+   * All RPCs are strongly typed — no JSON passthrough. Each RPC maps 1:1
+   * to a Microsoft Graph resource and carries only the fields Jervis
+   * consumers actually read.
+   * </pre>
+   */
+  public static final class O365GatewayServiceBlockingV2Stub
+      extends io.grpc.stub.AbstractBlockingStub<O365GatewayServiceBlockingV2Stub> {
+    private O365GatewayServiceBlockingV2Stub(
+        io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+      super(channel, callOptions);
+    }
+
+    @java.lang.Override
+    protected O365GatewayServiceBlockingV2Stub build(
+        io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+      return new O365GatewayServiceBlockingV2Stub(channel, callOptions);
+    }
+
+    /**
+     * <pre>
+     * === Teams chats ==========================================================
+     * </pre>
+     */
+    public com.jervis.contracts.o365_gateway.ListChatsResponse listChats(com.jervis.contracts.o365_gateway.ListChatsRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getListChatsMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_gateway.ListChatMessagesResponse readChat(com.jervis.contracts.o365_gateway.ReadChatRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getReadChatMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_gateway.ChatMessage sendChatMessage(com.jervis.contracts.o365_gateway.SendChatMessageRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getSendChatMessageMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * === Teams teams / channels ===============================================
+     * </pre>
+     */
+    public com.jervis.contracts.o365_gateway.ListTeamsResponse listTeams(com.jervis.contracts.o365_gateway.ListTeamsRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getListTeamsMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_gateway.ListChannelsResponse listChannels(com.jervis.contracts.o365_gateway.ListChannelsRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getListChannelsMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_gateway.ListChannelMessagesResponse readChannel(com.jervis.contracts.o365_gateway.ReadChannelRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getReadChannelMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_gateway.ChatMessage sendChannelMessage(com.jervis.contracts.o365_gateway.SendChannelMessageRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getSendChannelMessageMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * === Mail (Outlook) =======================================================
+     * </pre>
+     */
+    public com.jervis.contracts.o365_gateway.ListMailResponse listMail(com.jervis.contracts.o365_gateway.ListMailRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getListMailMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_gateway.MailMessage readMail(com.jervis.contracts.o365_gateway.ReadMailRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getReadMailMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_gateway.SendMailAck sendMail(com.jervis.contracts.o365_gateway.SendMailRpcRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getSendMailMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * === Calendar =============================================================
+     * </pre>
+     */
+    public com.jervis.contracts.o365_gateway.ListCalendarEventsResponse listCalendarEvents(com.jervis.contracts.o365_gateway.ListCalendarEventsRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getListCalendarEventsMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_gateway.CalendarEvent createCalendarEvent(com.jervis.contracts.o365_gateway.CreateCalendarEventRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getCreateCalendarEventMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * === Online meetings ======================================================
+     * Part of the O365 umbrella: online meetings are a resource inside O365,
+     * not a separate service. All five RPCs live here so consumers dial one
+     * channel for everything meeting-related.
+     * </pre>
+     */
+    public com.jervis.contracts.o365_gateway.OnlineMeeting getOnlineMeetingByJoinUrl(com.jervis.contracts.o365_gateway.OnlineMeetingByJoinUrlRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getGetOnlineMeetingByJoinUrlMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_gateway.OnlineMeeting getOnlineMeeting(com.jervis.contracts.o365_gateway.OnlineMeetingRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getGetOnlineMeetingMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_gateway.ListRecordingsResponse listMeetingRecordings(com.jervis.contracts.o365_gateway.OnlineMeetingRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getListMeetingRecordingsMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_gateway.ListTranscriptsResponse listMeetingTranscripts(com.jervis.contracts.o365_gateway.OnlineMeetingRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getListMeetingTranscriptsMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_gateway.TranscriptContent downloadTranscriptVtt(com.jervis.contracts.o365_gateway.TranscriptRef request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getDownloadTranscriptVttMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * === Drive (OneDrive / SharePoint) ========================================
+     * </pre>
+     */
+    public com.jervis.contracts.o365_gateway.ListDriveItemsResponse listDriveItems(com.jervis.contracts.o365_gateway.ListDriveItemsRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getListDriveItemsMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_gateway.DriveItem getDriveItem(com.jervis.contracts.o365_gateway.DriveItemRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getGetDriveItemMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.o365_gateway.ListDriveItemsResponse searchDrive(com.jervis.contracts.o365_gateway.SearchDriveRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getSearchDriveMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * === Session status =======================================================
+     * </pre>
+     */
+    public com.jervis.contracts.o365_gateway.SessionStatus getSessionStatus(com.jervis.contracts.o365_gateway.SessionStatusRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getGetSessionStatusMethod(), getCallOptions(), request);
+    }
+  }
+
+  /**
+   * A stub to allow clients to do limited synchronous rpc calls to service O365GatewayService.
    * <pre>
    * O365GatewayService — one umbrella gRPC for the O365 gateway pod. It
    * fronts every Microsoft Graph call Jervis makes (Teams chats / channels,

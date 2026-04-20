@@ -10,9 +10,6 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
  * server, which fans them out to the meeting's WebSocket/RPC subscribers.
  * </pre>
  */
-@javax.annotation.Generated(
-    value = "by gRPC proto compiler (version 1.68.0)",
-    comments = "Source: jervis/server/meeting_helper_callbacks.proto")
 @io.grpc.stub.annotations.GrpcGenerated
 public final class ServerMeetingHelperCallbacksServiceGrpc {
 
@@ -64,6 +61,21 @@ public final class ServerMeetingHelperCallbacksServiceGrpc {
         }
       };
     return ServerMeetingHelperCallbacksServiceStub.newStub(factory, channel);
+  }
+
+  /**
+   * Creates a new blocking-style stub that supports all types of calls on the service
+   */
+  public static ServerMeetingHelperCallbacksServiceBlockingV2Stub newBlockingV2Stub(
+      io.grpc.Channel channel) {
+    io.grpc.stub.AbstractStub.StubFactory<ServerMeetingHelperCallbacksServiceBlockingV2Stub> factory =
+      new io.grpc.stub.AbstractStub.StubFactory<ServerMeetingHelperCallbacksServiceBlockingV2Stub>() {
+        @java.lang.Override
+        public ServerMeetingHelperCallbacksServiceBlockingV2Stub newStub(io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+          return new ServerMeetingHelperCallbacksServiceBlockingV2Stub(channel, callOptions);
+        }
+      };
+    return ServerMeetingHelperCallbacksServiceBlockingV2Stub.newStub(factory, channel);
   }
 
   /**
@@ -164,6 +176,36 @@ public final class ServerMeetingHelperCallbacksServiceGrpc {
 
   /**
    * A stub to allow clients to do synchronous rpc calls to service ServerMeetingHelperCallbacksService.
+   * <pre>
+   * ServerMeetingHelperCallbacksService — reverse path the orchestrator's
+   * meeting-helper pipeline uses to publish helper messages (translations,
+   * suggestions, predicted questions, visual insights) back to the Kotlin
+   * server, which fans them out to the meeting's WebSocket/RPC subscribers.
+   * </pre>
+   */
+  public static final class ServerMeetingHelperCallbacksServiceBlockingV2Stub
+      extends io.grpc.stub.AbstractBlockingStub<ServerMeetingHelperCallbacksServiceBlockingV2Stub> {
+    private ServerMeetingHelperCallbacksServiceBlockingV2Stub(
+        io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+      super(channel, callOptions);
+    }
+
+    @java.lang.Override
+    protected ServerMeetingHelperCallbacksServiceBlockingV2Stub build(
+        io.grpc.Channel channel, io.grpc.CallOptions callOptions) {
+      return new ServerMeetingHelperCallbacksServiceBlockingV2Stub(channel, callOptions);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.server.HelperPushAck pushMessage(com.jervis.contracts.server.HelperPushRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getPushMessageMethod(), getCallOptions(), request);
+    }
+  }
+
+  /**
+   * A stub to allow clients to do limited synchronous rpc calls to service ServerMeetingHelperCallbacksService.
    * <pre>
    * ServerMeetingHelperCallbacksService — reverse path the orchestrator's
    * meeting-helper pipeline uses to publish helper messages (translations,

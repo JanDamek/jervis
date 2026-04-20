@@ -136,21 +136,18 @@ public object ServerTaskApiServiceGrpcKt {
     get() = ServerTaskApiServiceGrpc.getDismissUserTasksMethod()
 
   /**
-   * A stub for issuing RPCs to a(n) jervis.server.ServerTaskApiService service as suspending
-   * coroutines.
+   * A stub for issuing RPCs to a(n) jervis.server.ServerTaskApiService service as suspending coroutines.
    */
   @StubFor(ServerTaskApiServiceGrpc::class)
   public class ServerTaskApiServiceCoroutineStub @JvmOverloads constructor(
     channel: Channel,
     callOptions: CallOptions = DEFAULT,
   ) : AbstractCoroutineStub<ServerTaskApiServiceCoroutineStub>(channel, callOptions) {
-    override fun build(channel: Channel, callOptions: CallOptions):
-        ServerTaskApiServiceCoroutineStub = ServerTaskApiServiceCoroutineStub(channel, callOptions)
+    override fun build(channel: Channel, callOptions: CallOptions): ServerTaskApiServiceCoroutineStub = ServerTaskApiServiceCoroutineStub(channel, callOptions)
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -160,8 +157,7 @@ public object ServerTaskApiServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun createTask(request: CreateTaskRequest, headers: Metadata = Metadata()):
-        CreateTaskResponse = unaryRpc(
+    public suspend fun createTask(request: CreateTaskRequest, headers: Metadata = Metadata()): CreateTaskResponse = unaryRpc(
       channel,
       ServerTaskApiServiceGrpc.getCreateTaskMethod(),
       request,
@@ -171,8 +167,7 @@ public object ServerTaskApiServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -182,8 +177,7 @@ public object ServerTaskApiServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun respondToTask(request: RespondToTaskRequest, headers: Metadata = Metadata()):
-        RespondToTaskResponse = unaryRpc(
+    public suspend fun respondToTask(request: RespondToTaskRequest, headers: Metadata = Metadata()): RespondToTaskResponse = unaryRpc(
       channel,
       ServerTaskApiServiceGrpc.getRespondToTaskMethod(),
       request,
@@ -193,8 +187,7 @@ public object ServerTaskApiServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -204,8 +197,7 @@ public object ServerTaskApiServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun getTask(request: TaskIdRequest, headers: Metadata = Metadata()):
-        GetTaskResponse = unaryRpc(
+    public suspend fun getTask(request: TaskIdRequest, headers: Metadata = Metadata()): GetTaskResponse = unaryRpc(
       channel,
       ServerTaskApiServiceGrpc.getGetTaskMethod(),
       request,
@@ -215,8 +207,7 @@ public object ServerTaskApiServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -226,8 +217,7 @@ public object ServerTaskApiServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun getTaskStatus(request: TaskIdRequest, headers: Metadata = Metadata()):
-        GetTaskStatusResponse = unaryRpc(
+    public suspend fun getTaskStatus(request: TaskIdRequest, headers: Metadata = Metadata()): GetTaskStatusResponse = unaryRpc(
       channel,
       ServerTaskApiServiceGrpc.getGetTaskStatusMethod(),
       request,
@@ -237,8 +227,7 @@ public object ServerTaskApiServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -248,8 +237,7 @@ public object ServerTaskApiServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun searchTasks(request: SearchTasksRequest, headers: Metadata = Metadata()):
-        TaskListResponse = unaryRpc(
+    public suspend fun searchTasks(request: SearchTasksRequest, headers: Metadata = Metadata()): TaskListResponse = unaryRpc(
       channel,
       ServerTaskApiServiceGrpc.getSearchTasksMethod(),
       request,
@@ -259,8 +247,7 @@ public object ServerTaskApiServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -270,8 +257,7 @@ public object ServerTaskApiServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun createWorkPlan(request: CreateWorkPlanRequest, headers: Metadata =
-        Metadata()): CreateWorkPlanResponse = unaryRpc(
+    public suspend fun createWorkPlan(request: CreateWorkPlanRequest, headers: Metadata = Metadata()): CreateWorkPlanResponse = unaryRpc(
       channel,
       ServerTaskApiServiceGrpc.getCreateWorkPlanMethod(),
       request,
@@ -281,8 +267,7 @@ public object ServerTaskApiServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -292,8 +277,7 @@ public object ServerTaskApiServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun recentTasks(request: RecentTasksRequest, headers: Metadata = Metadata()):
-        TaskListResponse = unaryRpc(
+    public suspend fun recentTasks(request: RecentTasksRequest, headers: Metadata = Metadata()): TaskListResponse = unaryRpc(
       channel,
       ServerTaskApiServiceGrpc.getRecentTasksMethod(),
       request,
@@ -303,8 +287,7 @@ public object ServerTaskApiServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -314,8 +297,7 @@ public object ServerTaskApiServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun getQueue(request: GetQueueRequest, headers: Metadata = Metadata()):
-        TaskListResponse = unaryRpc(
+    public suspend fun getQueue(request: GetQueueRequest, headers: Metadata = Metadata()): TaskListResponse = unaryRpc(
       channel,
       ServerTaskApiServiceGrpc.getGetQueueMethod(),
       request,
@@ -325,8 +307,7 @@ public object ServerTaskApiServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -336,8 +317,7 @@ public object ServerTaskApiServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun retryTask(request: TaskIdRequest, headers: Metadata = Metadata()):
-        SimpleTaskActionResponse = unaryRpc(
+    public suspend fun retryTask(request: TaskIdRequest, headers: Metadata = Metadata()): SimpleTaskActionResponse = unaryRpc(
       channel,
       ServerTaskApiServiceGrpc.getRetryTaskMethod(),
       request,
@@ -347,8 +327,7 @@ public object ServerTaskApiServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -358,8 +337,7 @@ public object ServerTaskApiServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun cancelTask(request: TaskIdRequest, headers: Metadata = Metadata()):
-        SimpleTaskActionResponse = unaryRpc(
+    public suspend fun cancelTask(request: TaskIdRequest, headers: Metadata = Metadata()): SimpleTaskActionResponse = unaryRpc(
       channel,
       ServerTaskApiServiceGrpc.getCancelTaskMethod(),
       request,
@@ -369,8 +347,7 @@ public object ServerTaskApiServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -380,8 +357,7 @@ public object ServerTaskApiServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun markDone(request: TaskNoteRequest, headers: Metadata = Metadata()):
-        SimpleTaskActionResponse = unaryRpc(
+    public suspend fun markDone(request: TaskNoteRequest, headers: Metadata = Metadata()): SimpleTaskActionResponse = unaryRpc(
       channel,
       ServerTaskApiServiceGrpc.getMarkDoneMethod(),
       request,
@@ -391,8 +367,7 @@ public object ServerTaskApiServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -402,8 +377,7 @@ public object ServerTaskApiServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun reopen(request: TaskNoteRequest, headers: Metadata = Metadata()):
-        SimpleTaskActionResponse = unaryRpc(
+    public suspend fun reopen(request: TaskNoteRequest, headers: Metadata = Metadata()): SimpleTaskActionResponse = unaryRpc(
       channel,
       ServerTaskApiServiceGrpc.getReopenMethod(),
       request,
@@ -413,8 +387,7 @@ public object ServerTaskApiServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -424,8 +397,7 @@ public object ServerTaskApiServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun setPriority(request: SetPriorityRequest, headers: Metadata = Metadata()):
-        SetPriorityResponse = unaryRpc(
+    public suspend fun setPriority(request: SetPriorityRequest, headers: Metadata = Metadata()): SetPriorityResponse = unaryRpc(
       channel,
       ServerTaskApiServiceGrpc.getSetPriorityMethod(),
       request,
@@ -435,8 +407,7 @@ public object ServerTaskApiServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -446,8 +417,7 @@ public object ServerTaskApiServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun pushNotification(request: PushNotificationRequest, headers: Metadata =
-        Metadata()): PushNotificationResponse = unaryRpc(
+    public suspend fun pushNotification(request: PushNotificationRequest, headers: Metadata = Metadata()): PushNotificationResponse = unaryRpc(
       channel,
       ServerTaskApiServiceGrpc.getPushNotificationMethod(),
       request,
@@ -457,8 +427,7 @@ public object ServerTaskApiServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -468,8 +437,7 @@ public object ServerTaskApiServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun pushBackgroundResult(request: PushBackgroundResultRequest, headers: Metadata
-        = Metadata()): PushBackgroundResultResponse = unaryRpc(
+    public suspend fun pushBackgroundResult(request: PushBackgroundResultRequest, headers: Metadata = Metadata()): PushBackgroundResultResponse = unaryRpc(
       channel,
       ServerTaskApiServiceGrpc.getPushBackgroundResultMethod(),
       request,
@@ -479,8 +447,7 @@ public object ServerTaskApiServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -490,8 +457,7 @@ public object ServerTaskApiServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun tasksByState(request: TasksByStateRequest, headers: Metadata = Metadata()):
-        TaskListResponse = unaryRpc(
+    public suspend fun tasksByState(request: TasksByStateRequest, headers: Metadata = Metadata()): TaskListResponse = unaryRpc(
       channel,
       ServerTaskApiServiceGrpc.getTasksByStateMethod(),
       request,
@@ -501,8 +467,7 @@ public object ServerTaskApiServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -512,8 +477,7 @@ public object ServerTaskApiServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun agentDispatched(request: AgentDispatchedRequest, headers: Metadata =
-        Metadata()): SimpleTaskActionResponse = unaryRpc(
+    public suspend fun agentDispatched(request: AgentDispatchedRequest, headers: Metadata = Metadata()): SimpleTaskActionResponse = unaryRpc(
       channel,
       ServerTaskApiServiceGrpc.getAgentDispatchedMethod(),
       request,
@@ -523,8 +487,7 @@ public object ServerTaskApiServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -534,8 +497,7 @@ public object ServerTaskApiServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun agentCompleted(request: TaskIdRequest, headers: Metadata = Metadata()):
-        SimpleTaskActionResponse = unaryRpc(
+    public suspend fun agentCompleted(request: TaskIdRequest, headers: Metadata = Metadata()): SimpleTaskActionResponse = unaryRpc(
       channel,
       ServerTaskApiServiceGrpc.getAgentCompletedMethod(),
       request,
@@ -545,8 +507,7 @@ public object ServerTaskApiServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -556,8 +517,7 @@ public object ServerTaskApiServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun createBackgroundTask(request: CreateBackgroundTaskRequest, headers: Metadata
-        = Metadata()): CreateBackgroundTaskResponse = unaryRpc(
+    public suspend fun createBackgroundTask(request: CreateBackgroundTaskRequest, headers: Metadata = Metadata()): CreateBackgroundTaskResponse = unaryRpc(
       channel,
       ServerTaskApiServiceGrpc.getCreateBackgroundTaskMethod(),
       request,
@@ -567,8 +527,7 @@ public object ServerTaskApiServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -578,8 +537,7 @@ public object ServerTaskApiServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun dispatchCodingAgent(request: DispatchCodingAgentRequest, headers: Metadata =
-        Metadata()): DispatchCodingAgentResponse = unaryRpc(
+    public suspend fun dispatchCodingAgent(request: DispatchCodingAgentRequest, headers: Metadata = Metadata()): DispatchCodingAgentResponse = unaryRpc(
       channel,
       ServerTaskApiServiceGrpc.getDispatchCodingAgentMethod(),
       request,
@@ -589,8 +547,7 @@ public object ServerTaskApiServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -600,8 +557,7 @@ public object ServerTaskApiServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun listUserTasks(request: ListUserTasksRequest, headers: Metadata = Metadata()):
-        TaskListResponse = unaryRpc(
+    public suspend fun listUserTasks(request: ListUserTasksRequest, headers: Metadata = Metadata()): TaskListResponse = unaryRpc(
       channel,
       ServerTaskApiServiceGrpc.getListUserTasksMethod(),
       request,
@@ -611,8 +567,7 @@ public object ServerTaskApiServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -622,8 +577,7 @@ public object ServerTaskApiServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun getUserTask(request: TaskIdRequest, headers: Metadata = Metadata()):
-        UserTaskResponse = unaryRpc(
+    public suspend fun getUserTask(request: TaskIdRequest, headers: Metadata = Metadata()): UserTaskResponse = unaryRpc(
       channel,
       ServerTaskApiServiceGrpc.getGetUserTaskMethod(),
       request,
@@ -633,8 +587,7 @@ public object ServerTaskApiServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -644,8 +597,7 @@ public object ServerTaskApiServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun respondToUserTask(request: RespondToUserTaskRequest, headers: Metadata =
-        Metadata()): SimpleTaskActionResponse = unaryRpc(
+    public suspend fun respondToUserTask(request: RespondToUserTaskRequest, headers: Metadata = Metadata()): SimpleTaskActionResponse = unaryRpc(
       channel,
       ServerTaskApiServiceGrpc.getRespondToUserTaskMethod(),
       request,
@@ -655,8 +607,7 @@ public object ServerTaskApiServiceGrpcKt {
 
     /**
      * Executes this RPC and returns the response message, suspending until the RPC completes
-     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a
-     * corresponding
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
      * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
      * with the corresponding exception as a cause.
      *
@@ -666,8 +617,7 @@ public object ServerTaskApiServiceGrpcKt {
      *
      * @return The single response from the server.
      */
-    public suspend fun dismissUserTasks(request: DismissUserTasksRequest, headers: Metadata =
-        Metadata()): DismissUserTasksResponse = unaryRpc(
+    public suspend fun dismissUserTasks(request: DismissUserTasksRequest, headers: Metadata = Metadata()): DismissUserTasksResponse = unaryRpc(
       channel,
       ServerTaskApiServiceGrpc.getDismissUserTasksMethod(),
       request,
@@ -677,8 +627,7 @@ public object ServerTaskApiServiceGrpcKt {
   }
 
   /**
-   * Skeletal implementation of the jervis.server.ServerTaskApiService service based on Kotlin
-   * coroutines.
+   * Skeletal implementation of the jervis.server.ServerTaskApiService service based on Kotlin coroutines.
    */
   public abstract class ServerTaskApiServiceCoroutineImplBase(
     coroutineContext: CoroutineContext = EmptyCoroutineContext,
@@ -687,346 +636,289 @@ public object ServerTaskApiServiceGrpcKt {
      * Returns the response to an RPC for jervis.server.ServerTaskApiService.CreateTask.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun createTask(request: CreateTaskRequest): CreateTaskResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.CreateTask is unimplemented"))
+    public open suspend fun createTask(request: CreateTaskRequest): CreateTaskResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.CreateTask is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerTaskApiService.RespondToTask.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun respondToTask(request: RespondToTaskRequest): RespondToTaskResponse =
-        throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.RespondToTask is unimplemented"))
+    public open suspend fun respondToTask(request: RespondToTaskRequest): RespondToTaskResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.RespondToTask is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerTaskApiService.GetTask.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun getTask(request: TaskIdRequest): GetTaskResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.GetTask is unimplemented"))
+    public open suspend fun getTask(request: TaskIdRequest): GetTaskResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.GetTask is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerTaskApiService.GetTaskStatus.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun getTaskStatus(request: TaskIdRequest): GetTaskStatusResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.GetTaskStatus is unimplemented"))
+    public open suspend fun getTaskStatus(request: TaskIdRequest): GetTaskStatusResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.GetTaskStatus is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerTaskApiService.SearchTasks.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun searchTasks(request: SearchTasksRequest): TaskListResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.SearchTasks is unimplemented"))
+    public open suspend fun searchTasks(request: SearchTasksRequest): TaskListResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.SearchTasks is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerTaskApiService.CreateWorkPlan.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun createWorkPlan(request: CreateWorkPlanRequest): CreateWorkPlanResponse =
-        throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.CreateWorkPlan is unimplemented"))
+    public open suspend fun createWorkPlan(request: CreateWorkPlanRequest): CreateWorkPlanResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.CreateWorkPlan is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerTaskApiService.RecentTasks.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun recentTasks(request: RecentTasksRequest): TaskListResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.RecentTasks is unimplemented"))
+    public open suspend fun recentTasks(request: RecentTasksRequest): TaskListResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.RecentTasks is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerTaskApiService.GetQueue.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun getQueue(request: GetQueueRequest): TaskListResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.GetQueue is unimplemented"))
+    public open suspend fun getQueue(request: GetQueueRequest): TaskListResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.GetQueue is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerTaskApiService.RetryTask.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun retryTask(request: TaskIdRequest): SimpleTaskActionResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.RetryTask is unimplemented"))
+    public open suspend fun retryTask(request: TaskIdRequest): SimpleTaskActionResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.RetryTask is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerTaskApiService.CancelTask.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun cancelTask(request: TaskIdRequest): SimpleTaskActionResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.CancelTask is unimplemented"))
+    public open suspend fun cancelTask(request: TaskIdRequest): SimpleTaskActionResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.CancelTask is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerTaskApiService.MarkDone.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun markDone(request: TaskNoteRequest): SimpleTaskActionResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.MarkDone is unimplemented"))
+    public open suspend fun markDone(request: TaskNoteRequest): SimpleTaskActionResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.MarkDone is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerTaskApiService.Reopen.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun reopen(request: TaskNoteRequest): SimpleTaskActionResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.Reopen is unimplemented"))
+    public open suspend fun reopen(request: TaskNoteRequest): SimpleTaskActionResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.Reopen is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerTaskApiService.SetPriority.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun setPriority(request: SetPriorityRequest): SetPriorityResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.SetPriority is unimplemented"))
+    public open suspend fun setPriority(request: SetPriorityRequest): SetPriorityResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.SetPriority is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerTaskApiService.PushNotification.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun pushNotification(request: PushNotificationRequest):
-        PushNotificationResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.PushNotification is unimplemented"))
+    public open suspend fun pushNotification(request: PushNotificationRequest): PushNotificationResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.PushNotification is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerTaskApiService.PushBackgroundResult.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun pushBackgroundResult(request: PushBackgroundResultRequest):
-        PushBackgroundResultResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.PushBackgroundResult is unimplemented"))
+    public open suspend fun pushBackgroundResult(request: PushBackgroundResultRequest): PushBackgroundResultResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.PushBackgroundResult is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerTaskApiService.TasksByState.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun tasksByState(request: TasksByStateRequest): TaskListResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.TasksByState is unimplemented"))
+    public open suspend fun tasksByState(request: TasksByStateRequest): TaskListResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.TasksByState is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerTaskApiService.AgentDispatched.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun agentDispatched(request: AgentDispatchedRequest):
-        SimpleTaskActionResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.AgentDispatched is unimplemented"))
+    public open suspend fun agentDispatched(request: AgentDispatchedRequest): SimpleTaskActionResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.AgentDispatched is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerTaskApiService.AgentCompleted.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun agentCompleted(request: TaskIdRequest): SimpleTaskActionResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.AgentCompleted is unimplemented"))
+    public open suspend fun agentCompleted(request: TaskIdRequest): SimpleTaskActionResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.AgentCompleted is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerTaskApiService.CreateBackgroundTask.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun createBackgroundTask(request: CreateBackgroundTaskRequest):
-        CreateBackgroundTaskResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.CreateBackgroundTask is unimplemented"))
+    public open suspend fun createBackgroundTask(request: CreateBackgroundTaskRequest): CreateBackgroundTaskResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.CreateBackgroundTask is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerTaskApiService.DispatchCodingAgent.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun dispatchCodingAgent(request: DispatchCodingAgentRequest):
-        DispatchCodingAgentResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.DispatchCodingAgent is unimplemented"))
+    public open suspend fun dispatchCodingAgent(request: DispatchCodingAgentRequest): DispatchCodingAgentResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.DispatchCodingAgent is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerTaskApiService.ListUserTasks.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun listUserTasks(request: ListUserTasksRequest): TaskListResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.ListUserTasks is unimplemented"))
+    public open suspend fun listUserTasks(request: ListUserTasksRequest): TaskListResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.ListUserTasks is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerTaskApiService.GetUserTask.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun getUserTask(request: TaskIdRequest): UserTaskResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.GetUserTask is unimplemented"))
+    public open suspend fun getUserTask(request: TaskIdRequest): UserTaskResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.GetUserTask is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerTaskApiService.RespondToUserTask.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun respondToUserTask(request: RespondToUserTaskRequest):
-        SimpleTaskActionResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.RespondToUserTask is unimplemented"))
+    public open suspend fun respondToUserTask(request: RespondToUserTaskRequest): SimpleTaskActionResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.RespondToUserTask is unimplemented"))
 
     /**
      * Returns the response to an RPC for jervis.server.ServerTaskApiService.DismissUserTasks.
      *
      * If this method fails with a [StatusException], the RPC will fail with the corresponding
-     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException],
-     * the RPC will fail
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
      * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
      * fail with `Status.UNKNOWN` with the exception as a cause.
      *
      * @param request The request from the client.
      */
-    public open suspend fun dismissUserTasks(request: DismissUserTasksRequest):
-        DismissUserTasksResponse = throw
-        StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.DismissUserTasks is unimplemented"))
+    public open suspend fun dismissUserTasks(request: DismissUserTasksRequest): DismissUserTasksResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerTaskApiService.DismissUserTasks is unimplemented"))
 
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(
