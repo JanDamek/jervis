@@ -249,12 +249,28 @@ abstract class EmailPollingHandlerBase(
         message: Message,
         clientId: ClientId,
     ): Triple<String?, String?, List<EmailAttachment>>? {
+        // Exchange/O365 IMAP servers occasionally refuse the server-side
+        // BODYSTRUCTURE parse for messages with non-conformant MIME headers
+        // (Alza transactional emails, newsletters with exotic encodings, …).
+        // In that case angus-mail throws "Unable to load BODYSTRUCTURE".
+        // Fall back to fetching the raw RFC822 body ourselves and re-parsing
+        // it as a fresh MimeMessage — the client-side parser is more
+        // forgiving than the server's report.
         val content =
             try {
                 message.content
             } catch (e: jakarta.mail.MessagingException) {
-                logger.warn { "Failed to load message content (BODYSTRUCTURE error): ${e.message}" }
-                return null
+                val reparsed = tryRawFetchAndReparse(message, e)
+                if (reparsed == null) {
+                    logger.warn { "Failed to load message content (BODYSTRUCTURE error, raw fallback unavailable): ${e.message}" }
+                    return null
+                }
+                try {
+                    reparsed.content
+                } catch (e2: Exception) {
+                    logger.warn { "Raw re-parse succeeded but content() failed: ${e2.message}" }
+                    return null
+                }
             } catch (e: Exception) {
                 logger.warn { "Failed to parse message content: ${e.message}" }
                 return null
@@ -357,6 +373,33 @@ abstract class EmailPollingHandlerBase(
         } catch (e: Exception) {
             logger.warn(e) { "Failed to extract/store email attachment binary: $filename" }
             Pair(null, null)
+        }
+    }
+
+    /**
+     * Fallback for BODYSTRUCTURE failures — fetch the raw RFC822 bytes
+     * directly from IMAP (bypasses server-side MIME parsing) and build a
+     * fresh MimeMessage from the stream. angus-mail's client-side parser
+     * accepts some non-conformant messages that the Exchange/O365 BODYSTRUCTURE
+     * reply refuses to describe.
+     *
+     * Returns null if the message is not an IMAPMessage or the raw fetch
+     * likewise fails — caller will then drop content.
+     */
+    private fun tryRawFetchAndReparse(message: Message, original: Exception): jakarta.mail.internet.MimeMessage? {
+        val imapMessage = message as? org.eclipse.angus.mail.imap.IMAPMessage ?: return null
+        return try {
+            val stream = imapMessage.mimeStream
+            // A default Session is fine — we only need it as a parsing context
+            // for the MimeMessage constructor; nothing connects back to the
+            // IMAP server from the re-parsed message.
+            val session = jakarta.mail.Session.getInstance(java.util.Properties())
+            val reparsed = jakarta.mail.internet.MimeMessage(session, stream)
+            logger.info { "Raw RFC822 fetch fallback OK for message ${runCatching { message.messageNumber }.getOrNull()} (original BODYSTRUCTURE error: ${original.message})" }
+            reparsed
+        } catch (e: Exception) {
+            logger.warn { "Raw fetch fallback failed: ${e.message}" }
+            null
         }
     }
 }
