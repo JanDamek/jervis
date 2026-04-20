@@ -38,5 +38,6 @@ grpcio-tools==1.78.0
 protobuf==6.31.1
 
 # MongoDB async + sync
-motor==3.6.0
-pymongo==4.10.1
+# pymongo bounded by langgraph-checkpoint-mongodb 0.3.x → >=4.12,<4.16.
+motor==3.7.1
+pymongo==4.13.0
