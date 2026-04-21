@@ -60,6 +60,11 @@ class ServerO365SessionGrpcImpl(
 
         when (request.state) {
             "AWAITING_MFA" -> {
+                // MFA is ephemeral — the user approves a number (or types a
+                // code) on their phone and the pod self-heals into ACTIVE.
+                // Server has nothing to react to, so don't write a
+                // TaskDocument / emitUserTaskCreated / pollute the chat UI.
+                // Push straight to FCM + APNs and move on.
                 val title = buildString {
                     append("Microsoft 365: ")
                     when (request.mfaType) {
@@ -71,21 +76,15 @@ class ServerO365SessionGrpcImpl(
                         else -> append("Vyžadováno dvoufaktorové ověření")
                     }
                 }
-                val description = buildString {
-                    appendLine("Připojení **${connection.name}** vyžaduje MFA ověření.")
-                    request.mfaMessage.takeIf { it.isNotBlank() }?.let { appendLine(it) }
-                    request.mfaNumber.takeIf { it.isNotBlank() }?.let { appendLine("**Číslo k potvrzení: $it**") }
-                    request.vncUrl.takeIf { it.isNotBlank() }?.let { appendLine("\n[Otevřít vzdálený přístup k prohlížeči]($it)") }
+                val body = buildString {
+                    request.mfaNumber.takeIf { it.isNotBlank() }?.let { append("Číslo: $it — ") }
+                    append("Připojení ${connection.name}")
                 }
                 for (cid in clientIds) {
-                    createSessionNotification(
+                    sendMfaPushDirect(
                         clientId = cid,
-                        connectionName = connection.name,
                         title = title,
-                        description = description,
-                        interruptAction = "o365_mfa",
-                        browserPoolClientId = request.connectionId,
-                        alwaysPush = true,
+                        body = body,
                         mfaType = request.mfaType.takeIf { it.isNotBlank() },
                         mfaNumber = request.mfaNumber.takeIf { it.isNotBlank() },
                     )
@@ -192,6 +191,26 @@ class ServerO365SessionGrpcImpl(
         val priority = priorityFor(request.kind)
         val alwaysPush = alwaysPushFor(request.kind)
 
+        // MFA short-circuit: the server has nothing to "know" about an
+        // MFA challenge — the pod handles the flow end-to-end once the
+        // user approves on their phone. Skip TaskDocument.save /
+        // emitUserTaskCreated for this kind so the chat UI doesn't fill
+        // with ephemeral "Potvrďte číslo 68" rows that get superseded
+        // seconds later. Direct push only.
+        if (request.kind == "mfa") {
+            for (cid in clientIds) {
+                sendMfaPushDirect(
+                    clientId = cid,
+                    title = title,
+                    body = description,
+                    mfaType = null,
+                    mfaNumber = request.mfaCode.takeIf { it.isNotBlank() },
+                )
+            }
+            return NotifyResponse.newBuilder()
+                .setStatus("ok").setKind(request.kind).setPriority(priority).build()
+        }
+
         for (cid in clientIds) {
             val hasActiveUi = if (alwaysPush) false else notificationRpc.hasActiveSubscribers(cid.toString())
             val task = TaskDocument(
@@ -255,64 +274,40 @@ class ServerO365SessionGrpcImpl(
         listOf(ClientId(ObjectId("68a332361b04695a243e5ae8")))
     }
 
-    private suspend fun createSessionNotification(
+    /**
+     * MFA fast path: send FCM + APNs push straight to the user's devices
+     * without creating a TaskDocument or emitting a `userTaskCreated`
+     * event. MFA is a transient challenge — the pod resolves it the
+     * moment the user approves on the Authenticator app, so there is no
+     * ongoing task for the server to track, reply to, or surface in the
+     * chat UI. Everything else (urgent_message, meeting_invite, …) still
+     * goes through the full `notify` path so the server has context for
+     * follow-up replies.
+     */
+    private suspend fun sendMfaPushDirect(
         clientId: ClientId,
-        connectionName: String,
         title: String,
-        description: String,
-        interruptAction: String,
-        browserPoolClientId: String? = null,
-        alwaysPush: Boolean = false,
-        mfaType: String? = null,
-        mfaNumber: String? = null,
+        body: String,
+        mfaType: String?,
+        mfaNumber: String?,
     ) {
-        val hasActiveUi = if (alwaysPush) false else notificationRpc.hasActiveSubscribers(clientId.toString())
-        val task = TaskDocument(
-            clientId = clientId,
-            taskName = title,
-            content = description,
-            state = TaskStateEnum.USER_TASK,
-            type = TaskTypeEnum.SYSTEM,
-            sourceUrn = SourceUrn("o365-browser-pool::event:session-notification"),
-            pendingUserQuestion = title,
-            userQuestionContext = description,
-            priorityScore = 70,
-            lastActivityAt = Instant.now(),
-            actionType = browserPoolClientId,
-        )
-        taskRepository.save(task)
-
-        notificationRpc.emitUserTaskCreated(
-            clientId = clientId.toString(),
-            taskId = task.id.toString(),
-            title = title,
-            interruptAction = interruptAction,
-            interruptDescription = description,
-            connectionName = connectionName,
-            mfaType = mfaType,
-            mfaNumber = mfaNumber,
-        )
-
-        if (!hasActiveUi) {
-            val pushData = buildMap {
-                put("taskId", task.id.toString())
-                put("type", "user_task")
-                put("interruptAction", interruptAction)
-                mfaType?.let { put("mfaType", it) }
-                mfaNumber?.let { put("mfaNumber", it) }
-            }
-            try {
-                fcmPushService.sendPushNotification(clientId.toString(), "Microsoft 365", title, pushData)
-            } catch (e: Exception) {
-                logger.warn { "FCM push failed for $clientId: ${e.message}" }
-            }
-            try {
-                apnsPushService.sendPushNotification(clientId.toString(), "Microsoft 365", title, pushData)
-            } catch (e: Exception) {
-                logger.warn { "APNs push failed for $clientId: ${e.message}" }
-            }
+        val pushData = buildMap {
+            put("type", "mfa")
+            put("interruptAction", "o365_mfa")
+            mfaType?.let { put("mfaType", it) }
+            mfaNumber?.let { put("mfaNumber", it) }
         }
-        logger.info { "Created O365 session notification for $clientId: $title" }
+        try {
+            fcmPushService.sendPushNotification(clientId.toString(), title, body, pushData)
+        } catch (e: Exception) {
+            logger.warn { "FCM MFA push failed for $clientId: ${e.message}" }
+        }
+        try {
+            apnsPushService.sendPushNotification(clientId.toString(), title, body, pushData)
+        } catch (e: Exception) {
+            logger.warn { "APNs MFA push failed for $clientId: ${e.message}" }
+        }
+        logger.info { "MFA push sent to $clientId: $title" }
     }
 
     private fun priorityFor(kind: String): Int = when (kind) {
