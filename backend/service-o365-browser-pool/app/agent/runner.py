@@ -257,9 +257,13 @@ class PodAgent:
             for t in tabs[:10]
         ]
         tab_block = "\n".join(tab_lines) if tab_lines else "- (no tabs registered)"
+        login_email = (self.ctx.credentials or {}).get("email", "") or "(none)"
         return (
             "CURRENT STATE:\n"
             f"  pod_state: {sm.state.value}\n"
+            f"  login_email: {login_email}  # the account this pod owns — if "
+            f"an account-picker page asks which account to use, select the "
+            f"tile matching this email.\n"
             f"  last_app_state: {self.ctx.last_app_state}\n"
             f"  last_observation_kind: {self.ctx.last_observation_kind or 'none'}\n"
             f"  last_observation_at: {self.ctx.last_observation_at or 'never'}\n"

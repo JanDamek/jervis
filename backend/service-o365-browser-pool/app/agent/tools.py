@@ -176,8 +176,10 @@ async def look_at_screen(
     )
 
     body_parts: list[str] = []
+    chunk_count = 0
     try:
         async for chunk in router_inference_stub().Generate(request):
+            chunk_count += 1
             if chunk.response_delta:
                 body_parts.append(chunk.response_delta)
     except Exception as e:
@@ -185,6 +187,10 @@ async def look_at_screen(
                 "visible_actions": [], "detected_text": {}}
 
     body = "".join(body_parts)
+    logger.info(
+        "look_at_screen: chunks=%d body_len=%d preview=%r",
+        chunk_count, len(body), body[:300],
+    )
     parsed = _try_parse_vlm_json(body)
     ctx.last_observation_kind = "vlm"
     ctx.last_observation_at = _utcnow_iso()

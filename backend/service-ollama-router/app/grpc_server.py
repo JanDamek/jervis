@@ -588,8 +588,14 @@ def _ollama_chunk_to_chat(chunk: dict) -> inference_pb2.ChatChunk:
 
 
 def _ollama_chunk_to_generate(chunk: dict) -> inference_pb2.GenerateChunk:
+    # Qwen3-VL-tool and other reasoning models route the actual text
+    # through Ollama's `thinking` field (chain-of-thought stream) rather
+    # than `response`. We concat both so the semantic content isn't lost
+    # — the consumer of Generate wants the final text output, it doesn't
+    # care which field Ollama used to transport it.
+    delta = (chunk.get("response", "") or "") + (chunk.get("thinking", "") or "")
     return inference_pb2.GenerateChunk(
-        response_delta=chunk.get("response", "") or "",
+        response_delta=delta,
         done=bool(chunk.get("done", False)),
         prompt_tokens=int(chunk.get("prompt_eval_count", 0) or 0),
         completion_tokens=int(chunk.get("eval_count", 0) or 0),
