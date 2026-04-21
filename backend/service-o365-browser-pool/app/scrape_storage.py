@@ -530,6 +530,55 @@ class ScrapeStorage:
             {"_id": 0},
         )
 
+    async def chat_sync_state(
+        self,
+        connection_id: str,
+        chat_id: str,
+        sample_size: int = 20,
+    ) -> dict:
+        """Summary of what we already scraped for a given chat.
+
+        Returned to the agent so it can skip messages that are already in
+        Mongo. Caller scrolls the chat UI until it hits one of the known
+        message hashes (or the known timestamp) and stops — everything
+        newer is stored via `store_message`. On first scrape
+        `message_count` is 0 and the agent paginates back as deep as
+        configured.
+
+        - `message_count`: total stored messages for this (connection, chat).
+        - `last_message_timestamp`: ISO timestamp of the newest stored row.
+        - `known_message_hashes`: up to `sample_size` of the most recent
+          messageHash values; the agent matches these against DOM
+          `data-mid` attributes to detect the resume point.
+        """
+        empty = {
+            "message_count": 0,
+            "last_message_timestamp": None,
+            "known_message_hashes": [],
+        }
+        if self._db is None:
+            return empty
+        conn_oid = _oid(connection_id)
+        collection = self._db["o365_scrape_messages"]
+        count = await collection.count_documents({
+            "connectionId": conn_oid,
+            "chatName": chat_id,
+        })
+        if count == 0:
+            return empty
+        cursor = collection.find(
+            {"connectionId": conn_oid, "chatName": chat_id},
+            {"messageHash": 1, "timestamp": 1, "_id": 0},
+        ).sort("timestamp", -1).limit(sample_size)
+        rows = [r async for r in cursor]
+        return {
+            "message_count": count,
+            "last_message_timestamp": rows[0].get("timestamp") if rows else None,
+            "known_message_hashes": [
+                r["messageHash"] for r in rows if r.get("messageHash")
+            ],
+        }
+
     async def get_discovery_resources(
         self,
         connection_id: str,

@@ -202,15 +202,35 @@ CALENDAR_READ (common on education tenants).
 =================================================================
 SCRAPING (agent composes from primitives — no compound tools)
 =================================================================
+GOAL: every message that exists in Teams MUST eventually end up in
+Mongo. Unread > 0 drives urgency (push notification window), but the
+scrape itself ignores the unread flag — a chat the user already
+"read" on their phone is still missing from Mongo. Scrape all chats.
+
 The decision tree every cycle:
   1. inspect_dom on the sidebar → get chat rows, data-chat-id, unread.
   2. For each chat row: `store_chat_row(chat_id, chat_name, is_direct,
      is_group, unread_count, unread_direct_count, last_message_at)`.
-  3. For direct messages with unread > 0: open the chat (click by
-     CSS selector), inspect_dom the conversation → for each visible
-     message call `store_message(chat_id, chat_name, message_id=<DOM
-     data-mid or empty>, sender, content, timestamp, is_mention,
-     attachment_kind)`. Then `mark_seen(chat_id)`.
+  3. For each chat (unread OR not):
+     a. `chat_sync_state(chat_id)` → get `message_count`,
+        `last_message_timestamp`, `known_message_hashes` (up to 20
+        recent hashes). This is your resume marker.
+     b. Open the chat (click by CSS selector) and `inspect_dom` the
+        visible messages.
+     c. Walk messages top-down (newest first in the DOM). For each
+        message whose `data-mid` / computed hash is NOT in
+        `known_message_hashes` AND whose timestamp is newer than
+        `last_message_timestamp`: `store_message(chat_id, chat_name,
+        message_id=<DOM data-mid or empty>, sender, content,
+        timestamp, is_mention, attachment_kind)`.
+     d. Once you hit a known hash (or exhausted the visible window),
+        stop scrolling. If `message_count == 0` (first scrape),
+        paginate backward with `scroll` until the chat hits its
+        historical start OR you've stored ~500 messages — whichever
+        first. Don't backfill further in a single cycle, Mongo can
+        be topped up next visit.
+     e. `mark_seen(chat_id)` only if the chat was unread (keeps the
+        ledger honest for push dedup).
   4. For @mentions in any chat → `notify_user(kind='urgent_message',
      chat_id=<slug>, sender=<name>, preview=<short>)`. The server
      dedupes per 60 s window.
@@ -219,10 +239,14 @@ The decision tree every cycle:
      description?)`. UI maps resources to projects.
 
 Cadence (self-scheduled via `wait`):
-  chat list:   30 s while unread > 0, 5 min idle
-  open chat:   15 s while user is actively reading
-  mail:        15 min
-  calendar:    30 min
+  chat list:        30 s while unread > 0, 5 min idle
+  open chat (un):   15 s while user is actively reading
+  open chat (all):  1 full sweep per hour — visit every chat in the
+                    sidebar, call chat_sync_state, store anything
+                    missing. Persist progress via the hashes; no
+                    in-memory bookmark needed.
+  mail:             15 min
+  calendar:         30 min
 
 Always sequential, never parallel.
 

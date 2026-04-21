@@ -1071,6 +1071,29 @@ async def mark_seen(chat_id: str) -> dict:
     return {"ok": True, "chat_id": chat_id}
 
 
+@tool
+async def chat_sync_state(chat_id: str) -> dict:
+    """Return what Mongo already has for this chat so you can resume
+    scraping without re-storing known messages.
+
+    Returns `{message_count, last_message_timestamp,
+    known_message_hashes: list}`. `known_message_hashes` is up to 20
+    of the most-recent stored messageHashes — when you scroll the chat
+    in the UI, stop at the first DOM `data-mid` that matches one of
+    these hashes (everything above it is new and should be stored via
+    `store_message`). On first scrape the list is empty and you
+    paginate until a reasonable backfill depth.
+
+    Args:
+        chat_id: The same slug you pass to `store_chat_row`.
+    """
+    ctx = get_pod_context()
+    if not chat_id:
+        return {"ok": False, "error": "missing chat_id"}
+    state = await ctx.storage.chat_sync_state(ctx.connection_id, chat_id)
+    return {"ok": True, "chat_id": chat_id, **state}
+
+
 # ---- Meeting presence + recording --------------------------------------
 
 @tool
@@ -1370,7 +1393,7 @@ ALL_TOOLS = [
     query_user_activity, is_work_hours,
     # Storage primitives
     store_chat_row, store_message, store_discovered_resource,
-    store_calendar_event, store_mail_header, mark_seen,
+    store_calendar_event, store_mail_header, mark_seen, chat_sync_state,
     # Meeting
     meeting_presence_report, start_meeting_recording, stop_meeting_recording,
     leave_meeting,
