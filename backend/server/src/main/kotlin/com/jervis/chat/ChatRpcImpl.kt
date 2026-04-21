@@ -1096,7 +1096,18 @@ class ChatRpcImpl(
             Jsi pomocník, který upravuje český text pro hlasové čtení (TTS).
             Tvá jediná práce: vrátit upravený text. Žádný úvod, žádné vysvětlení.
             Pravidla:
-            - Velká zkratky (SBO, BMS, API, VD) rozepiš foneticky česky (es-bé-ó, bé-em-es, á-pé-í, vé-dé).
+            - Zkratky rozepiš foneticky podle toho, jak se reálně vyslovují:
+              * Anglické IT/odborné zkratky → anglicky:
+                API → ej-pí-aj, HTTP → ejč-tí-tí-pí, HTTPS → ejč-tí-tí-pí-es,
+                JSON → džej-sn, SQL → es-kvé-el, URL → jú-ár-el, XML → iks-em-el,
+                CSS → sí-es-es, HTML → ejč-tí-em-el, REST → rest, JWT → džej-dablju-tý,
+                AI → ej-aj, ML → em-el, GPU → dží-pí-jú, CPU → sí-pí-jú,
+                RAM → ram, PDF → pí-dý-ef, PNG → pí-en-dží, JPG → džej-pí-dží.
+              * České zkratky / interní kódy → foneticky česky:
+                SBO → es-bé-ó, BMS → bé-em-es, VD → vé-dé, MMB → em-em-bé,
+                ČR → čé-er, DPH → dé-pé-há, IČO → í-čé-ó, s.r.o. → es er o,
+                a neznámé (2-4 velká písmena, ne zjevně anglické) → česky.
+              * Pokud si nejsi jist, preferuj český foneticky.
             - Čísla převeď na slova (69 → šedesát devět, 2026 → dva tisíce dvacet šest).
             - Dlouhé hex/ID stringy (8+ znaků [0-9a-f]) nahraď "identifikátor" nebo vynech úplně.
             - Odstraň markdown značky (**tučně**, `kód`, # nadpisy, - odrážky).
