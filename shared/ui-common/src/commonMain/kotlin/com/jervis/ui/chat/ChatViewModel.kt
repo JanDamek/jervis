@@ -1982,9 +1982,13 @@ class ChatViewModel(
         ttsJob = scope.launch {
             try {
                 println("TTS: streamTts via kRPC text=${text.take(50)}")
-                connectionManager.resilientFlow { services ->
-                    services.chatService.streamTts(text)
-                }.collect { event ->
+                // One-shot stream — do NOT use resilientFlow (which auto-resubscribes
+                // when the inner flow completes). TTS terminates with a single DONE
+                // event, which resilientFlow would treat as "stream dropped" and
+                // kick off an infinite re-subscribe loop — the exact pathology
+                // seen in the UI log (HEADER → DONE → re-subscribe, repeated).
+                val services = connectionManager.awaitConnected()
+                services.chatService.streamTts(text).collect { event ->
                     when (event.type) {
                         com.jervis.dto.chat.TtsChunkEventType.HEADER -> {
                             val sampleRate = if (event.sampleRate > 0) event.sampleRate else 24000
