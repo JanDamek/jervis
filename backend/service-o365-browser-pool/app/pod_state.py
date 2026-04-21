@@ -22,12 +22,25 @@ class PodState(str, Enum):
     EXECUTING_INSTRUCTION = "EXECUTING_INSTRUCTION"
 
 
-# Valid state transitions
+# Valid state transitions. On fresh cold-start the agent frequently
+# goes STARTING → AWAITING_MFA in a single step — number-match MFA is
+# visible on the account-picker/password flow before we ever observe a
+# "logged-in without challenge" state, and forcing an intermediate
+# AUTHENTICATING would just add a spurious report_state round trip.
+# Same for ACTIVE → AUTHENTICATING: a session that silently expires
+# mid-run needs to be able to drop back into the login flow without
+# first transitioning through RECOVERING.
 _TRANSITIONS: dict[PodState, set[PodState]] = {
-    PodState.STARTING: {PodState.AUTHENTICATING, PodState.ACTIVE, PodState.ERROR},
+    PodState.STARTING: {
+        PodState.AUTHENTICATING, PodState.AWAITING_MFA,
+        PodState.ACTIVE, PodState.ERROR,
+    },
     PodState.AUTHENTICATING: {PodState.AWAITING_MFA, PodState.ACTIVE, PodState.ERROR},
     PodState.AWAITING_MFA: {PodState.ACTIVE, PodState.ERROR, PodState.AUTHENTICATING},
-    PodState.ACTIVE: {PodState.RECOVERING, PodState.ERROR},
+    PodState.ACTIVE: {
+        PodState.RECOVERING, PodState.AUTHENTICATING,
+        PodState.AWAITING_MFA, PodState.ERROR,
+    },
     PodState.RECOVERING: {PodState.AUTHENTICATING, PodState.ERROR},
     PodState.ERROR: {PodState.EXECUTING_INSTRUCTION, PodState.AUTHENTICATING},
     PodState.EXECUTING_INSTRUCTION: {PodState.ACTIVE, PodState.ERROR, PodState.AUTHENTICATING},
