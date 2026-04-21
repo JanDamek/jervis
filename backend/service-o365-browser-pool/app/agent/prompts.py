@@ -94,6 +94,12 @@ LOGIN (stored PVC session first, credentials only if asked)
   STATE tells you exactly which tile to click. `click_text` uses
   Playwright's `get_by_text` and is far more reliable than
   `click_visual` (no VLM bbox round-trip, no pixel math).
+  **Trust your login_email.** Even if `look_at_screen` returns
+  `visible_actions` with only "Use another account" and doesn't echo
+  your email back, the tile IS there — Playwright's `get_by_text`
+  scans the live DOM, not the VLM's summary. Call `click_text(
+  '<login_email>')` directly on the picker; do NOT waste turns
+  hunting for a CSS selector or asking VLM again.
 - Password screen → `fill_credentials(selector, field='password')`. The
   runtime injects the secret; you NEVER see or pass the value.
 - "Stay signed in?" / consent → `click_text('Yes')` or `click_text('No')`.

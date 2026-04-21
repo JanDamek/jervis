@@ -239,9 +239,15 @@ def _try_parse_vlm_json(body: str) -> dict:
             {"label": str(a.get("label", "")), "bbox": a.get("bbox") or {}}
             for a in va if isinstance(a, dict)
         ][:50]
-    dt = data.get("detected_text") or {}
+    dt = data.get("detected_text")
     if isinstance(dt, dict):
         out["detected_text"] = {str(k): str(v) for k, v in dt.items()}
+    elif isinstance(dt, str) and dt:
+        # VLM sometimes puts a single focused answer as a bare string
+        # instead of {"answer": "..."}; preserve it under `answer`.
+        out["detected_text"] = {"answer": dt}
+    elif isinstance(dt, list):
+        out["detected_text"] = {str(i): str(v) for i, v in enumerate(dt)}
     return out
 
 

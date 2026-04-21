@@ -287,7 +287,14 @@ class PodAgent:
 
         config: dict[str, Any] = {
             "configurable": {"thread_id": self.connection_id},
-            "recursion_limit": 40,
+            # Login flow + chat scrape cycles routinely need many tool
+            # calls per outer invocation (observe → inspect_dom →
+            # click_text → fill → wait → look_at_screen → …). 40 was
+            # hit on the SSO login path (mmb 2026-04-21); 200 gives
+            # the agent headroom for long flows without risking
+            # runaway loops — outer runner's adaptive_sleep still
+            # bounds pacing.
+            "recursion_limit": 200,
         }
 
         # Seed only if the thread has no previous state (first start for this
