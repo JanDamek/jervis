@@ -279,7 +279,7 @@ class PodAgent:
                     connection_id=self.connection_id,
                     kind="error",
                     message=(
-                        f"Pod agent uvízl — opakoval {name}({args_repr[:120]}) "
+                        f"Pod agent uvízl — opakoval {name}({args_repr}) "
                         f"{STUCK_REPEAT_THRESHOLD}× v řadě. Čeká na instrukci."
                     ),
                 ),
@@ -330,7 +330,7 @@ class PodAgent:
         tabs = self.ctx.tab_registry.list(self.ctx.client_id)
         tab_lines = [
             f"- {t['name']}: {t['url']}{' (closed)' if t.get('closed') else ''}"
-            for t in tabs[:10]
+            for t in tabs
         ]
         tab_block = "\n".join(tab_lines) if tab_lines else "- (no tabs registered)"
         login_email = (self.ctx.credentials or {}).get("email", "") or "(none)"

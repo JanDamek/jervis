@@ -201,8 +201,8 @@ async def look_at_screen(
 
     body = "".join(body_parts)
     logger.info(
-        "look_at_screen: chunks=%d body_len=%d preview=%r",
-        chunk_count, len(body), body[:300],
+        "look_at_screen: chunks=%d body_len=%d body=%r",
+        chunk_count, len(body), body,
     )
     parsed = _try_parse_vlm_json(body)
     ctx.last_observation_kind = "vlm"
@@ -216,7 +216,7 @@ def _try_parse_vlm_json(body: str) -> dict:
     trailing `}`/`]` — Ollama streams truncated at num_predict do not always
     close every bracket.
     """
-    out = {"app_state": "unknown", "summary": body.strip()[:500],
+    out = {"app_state": "unknown", "summary": body.strip(),
            "visible_actions": [], "detected_text": {}}
     if not body:
         return out
@@ -232,13 +232,13 @@ def _try_parse_vlm_json(body: str) -> dict:
     if data is None:
         return out
     out["app_state"] = str(data.get("app_state", "unknown"))
-    out["summary"] = str(data.get("summary", ""))[:500]
+    out["summary"] = str(data.get("summary", ""))
     va = data.get("visible_actions") or []
     if isinstance(va, list):
         out["visible_actions"] = [
             {"label": str(a.get("label", "")), "bbox": a.get("bbox") or {}}
             for a in va if isinstance(a, dict)
-        ][:50]
+        ]
     dt = data.get("detected_text")
     if isinstance(dt, dict):
         out["detected_text"] = {str(k): str(v) for k, v in dt.items()}
@@ -258,6 +258,8 @@ def _robust_json_loads(candidate: str) -> dict | None:
     1. Try direct `json.loads` on the longest closing-brace slice.
     2. If that fails, try progressively shorter slices (bracket scan).
     3. If still failing, try appending close-brackets to balance.
+    4. If everything fails, truncate to the last complete top-level
+       key:value pair and close the outer object.
     """
     # Strategy 1: outermost brace slice
     end = candidate.rfind("}")
@@ -332,7 +334,47 @@ def _robust_json_loads(candidate: str) -> dict | None:
     try:
         return json.loads(fixup)
     except Exception:
-        return None
+        pass
+
+    # Strategy 4: backtrack to the last known-safe checkpoint — a `,`
+    # that sits directly inside the top-level object (depth=1, not
+    # inside a string or nested structure). Drop the incomplete tail
+    # after it, close the outer object. This saves `{"app_state":"mfa",
+    # "summary":"...", "visible_actions":[<partial>}` → just the first
+    # two complete fields.
+    last_safe = -1
+    depth = 0
+    br = 0
+    in_str = False
+    escape = False
+    for i, ch in enumerate(candidate):
+        if escape:
+            escape = False
+            continue
+        if ch == "\\":
+            escape = True
+            continue
+        if ch == '"':
+            in_str = not in_str
+            continue
+        if in_str:
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+        elif ch == "[":
+            br += 1
+        elif ch == "]":
+            br -= 1
+        elif ch == "," and depth == 1 and br == 0:
+            last_safe = i
+    if last_safe > 0:
+        try:
+            return json.loads(candidate[:last_safe] + "}")
+        except Exception:
+            pass
+    return None
 
 
 # ---- Navigation ---------------------------------------------------------
@@ -1261,7 +1303,7 @@ async def query_history(
         entry: dict = {
             "index": idx,
             "role": _role_of(m),
-            "content_preview": (text or "")[:600],
+            "content_preview": text or "",
         }
         if tc_summary:
             entry["tool_calls"] = tc_summary
