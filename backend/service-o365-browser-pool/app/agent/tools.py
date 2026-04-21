@@ -212,6 +212,10 @@ async def look_at_screen(
 
 
 def _try_parse_vlm_json(body: str) -> dict:
+    """Parse the VLM JSON response. Tolerates markdown fences and missing
+    trailing `}`/`]` — Ollama streams truncated at num_predict do not always
+    close every bracket.
+    """
     out = {"app_state": "unknown", "summary": body.strip()[:500],
            "visible_actions": [], "detected_text": {}}
     if not body:
@@ -221,12 +225,11 @@ def _try_parse_vlm_json(body: str) -> dict:
         lines = [l for l in stripped.splitlines() if not l.strip().startswith("```")]
         stripped = "\n".join(lines)
     start = stripped.find("{")
-    end = stripped.rfind("}")
-    if start < 0 or end <= start:
+    if start < 0:
         return out
-    try:
-        data = json.loads(stripped[start:end + 1])
-    except Exception:
+    candidate = stripped[start:]
+    data = _robust_json_loads(candidate)
+    if data is None:
         return out
     out["app_state"] = str(data.get("app_state", "unknown"))
     out["summary"] = str(data.get("summary", ""))[:500]
@@ -240,6 +243,90 @@ def _try_parse_vlm_json(body: str) -> dict:
     if isinstance(dt, dict):
         out["detected_text"] = {str(k): str(v) for k, v in dt.items()}
     return out
+
+
+def _robust_json_loads(candidate: str) -> dict | None:
+    """Parse a JSON object, tolerating trailing garbage or missing closes.
+
+    Strategy:
+    1. Try direct `json.loads` on the longest closing-brace slice.
+    2. If that fails, try progressively shorter slices (bracket scan).
+    3. If still failing, try appending close-brackets to balance.
+    """
+    # Strategy 1: outermost brace slice
+    end = candidate.rfind("}")
+    if end > 0:
+        try:
+            return json.loads(candidate[:end + 1])
+        except Exception:
+            pass
+
+    # Strategy 2: balance-aware scan — find the first complete top-level
+    # object by tracking brace depth.
+    depth = 0
+    in_str = False
+    escape = False
+    first_close = -1
+    for i, ch in enumerate(candidate):
+        if escape:
+            escape = False
+            continue
+        if ch == "\\":
+            escape = True
+            continue
+        if ch == '"':
+            in_str = not in_str
+            continue
+        if in_str:
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                first_close = i
+                break
+    if first_close > 0:
+        try:
+            return json.loads(candidate[:first_close + 1])
+        except Exception:
+            pass
+
+    # Strategy 3: truncated — append missing closers based on current depth
+    # and unclosed brackets.
+    open_braces = 0
+    open_brackets = 0
+    in_str = False
+    escape = False
+    for ch in candidate:
+        if escape:
+            escape = False
+            continue
+        if ch == "\\":
+            escape = True
+            continue
+        if ch == '"':
+            in_str = not in_str
+            continue
+        if in_str:
+            continue
+        if ch == "{":
+            open_braces += 1
+        elif ch == "}":
+            open_braces -= 1
+        elif ch == "[":
+            open_brackets += 1
+        elif ch == "]":
+            open_brackets -= 1
+    fixup = candidate.rstrip().rstrip(",")
+    if in_str:
+        fixup += '"'
+    fixup += "]" * max(0, open_brackets)
+    fixup += "}" * max(0, open_braces)
+    try:
+        return json.loads(fixup)
+    except Exception:
+        return None
 
 
 # ---- Navigation ---------------------------------------------------------
@@ -369,6 +456,38 @@ async def click(selector: str, tab_name: str = "") -> dict:
     try:
         await page.locator(selector).first.click(timeout=5000)
         return {"ok": True, "selector": selector}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@tool
+async def mouse_click(
+    x: float,
+    y: float,
+    button: Literal["left", "right", "middle"] = "left",
+    tab_name: str = "",
+) -> dict:
+    """Absolute-pixel mouse click — the last-resort action tool.
+
+    Moves the mouse to (x, y) and fires a click. Use when `click`,
+    `click_text`, and `click_visual` all fail (custom canvas widgets,
+    drag-only UIs, elements with no text or stable selector). Coordinates
+    are viewport-relative in CSS pixels (0, 0) = top-left.
+
+    Args:
+        x: Horizontal pixel coordinate from the left edge.
+        y: Vertical pixel coordinate from the top edge.
+        button: "left" (default) | "right" | "middle".
+        tab_name: Named tab. Empty = current first page.
+    """
+    ctx = get_pod_context()
+    page = ctx.resolve_tab(tab_name)
+    if page is None:
+        return {"ok": False, "error": f"no page for tab_name={tab_name!r}"}
+    try:
+        await page.mouse.move(float(x), float(y))
+        await page.mouse.click(float(x), float(y), button=button)
+        return {"ok": True, "x": float(x), "y": float(y), "button": button}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -1193,7 +1312,8 @@ ALL_TOOLS = [
     # Navigation
     list_tabs, open_tab, switch_tab, close_tab, navigate, report_capabilities,
     # Actions
-    click, click_text, click_visual, fill, fill_visual, fill_credentials, press, wait,
+    click, click_text, click_visual, mouse_click, fill, fill_visual,
+    fill_credentials, press, wait,
     # State + notifications
     report_state, notify_user,
     # Work hours / activity

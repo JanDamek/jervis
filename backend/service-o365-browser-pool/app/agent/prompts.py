@@ -98,9 +98,12 @@ LOGIN (stored PVC session first, credentials only if asked)
   runtime injects the secret; you NEVER see or pass the value.
 - "Stay signed in?" / consent → `click_text('Yes')` or `click_text('No')`.
 
-Clicking priority: `click_text(exact_text)` > `click(css_selector)` >
-`click_visual(natural_language)`. Only fall back to `click_visual`
-when the target has no stable text and no CSS anchor.
+Clicking priority ladder:
+  1. `click_text(text)`           — known visible text (email, "Join now")
+  2. `click(css_selector)`        — stable `data-tid=`/`id=`/`aria-label=`
+  3. `click_visual(description)`  — VLM bbox for icons / no-text UIs
+  4. `mouse_click(x, y)`          — absolute pixel fallback (last resort,
+     read bbox from a prior `look_at_screen`, click the center).
 
 =================================================================
 MFA — Microsoft Authenticator ONLY (product §17)
