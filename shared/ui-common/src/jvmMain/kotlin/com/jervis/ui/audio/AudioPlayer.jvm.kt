@@ -1,6 +1,7 @@
 package com.jervis.ui.audio
 
 import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import javax.sound.sampled.AudioFormat
@@ -17,6 +18,15 @@ actual class AudioPlayer actual constructor() {
 
     // ── Streaming via SourceDataLine ────────────────────────────────────
     private var streamLine: SourceDataLine? = null
+    private var streamBytesPerSecond: Int = 0
+    private val prefillBuffer = ByteArrayOutputStream()
+    private var streamStarted: Boolean = false
+
+    /** Prefill ~400ms before starting playback, so the first underrun can't
+     *  happen as soon as the network blips. XTTS chunks arrive with noticeable
+     *  jitter (VD GPU → Kotlin gRPC → kRPC CBOR → Base64), so the line needs
+     *  a headroom bigger than the worst inter-chunk gap. */
+    private val prefillMs: Int = 400
 
     actual fun startStream(sampleRate: Int, sampleSizeInBits: Int, channels: Int) {
         stopStream()
@@ -25,24 +35,57 @@ actual class AudioPlayer actual constructor() {
         )
         val info = DataLine.Info(SourceDataLine::class.java, format)
         val line = AudioSystem.getLine(info) as SourceDataLine
-        val bufferSize = sampleRate * channels * (sampleSizeInBits / 8) / 2
+        val bytesPerSecond = sampleRate * channels * (sampleSizeInBits / 8)
+        // 2-second line buffer gives backpressure room while still capping latency.
+        val bufferSize = bytesPerSecond * 2
         line.open(format, bufferSize)
-        line.start()
+        // Do NOT start() yet — wait until we have prefillMs worth of PCM so the
+        // very first frames don't hit an empty buffer and cause a stall.
         streamLine = line
+        streamBytesPerSecond = bytesPerSecond
+        prefillBuffer.reset()
+        streamStarted = false
     }
 
     actual fun streamPcm(pcmData: ByteArray) {
-        streamLine?.write(pcmData, 0, pcmData.size)
+        val line = streamLine ?: return
+        if (!streamStarted) {
+            prefillBuffer.write(pcmData)
+            val threshold = (streamBytesPerSecond * prefillMs) / 1000
+            if (prefillBuffer.size() >= threshold) {
+                val accumulated = prefillBuffer.toByteArray()
+                prefillBuffer.reset()
+                line.start()
+                streamStarted = true
+                line.write(accumulated, 0, accumulated.size)
+            }
+        } else {
+            line.write(pcmData, 0, pcmData.size)
+        }
     }
 
     actual fun finishStream() {
-        streamLine?.let { it.drain(); it.stop(); it.close() }
+        val line = streamLine ?: return
+        // If the whole utterance was shorter than the prefill threshold, we
+        // never actually started — flush the accumulated bytes now before
+        // draining, otherwise the user hears nothing at all on short replies.
+        if (!streamStarted && prefillBuffer.size() > 0) {
+            val accumulated = prefillBuffer.toByteArray()
+            prefillBuffer.reset()
+            line.start()
+            streamStarted = true
+            line.write(accumulated, 0, accumulated.size)
+        }
+        line.drain(); line.stop(); line.close()
         streamLine = null
+        streamStarted = false
     }
 
     actual fun stopStream() {
         streamLine?.let { it.stop(); it.close() }
         streamLine = null
+        streamStarted = false
+        prefillBuffer.reset()
     }
 
     // ── One-shot WAV playback via Clip (blocking — for TTS chunks) ──────
