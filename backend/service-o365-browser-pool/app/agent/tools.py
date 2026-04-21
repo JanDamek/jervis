@@ -151,12 +151,18 @@ async def look_at_screen(
         return {"app_state": "unknown", "summary": f"screenshot failed: {e}",
                 "visible_actions": [], "detected_text": {}}
 
+    # `/no_think` disables qwen3-vl chain-of-thought — the model emits the
+    # JSON answer directly instead of streaming paragraphs of reasoning.
+    # Without it we paid 1000+ chunks of "Let's look at the image..." and
+    # never got a parseable JSON object.
     prompt = (
-        "Describe what is on this Microsoft 365 web screen. Return strict JSON: "
+        "/no_think Output ONLY a single JSON object. No prose, no "
+        "reasoning, no code fences. Shape:\n"
         '{"app_state":"login|mfa|chat_list|conversation|meeting_stage|loading|unknown",'
-        '"summary":"<short sentence>",'
+        '"summary":"<short sentence in English>",'
         '"visible_actions":[{"label":"<button text>","bbox":{"x":0,"y":0,"w":0,"h":0}}],'
-        '"detected_text":{}}'
+        '"detected_text":{}}\n'
+        "Describe this Microsoft 365 web screen."
         + (f"\nFocused question: {ask}\nPut the focused answer into detected_text." if ask else "")
     )
 
