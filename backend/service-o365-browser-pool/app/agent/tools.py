@@ -153,14 +153,19 @@ async def look_at_screen(
 
     prompt = (
         "Describe this Microsoft 365 web screen. Return a JSON object with "
-        "these fields:\n"
-        '- app_state: one of "login", "mfa", "chat_list", "conversation", '
-        '"meeting_stage", "loading", "unknown"\n'
-        '- summary: one short English sentence describing the screen\n'
-        '- visible_actions: array of {"label": "<button text>", '
-        '"bbox": {"x": 0, "y": 0, "w": 0, "h": 0}} for clickable elements\n'
-        '- detected_text: object with any focused answers'
-        + (f"\nFocused question: {ask}\nPut the focused answer into detected_text." if ask else "")
+        "EXACTLY these 4 top-level fields (no extras, no nesting beyond "
+        "what's specified):\n"
+        '- app_state: ONE of "login" | "mfa" | "chat_list" | '
+        '"conversation" | "meeting_stage" | "loading" | "unknown"\n'
+        '- summary: ONE short English sentence describing the screen\n'
+        '- visible_actions: array of at most 8 {"label": "<button text>", '
+        '"bbox": {"x": 0, "y": 0, "w": 0, "h": 0}} entries. ONLY clickable '
+        'primary buttons / tiles / links — not every piece of text.\n'
+        '- detected_text: '
+        + ("object with the focused answer" if ask else "empty object {}")
+        + "\n"
+        "Keep the output under 800 characters."
+        + (f"\nFocused question: {ask}" if ask else "")
     )
 
     req_ctx = types_pb2.RequestContext(
@@ -175,7 +180,9 @@ async def look_at_screen(
         model_hint="qwen3-vl-tool:latest",
         prompt=prompt,
         images=[shot],
-        options=inference_pb2.ChatOptions(temperature=0.0, num_predict=1024),
+        # num_predict=4096 accommodates a JSON with ~8 visible_actions
+        # + bboxes without truncation. Previous 1024 got cut mid-bbox.
+        options=inference_pb2.ChatOptions(temperature=0.0, num_predict=4096),
         # Ollama `format: "json"` — forces a single valid JSON object
         # as output, bypassing qwen3-vl chain-of-thought streams.
         response_format="json",
