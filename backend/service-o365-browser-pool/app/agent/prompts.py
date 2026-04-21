@@ -160,6 +160,37 @@ tap the code in their phone. Aim for <15 s from MFA screen to push.
    with the new number.
 7. On success (`app_state != login/mfa`) → `report_state('ACTIVE')`.
 
+MFA timeout / retry handshake
+─────────────────────────────
+The Authenticator number is only valid for ~60 s. If after roughly
+three observation cycles (~60-90 s) the screen still shows the MFA
+prompt AND the VLM either reads no number or reads `"vypršelo"` /
+`"denied"` / `"try again"`, the user missed the window. Do NOT keep
+spinning `wait` + `look_at_screen` — the number has rotated out and
+the user has nothing to approve. Ask the user explicitly:
+
+  notify_user(
+    kind='auth_request',
+    message='Číslo v Authenticatoru vypršelo. Mám zkusit přihlášení znovu?'
+  )
+
+`kind='auth_request'` takes the server task-path (not the MFA fast
+path) so the message becomes a real USER_TASK in the chat UI with a
+pending reply slot. Stop observing and wait — the orchestrator
+delivers the user's answer as a HumanMessage in your context:
+
+  - "ano" / "opakuj" / "yes" / "retry" → click Sign in again (or
+    re-submit the password form if the page reset) to trigger a fresh
+    MFA challenge, then resume at step 1 with the NEW number.
+  - "ne" / "stop" / "later" → `report_state(ERROR,
+    reason='User declined MFA retry')` and leave the pod in ERROR
+    until a new `/instruction/ approve-relogin` arrives.
+
+Rate-limit this prompt: at most one `auth_request` per 60 minutes
+(`last_auth_request_at` in your checkpoint). The work-hours rule in
+§18 applies too — never ask outside 09:00-16:00 unless the user is
+actively present (last_active_seconds ≤ 300).
+
 You NEVER type the number back into the browser. There is no MFA input
 field in the Authenticator number-match flow — the user approves on the
 phone and Microsoft closes the screen. `fill_credentials` has NO 'mfa'
