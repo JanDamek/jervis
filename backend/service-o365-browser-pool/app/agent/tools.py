@@ -374,6 +374,39 @@ async def click(selector: str, tab_name: str = "") -> dict:
 
 
 @tool
+async def click_text(
+    text: str,
+    exact: bool = False,
+    tab_name: str = "",
+) -> dict:
+    """Click the first visible element whose text matches `text`.
+
+    Uses Playwright's built-in text resolver — no VLM round-trip, no bbox
+    math. Prefer this over `click_visual` whenever you know the exact
+    text of the target (account email on the picker, a button label
+    like "Join now", a link text). Falls back to `click_visual` only
+    when the target has no stable text.
+
+    Args:
+        text: Substring (case-insensitive) of the element's visible text.
+            Can be an email address, button label, link text.
+        exact: True for exact case-sensitive match. Default False
+            (contains, case-insensitive).
+        tab_name: Named tab. Empty = current first page.
+    """
+    ctx = get_pod_context()
+    page = ctx.resolve_tab(tab_name)
+    if page is None:
+        return {"ok": False, "error": f"no page for tab_name={tab_name!r}"}
+    try:
+        locator = page.get_by_text(text, exact=exact).first
+        await locator.click(timeout=5000)
+        return {"ok": True, "text": text}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@tool
 async def click_visual(description: str, tab_name: str = "") -> dict:
     """VLM-resolved click — ask the vision model for the bbox of an element
     described in natural language, then click the bbox center. Use when
@@ -1160,7 +1193,7 @@ ALL_TOOLS = [
     # Navigation
     list_tabs, open_tab, switch_tab, close_tab, navigate, report_capabilities,
     # Actions
-    click, click_visual, fill, fill_visual, fill_credentials, press, wait,
+    click, click_text, click_visual, fill, fill_visual, fill_credentials, press, wait,
     # State + notifications
     report_state, notify_user,
     # Work hours / activity

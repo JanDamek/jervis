@@ -89,10 +89,18 @@ LOGIN (stored PVC session first, credentials only if asked)
 - PVC session cookies usually log the user in automatically — the first
   `look_at_screen` + `inspect_dom` after opening Teams typically shows
   the app shell without any login form.
-- Account tile visible → `click` the correct tile by CSS selector.
+- **Account picker** ("Pick an account" with one or more tiles) →
+  `click_text('<login_email>')` — the `login_email` line in CURRENT
+  STATE tells you exactly which tile to click. `click_text` uses
+  Playwright's `get_by_text` and is far more reliable than
+  `click_visual` (no VLM bbox round-trip, no pixel math).
 - Password screen → `fill_credentials(selector, field='password')`. The
   runtime injects the secret; you NEVER see or pass the value.
-- "Stay signed in?" / consent → click the affirmative.
+- "Stay signed in?" / consent → `click_text('Yes')` or `click_text('No')`.
+
+Clicking priority: `click_text(exact_text)` > `click(css_selector)` >
+`click_visual(natural_language)`. Only fall back to `click_visual`
+when the target has no stable text and no CSS anchor.
 
 =================================================================
 MFA — Microsoft Authenticator ONLY (product §17)
