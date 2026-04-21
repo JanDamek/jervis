@@ -20,6 +20,7 @@ import com.jervis.task.TaskRepository
 import com.jervis.task.TaskService
 import com.jervis.infrastructure.config.properties.TtsProperties
 import com.jervis.infrastructure.grpc.TtsGrpcClient
+import com.jervis.infrastructure.llm.CascadeLlmClient
 import com.jervis.infrastructure.llm.CloudModelPolicyResolver
 import com.jervis.service.chat.IChatService
 import com.jervis.task.BackgroundEngine
@@ -63,6 +64,7 @@ class ChatRpcImpl(
     private val ttsGrpcClient: TtsGrpcClient,
     private val ttsProperties: TtsProperties,
     private val taskService: TaskService,
+    private val cascadeLlmClient: CascadeLlmClient,
 ) : IChatService {
     private val logger = KotlinLogging.logger {}
     private val backgroundScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -1040,6 +1042,15 @@ class ChatRpcImpl(
             ))
             return@flow
         }
+
+        // LLM preprocessing — XTTS reads raw text literally, so acronyms
+        // ("SBO") sound like "s-b-o", hex IDs are read as "šest devět b…",
+        // and markdown / URLs leak into the audio. Normalize through a
+        // cheap chat call before synthesis. Keep fully silent on failure —
+        // if the LLM times out or errors, the original text is still
+        // readable, just less pretty.
+        val ttsText = normalizeForTts(text)
+
         // Upstream AudioChunk has no sample_rate field; XTTS emits 24kHz PCM.
         // TODO: propagate sample_rate via proto once tts.AudioChunk is extended.
         emit(com.jervis.dto.chat.TtsChunkEvent(
@@ -1047,7 +1058,7 @@ class ChatRpcImpl(
             sampleRate = 24000,
         ))
         try {
-            ttsGrpcClient.speakStream(text, speed = ttsProperties.speed.toDouble()).collect { chunk ->
+            ttsGrpcClient.speakStream(ttsText, speed = ttsProperties.speed.toDouble()).collect { chunk ->
                 val bytes = chunk.data.toByteArray()
                 if (bytes.isNotEmpty()) {
                     emit(com.jervis.dto.chat.TtsChunkEvent(
@@ -1066,6 +1077,43 @@ class ChatRpcImpl(
                 errorMessage = e.message.orEmpty().take(200),
             ))
         }
+    }
+
+    /** Rewrite text for voice synthesis: expand Czech-read acronyms,
+     *  spell numbers, strip markdown + IDs / URLs. The raw string is
+     *  returned as a fallback if the LLM is unreachable. */
+    private suspend fun normalizeForTts(text: String): String {
+        // Cheap heuristic: short texts without scary characters skip the
+        // LLM round-trip entirely — typical greetings or single sentences
+        // don't need rewriting and the added latency would be felt.
+        if (text.length < 40 && !text.any { it.isUpperCase() && it.isLetter() } &&
+            !text.contains(Regex("[0-9a-f]{8,}")) &&
+            !text.contains(Regex("[*_`#\\[\\]]"))) {
+            return text
+        }
+
+        val system = """
+            Jsi pomocník, který upravuje český text pro hlasové čtení (TTS).
+            Tvá jediná práce: vrátit upravený text. Žádný úvod, žádné vysvětlení.
+            Pravidla:
+            - Velká zkratky (SBO, BMS, API, VD) rozepiš foneticky česky (es-bé-ó, bé-em-es, á-pé-í, vé-dé).
+            - Čísla převeď na slova (69 → šedesát devět, 2026 → dva tisíce dvacet šest).
+            - Dlouhé hex/ID stringy (8+ znaků [0-9a-f]) nahraď "identifikátor" nebo vynech úplně.
+            - Odstraň markdown značky (**tučně**, `kód`, # nadpisy, - odrážky).
+            - URL a e-maily nahraď popisem ("odkaz", "e-mail") nebo vynech.
+            - Zachovej význam a přirozený český slovosled.
+        """.trimIndent()
+
+        val rewritten = try {
+            cascadeLlmClient.prompt(prompt = text, system = system, clientId = null)
+        } catch (e: Exception) {
+            logger.warn(e) { "TTS_NORMALIZE: LLM failed, falling back to raw text" }
+            null
+        }
+
+        val cleaned = rewritten?.trim()?.takeIf { it.isNotBlank() } ?: return text
+        logger.info { "TTS_NORMALIZE: ${text.length} → ${cleaned.length} chars" }
+        return cleaned
     }
 }
 
