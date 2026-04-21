@@ -45,6 +45,13 @@ TICK_ACTIVE_LONG_IDLE_S = 120.0
 LLM_BACKOFF_S = 15.0
 MAX_BACKOFF_S = 120.0
 
+# Stuck-loop detection: if the agent emits the same (tool_name, args_repr)
+# this many times in a row, we cut the current invocation, notify the
+# user / orchestrator, and transition the pod to ERROR until an
+# `/instruction/` arrives. The pod runs nonstop so we can't rely on a
+# LangGraph recursion_limit — we need to detect hand-spinning.
+STUCK_REPEAT_THRESHOLD = 5
+
 
 class PodAgent:
     """Public API for the pod agent.
@@ -90,6 +97,10 @@ class PodAgent:
         self._pending_inputs: asyncio.Queue[str] = asyncio.Queue()
         self._backoff_s = LLM_BACKOFF_S
         self._graph = None
+        # Sliding window of recent (tool_name, args_repr) tuples for
+        # stuck-loop detection. When the last N entries all match, we
+        # break out of the graph invocation and notify.
+        self._recent_tool_calls: list[tuple[str, str]] = []
         # Background DOM watcher (product §10a) — sensor only, pushes
         # priority HumanMessages via our push_instruction queue.
         self.watcher = BrowserWatcher(
@@ -190,14 +201,21 @@ class PodAgent:
             "stuck_count": 0,
         }
 
-    def _log_graph_event(self, event: dict) -> None:
+    def _log_graph_event(self, event: dict) -> bool:
         """Log every LangGraph `updates` event — each turn of the react loop.
 
         `agent` node emits an AIMessage: we log its tool_calls (or final reply
         when there are none). `tools` node emits one or more ToolMessages: we
         log name + tool_call_id + full content. No truncation — debuggability
         wins over log size; log rotation handles volume.
+
+        Returns True when a stuck-loop is detected (same tool_call name +
+        args the last N times in a row). Caller should break out of the
+        current astream() and transition to ERROR + notify_user.
         """
+        import json as _json
+
+        stuck = False
         for node_name, update in event.items():
             if node_name not in ("agent", "tools") or not isinstance(update, dict):
                 continue
@@ -205,10 +223,26 @@ class PodAgent:
                 if isinstance(msg, AIMessage):
                     if msg.tool_calls:
                         for tc in msg.tool_calls:
+                            name = tc.get("name") or ""
+                            args = tc.get("args") or {}
+                            try:
+                                args_repr = _json.dumps(
+                                    args, sort_keys=True, default=str,
+                                )
+                            except Exception:
+                                args_repr = repr(args)
                             logger.info(
-                                "agent → tool_call name=%s id=%s args=%r",
-                                tc.get("name"), tc.get("id"), tc.get("args"),
+                                "agent → tool_call name=%s id=%s args=%s",
+                                name, tc.get("id"), args_repr,
                             )
+                            self._recent_tool_calls.append((name, args_repr))
+                            if len(self._recent_tool_calls) > STUCK_REPEAT_THRESHOLD:
+                                self._recent_tool_calls.pop(0)
+                            if (
+                                len(self._recent_tool_calls) == STUCK_REPEAT_THRESHOLD
+                                and len(set(self._recent_tool_calls)) == 1
+                            ):
+                                stuck = True
                     else:
                         logger.info("agent → final content=%r", msg.content or "")
                 elif isinstance(msg, ToolMessage):
@@ -218,6 +252,48 @@ class PodAgent:
                         msg.tool_call_id,
                         msg.content,
                     )
+        return stuck
+
+    async def _on_stuck(self) -> None:
+        """The agent repeated the same tool_call STUCK_REPEAT_THRESHOLD
+        times in a row. Notify the user, transition to ERROR, and wait
+        for an `/instruction/` from the orchestrator / user.
+        """
+        name, args_repr = self._recent_tool_calls[-1]
+        logger.warning(
+            "STUCK: agent repeated %s(%s) %d× — breaking out",
+            name, args_repr, STUCK_REPEAT_THRESHOLD,
+        )
+        self._recent_tool_calls.clear()
+        try:
+            from app.grpc_clients import server_o365_session_stub
+            from jervis.common import types_pb2
+            from jervis.server import o365_session_pb2
+            from jervis_contracts.interceptors import prepare_context
+
+            grpc_ctx = types_pb2.RequestContext()
+            prepare_context(grpc_ctx)
+            await server_o365_session_stub().Notify(
+                o365_session_pb2.NotifyRequest(
+                    ctx=grpc_ctx,
+                    connection_id=self.connection_id,
+                    kind="error",
+                    message=(
+                        f"Pod agent uvízl — opakoval {name}({args_repr[:120]}) "
+                        f"{STUCK_REPEAT_THRESHOLD}× v řadě. Čeká na instrukci."
+                    ),
+                ),
+                timeout=10.0,
+            )
+        except Exception as e:
+            logger.warning("STUCK notify failed: %s", e)
+        try:
+            await self.ctx.state_manager.transition(
+                PodState.ERROR,
+                reason=f"stuck: repeat {name} {STUCK_REPEAT_THRESHOLD}×",
+            )
+        except Exception:
+            pass
 
     async def _next_input(self) -> HumanMessage:
         """Return the next user message for the agent.
@@ -287,14 +363,15 @@ class PodAgent:
 
         config: dict[str, Any] = {
             "configurable": {"thread_id": self.connection_id},
-            # Login flow + chat scrape cycles routinely need many tool
-            # calls per outer invocation (observe → inspect_dom →
-            # click_text → fill → wait → look_at_screen → …). 40 was
-            # hit on the SSO login path (mmb 2026-04-21); 200 gives
-            # the agent headroom for long flows without risking
-            # runaway loops — outer runner's adaptive_sleep still
-            # bounds pacing.
-            "recursion_limit": 200,
+            # The pod agent runs nonstop — a single invocation can contain
+            # an arbitrarily long tool-call chain (login, scrape cycles,
+            # meeting joins, watcher alerts). We guard against true
+            # hand-spinning via `_recent_tool_calls` / `_on_stuck` (see
+            # above): STUCK_REPEAT_THRESHOLD identical tool_calls in a
+            # row → break + notify_user(kind='error') + ERROR state.
+            # LangGraph's recursion_limit is raised very high so it does
+            # not fire before our semantic check.
+            "recursion_limit": 10_000,
         }
 
         # Seed only if the thread has no previous state (first start for this
@@ -321,7 +398,10 @@ class PodAgent:
                         invoke_input, config=config, stream_mode="updates",
                     ):
                         logger.info("graph event keys=%r", list(event.keys()) if isinstance(event, dict) else type(event).__name__)
-                        self._log_graph_event(event)
+                        stuck = self._log_graph_event(event)
+                        if stuck:
+                            await self._on_stuck()
+                            break
                         if self._stop.is_set():
                             break
 
