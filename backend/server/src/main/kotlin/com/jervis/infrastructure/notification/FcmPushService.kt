@@ -48,11 +48,15 @@ class FcmPushService(
             return
         }
 
-        // Find all FCM-capable devices (android + desktop use FCM)
+        // Find all FCM-capable devices (android + desktop use FCM).
+        // Win/Linux desktop registers with an empty token (FCM on desktop
+        // JVM isn't wired yet — see project-win-linux-desktop-push-deferred);
+        // filter those out, otherwise FirebaseMessaging.send() throws
+        // "Exactly one of token, topic or condition must be specified".
         val tokens = (
             deviceTokenRepository.findByClientIdAndPlatform(clientId, "android").toList() +
             deviceTokenRepository.findByClientIdAndPlatform(clientId, "desktop").toList()
-        )
+        ).filter { it.token.isNotBlank() }
         if (tokens.isEmpty()) {
             logger.info { "No FCM devices for client=$clientId, skipping push" }
             return

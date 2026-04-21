@@ -15,12 +15,18 @@ import java.io.File
 /**
  * Apple Push Notification service (APNs) via HTTP/2.
  *
- * Uses token-based authentication (.p8 key) via the Pushy library.
+ * Uses token-based authentication (.p8 key) via the Pushy library. The
+ * same Team ID + .p8 Auth Key signs both iOS (apps/iosApp) and macOS
+ * (apps/macApp) apps, but each has its own bundle identifier which
+ * becomes the apns-topic header — iOS and macOS tokens must be routed
+ * with their respective bundle IDs or APNs rejects with TopicDisallowed.
+ *
  * Configured through environment variables:
  * - APNS_KEY_PATH: path to .p8 auth key file
  * - APNS_KEY_ID: Key ID from Apple Developer
  * - APNS_TEAM_ID: Team ID from Apple Developer
- * - APNS_BUNDLE_ID: app bundle identifier (e.g. com.jervis.mobile)
+ * - APNS_BUNDLE_ID: iOS app bundle identifier (apns-topic for iOS devices)
+ * - APNS_BUNDLE_ID_MACOS: macOS app bundle identifier (apns-topic for macOS devices)
  * - APNS_PRODUCTION: "true" for production, defaults to production
  */
 @Service
@@ -32,7 +38,8 @@ class ApnsPushService(
     private val keyPath = System.getenv("APNS_KEY_PATH")
     private val keyId = System.getenv("APNS_KEY_ID")
     private val teamId = System.getenv("APNS_TEAM_ID")
-    private val bundleId = System.getenv("APNS_BUNDLE_ID") ?: "com.jervis.mobile"
+    private val iosBundleId = System.getenv("APNS_BUNDLE_ID") ?: "com.jervis"
+    private val macosBundleId = System.getenv("APNS_BUNDLE_ID_MACOS") ?: "com.jervis.macApp"
     private val isProduction = System.getenv("APNS_PRODUCTION")?.lowercase() != "false"
 
     private val apnsClient: ApnsClient? by lazy {
@@ -56,7 +63,7 @@ class ApnsPushService(
                 .setSigningKey(ApnsSigningKey.loadFromPkcs8File(keyFile, teamId, keyId))
                 .build()
 
-            logger.info { "APNs client initialized (production=$isProduction, bundleId=$bundleId)" }
+            logger.info { "APNs client initialized (production=$isProduction, iosBundleId=$iosBundleId, macosBundleId=$macosBundleId)" }
             client
         } catch (e: Exception) {
             logger.error(e) { "Failed to initialize APNs client" }
@@ -79,22 +86,28 @@ class ApnsPushService(
             return
         }
 
-        val tokens = deviceTokenRepository.findByClientIdAndPlatform(clientId, "ios").toList()
+        val iosTokens = deviceTokenRepository.findByClientIdAndPlatform(clientId, "ios").toList()
+        val macosTokens = deviceTokenRepository.findByClientIdAndPlatform(clientId, "macos").toList()
+        val tokens = iosTokens.map { it to iosBundleId } + macosTokens.map { it to macosBundleId }
         if (tokens.isEmpty()) {
-            logger.debug { "No iOS devices for client=$clientId, skipping APNs push" }
+            logger.debug { "No APNs devices for client=$clientId, skipping APNs push" }
             return
         }
 
-        logger.info { "Sending APNs push to ${tokens.size} iOS device(s) for client=$clientId" }
+        logger.info { "Sending APNs push to ${iosTokens.size} iOS + ${macosTokens.size} macOS device(s) for client=$clientId" }
 
         val isApproval = data["isApproval"] == "true"
         val isUrgent = data["interruptAction"] in listOf("o365_mfa", "o365_relogin")
 
+        // Alert push only — never set setContentAvailable(true) together with
+        // setAlertTitle/Body. Apple treats (alert + content-available) as a
+        // silent background-refresh push: iOS queues the payload but does NOT
+        // show a banner until the app is next opened, which defeats the whole
+        // point of a user-facing notification (MFA, meeting invite, etc.).
         val payloadBuilder = SimpleApnsPayloadBuilder()
             .setAlertTitle(title)
             .setAlertBody(body)
-            .setSound(if (isUrgent) "default" else "default")
-            .setContentAvailable(true)
+            .setSound("default")
 
         // time-sensitive: immediate delivery, bypasses Focus/DND for 1 hour
         if (isUrgent) {
@@ -120,7 +133,7 @@ class ApnsPushService(
 
         val payload = payloadBuilder.build()
 
-        for (tokenDoc in tokens) {
+        for ((tokenDoc, topic) in tokens) {
             try {
                 val sanitizedToken = TokenUtil.sanitizeTokenString(tokenDoc.token)
                 val expiration = if (isUrgent) {
@@ -134,16 +147,16 @@ class ApnsPushService(
                     com.eatthepath.pushy.apns.DeliveryPriority.CONSERVE_POWER
                 }
                 val notification = SimpleApnsPushNotification(
-                    sanitizedToken, bundleId, payload, expiration, priority,
+                    sanitizedToken, topic, payload, expiration, priority,
                     com.eatthepath.pushy.apns.PushType.ALERT,
                 )
                 val response = client.sendNotification(notification).get()
 
                 if (response.isAccepted) {
-                    logger.debug { "APNs push sent to device=${tokenDoc.deviceId}" }
+                    logger.debug { "APNs push sent to device=${tokenDoc.deviceId} (topic=$topic)" }
                 } else {
                     val reason = response.rejectionReason.orElse("unknown")
-                    logger.warn { "APNs push rejected for device=${tokenDoc.deviceId}: $reason" }
+                    logger.warn { "APNs push rejected for device=${tokenDoc.deviceId} (topic=$topic): $reason" }
                     // Clean up invalid tokens
                     if (reason == "BadDeviceToken" || reason == "Unregistered" || reason == "ExpiredToken") {
                         logger.info { "Removing invalid APNs token for device=${tokenDoc.deviceId}" }

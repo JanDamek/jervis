@@ -241,6 +241,10 @@ spec:
               # Must match apps/iosApp/.../PRODUCT_BUNDLE_IDENTIFIER.
               # Mismatch → APNs returns TopicDisallowed → no iOS push.
               value: com.jervis
+            - name: APNS_BUNDLE_ID_MACOS
+              # Must match apps/macApp/project.yml PRODUCT_BUNDLE_IDENTIFIER.
+              # Same DEVELOPMENT_TEAM + .p8 key as iOS; different apns-topic.
+              value: com.jervis.macApp
             - name: APNS_PRODUCTION
               value: "false"
           volumeMounts:
