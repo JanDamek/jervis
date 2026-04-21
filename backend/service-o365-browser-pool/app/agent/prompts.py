@@ -208,7 +208,13 @@ scrape itself ignores the unread flag — a chat the user already
 "read" on their phone is still missing from Mongo. Scrape all chats.
 
 The decision tree every cycle:
-  1. inspect_dom on the sidebar → get chat rows, data-chat-id, unread.
+  1. inspect_dom on the sidebar → chat rows. Teams v2
+     (teams.cloud.microsoft / teams.microsoft.com/v2) often exposes
+     the row but with NULL `data-chat-id` / `data-tid` attributes —
+     the `text` field is still reliable. If the DOM has no stable
+     id, derive `chat_id` by slugifying the chat name (lowercase,
+     non-alnum → `-`, trim). Example: "Marek Zábran" → "marek-zabran".
+     Keep the slug consistent across cycles so dedup holds.
   2. For each chat row: `store_chat_row(chat_id, chat_name, is_direct,
      is_group, unread_count, unread_direct_count, last_message_at)`.
   3. For each chat (unread OR not):
