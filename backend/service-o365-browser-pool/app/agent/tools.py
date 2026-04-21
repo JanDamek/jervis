@@ -48,9 +48,11 @@ import asyncio
 import json
 import logging
 import time
-from typing import Literal
+from typing import Annotated, Literal
 
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import tool
+from langgraph.prebuilt import InjectedState
 
 from app.agent import _dom_query, work_hours
 from app.agent.context import get_pod_context
@@ -1012,6 +1014,104 @@ async def leave_meeting(meeting_id: str, reason: str) -> dict:
 # ---- Terminators -------------------------------------------------------
 
 @tool
+async def query_history(
+    state: Annotated[dict, InjectedState],
+    n: int = 20,
+    before_index: int = -1,
+    contains: str = "",
+    kind: Literal["", "human", "ai", "tool", "system"] = "",
+) -> dict:
+    """Look up older messages from this pod's full conversation history.
+
+    The agent's LLM context only sees the **last 10 messages** — every
+    older Human/AI/Tool message lives in the LangGraph MongoDB
+    checkpoint. Call this tool when you need to recall something earlier
+    (e.g. a chat-row id you stored an hour ago, the URL you navigated
+    away from, what the watcher said two cycles back).
+
+    Args:
+        n: Maximum number of messages to return (newest within the
+            filter, capped at 50). Default 20.
+        before_index: Only return messages whose absolute index in the
+            full history is < this value. Use -1 (default) to include
+            up to the very latest. Pass an earlier index to page
+            backwards through history.
+        contains: Optional case-insensitive substring filter applied
+            against message text + tool_call args.
+        kind: Optional role filter — 'human', 'ai', 'tool', 'system',
+            or '' to include all roles.
+
+    Returns:
+        {total: <total messages in history>, returned: <count>,
+         messages: [{index, role, ts?, content_preview, tool_calls?,
+                     tool_call_id?, name?}, ...]}
+        Newest-first within the filter. Each `content_preview` is
+        capped at 600 characters.
+    """
+    messages: list[BaseMessage] = state.get("messages") or []
+    total = len(messages)
+    if not messages:
+        return {"total": 0, "returned": 0, "messages": []}
+
+    upper = total if before_index < 0 else min(before_index, total)
+    sub = list(enumerate(messages[:upper]))
+    needle = contains.strip().lower()
+    role_map = {
+        "human": HumanMessage,
+        "ai": AIMessage,
+        "tool": ToolMessage,
+        "system": SystemMessage,
+    }
+    role_cls = role_map.get(kind, None) if kind else None
+
+    out: list[dict] = []
+    # Walk newest-first.
+    for idx, m in reversed(sub):
+        if role_cls is not None and not isinstance(m, role_cls):
+            continue
+        text = m.content if isinstance(m.content, str) else json.dumps(m.content, default=str)
+        tc_list = getattr(m, "tool_calls", None) or []
+        tc_summary = [
+            {"id": tc.get("id", ""), "name": tc.get("name", ""),
+             "args": tc.get("args", {})}
+            for tc in tc_list
+        ]
+        haystack = text or ""
+        if tc_summary:
+            haystack = haystack + " " + json.dumps(tc_summary, default=str)
+        if needle and needle not in haystack.lower():
+            continue
+        entry: dict = {
+            "index": idx,
+            "role": _role_of(m),
+            "content_preview": (text or "")[:600],
+        }
+        if tc_summary:
+            entry["tool_calls"] = tc_summary
+        if isinstance(m, ToolMessage):
+            entry["tool_call_id"] = m.tool_call_id
+            if getattr(m, "name", None):
+                entry["name"] = m.name
+        out.append(entry)
+        if len(out) >= max(1, min(50, n)):
+            break
+
+    return {"total": total, "returned": len(out), "messages": out}
+
+
+def _role_of(m: BaseMessage) -> str:
+    if isinstance(m, HumanMessage):
+        return "human"
+    if isinstance(m, AIMessage):
+        return "ai"
+    if isinstance(m, ToolMessage):
+        return "tool"
+    if isinstance(m, SystemMessage):
+        return "system"
+    return type(m).__name__.lower()
+
+
+@tool
 async def done(summary: str) -> dict:
     """Mark the current reasoning cycle complete.
 
@@ -1052,6 +1152,8 @@ ALL_TOOLS = [
     # Meeting
     meeting_presence_report, start_meeting_recording, stop_meeting_recording,
     leave_meeting,
+    # History / introspection
+    query_history,
     # Terminators
     done, error,
 ]
