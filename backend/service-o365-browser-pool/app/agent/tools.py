@@ -161,8 +161,10 @@ async def look_at_screen(
         '- visible_actions: array of at most 8 {"label": "<button text>", '
         '"bbox": {"x": 0, "y": 0, "w": 0, "h": 0}} entries. ONLY clickable '
         'primary buttons / tiles / links — not every piece of text.\n'
-        '- detected_text: '
-        + ("object with the focused answer" if ask else "empty object {}")
+        '- detected_text: object. If the screen shows a Microsoft '
+        'Authenticator 2-digit or 3-digit sign-in number (big number '
+        'to tap in the phone app), put it as {"mfa_code": "<digits>"}. '
+        + ('Also include the focused answer.' if ask else 'Otherwise empty {}.')
         + "\n"
         "Keep the output under 800 characters."
         + (f"\nFocused question: {ask}" if ask else "")

@@ -122,24 +122,33 @@ is allowed. FORBIDDEN methods — if observed, emit error + ERROR state:
 
 If a method chooser is visible, `click` the Authenticator option.
 
-Authenticator number-match flow:
-1. `look_at_screen(reason='mfa_detect', ask='is this Microsoft
-   Authenticator number-match?')` — cold VLM default on a sign-in screen.
-2. Read the 2–3 digit number. Scoped DOM first:
+Authenticator number-match flow — SPEED IS CRITICAL. The Authenticator
+code rotates every ~30 seconds. Every extra VLM round-trip you spend
+before pushing `notify_user(kind='mfa')` burns time the user needs to
+tap the code in their phone. Aim for <15 s from MFA screen to push.
+
+1. `look_at_screen(reason='post_signin')` — the standard prompt asks
+   VLM to include `detected_text.mfa_code` automatically when a
+   number is visible. So on the FIRST VLM call after clicking
+   Sign in, check: does `detected_text` already have `mfa_code`?
+   If YES — skip to step 4 immediately.
+2. If NO (VLM missed it), try scoped DOM once:
      inspect_dom('[data-display-sign-in-code], [aria-live] .number,
                   .sign-in-number',
                  attrs=['aria-label','data-display-sign-in-code'])
-   Fallback: `look_at_screen(reason='mfa_code', ask='return the 2-digit
+3. If DOM is empty too, one focused VLM call:
+   `look_at_screen(reason='mfa_code', ask='return the 2-digit
    number shown on the page, nothing else')`.
-3. `report_state(state='AWAITING_MFA', mfa_type='authenticator_number',
-                 mfa_number='<N>', mfa_message='Potvrďte číslo <N>
-                 v Microsoft Authenticator')`.
 4. `notify_user(kind='mfa', message='Potvrď <N> v Microsoft
-   Authenticatoru.', mfa_code='<N>')`. The `mfa_code` field is REQUIRED
-   when kind='mfa' — the push surfaces it on the phone.
-5. Wait 20 s and re-observe; if the code rotates, re-read + re-notify
+   Authenticatoru.', mfa_code='<N>')`. The `mfa_code` field is
+   REQUIRED when kind='mfa' — the push surfaces it on the phone.
+   DO THIS FIRST, before `report_state`.
+5. `report_state(state='AWAITING_MFA', mfa_type='authenticator_number',
+                 mfa_number='<N>', mfa_message='Potvrďte číslo <N>
+                 v Microsoft Authenticator')`. Only AFTER push sent.
+6. Wait 25 s and re-observe. If the code rotated, re-read + re-notify
    with the new number.
-6. On success (`app_state != login/mfa`) → `report_state('ACTIVE')`.
+7. On success (`app_state != login/mfa`) → `report_state('ACTIVE')`.
 
 You NEVER type the number back into the browser. There is no MFA input
 field in the Authenticator number-match flow — the user approves on the
