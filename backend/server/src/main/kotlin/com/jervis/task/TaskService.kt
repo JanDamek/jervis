@@ -499,11 +499,31 @@ class TaskService(
 
     /**
      * Phase 3: clear the re-qualification flag once the qualifier has produced
-     * a decision. Called from the `/internal/qualification-done` callback.
+     * a decision. Also clears the in-flight dispatch marker so the task is
+     * eligible again if a future event sets needsQualification back to true.
+     * Called from the `/internal/qualification-done` callback.
      */
     suspend fun clearNeedsQualification(taskId: TaskId) {
         val query = Query(Criteria.where("_id").`is`(taskId.value))
-        val update = Update().set("needsQualification", false)
+        val update = Update()
+            .set("needsQualification", false)
+            .unset("qualifyDispatchedAt")
+        mongoTemplate.updateFirst(query, update, TaskDocument::class.java).awaitSingle()
+    }
+
+    /**
+     * Mark a task as in-flight with the orchestrator qualifier (non-null
+     * timestamp) or clear the marker when the dispatch failed (null). The
+     * requalify loop reads this to avoid firing parallel qualify requests
+     * for the same task while the previous one is still being processed.
+     */
+    suspend fun markQualifyDispatched(taskId: TaskId, at: Instant?) {
+        val query = Query(Criteria.where("_id").`is`(taskId.value))
+        val update = if (at != null) {
+            Update().set("qualifyDispatchedAt", at)
+        } else {
+            Update().unset("qualifyDispatchedAt")
+        }
         mongoTemplate.updateFirst(query, update, TaskDocument::class.java).awaitSingle()
     }
 

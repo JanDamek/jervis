@@ -70,10 +70,13 @@ class TaskQualificationService(
     suspend fun requalifyPendingTasks() {
         var dispatched = 0
         var skipped = 0
+        var inflight = 0
         // Rate-limit: 1 task per cycle — orchestrator processes ONE qualifier
         // agent at a time (shared GPU). The loop runs every 30s so throughput
         // is ~2 tasks/min. Bulk re-qualification (1000+ tasks) takes ~8 hours.
         val maxPerCycle = 1
+        val now = Instant.now()
+        val inflightCutoff = now.minus(QUALIFY_INFLIGHT_WINDOW)
         // Pre-load archived client IDs so we can skip their tasks entirely.
         // Archived clients = no longer paying, no work needed, just KB storage.
         val archivedClientIds = try {
@@ -90,6 +93,17 @@ class TaskQualificationService(
                     taskService.clearNeedsQualification(task.id)
                     taskService.updateState(task, com.jervis.dto.task.TaskStateEnum.DONE)
                     skipped++
+                    return@collect
+                }
+                // In-flight guard: if we already dispatched this task to the
+                // orchestrator recently, skip until the response arrives or
+                // the window expires. Without this every 30s tick would fire
+                // another CRITICAL qualify request for the same task while
+                // the previous one is still stuck in the router queue —
+                // exactly the deadlock that starved every other caller.
+                val dispatchedAt = task.qualifyDispatchedAt
+                if (dispatchedAt != null && dispatchedAt.isAfter(inflightCutoff)) {
+                    inflight++
                     return@collect
                 }
                 try {
@@ -116,16 +130,22 @@ class TaskQualificationService(
                         content = task.content,
                         mentionsJervis = task.mentionsJervis,
                     )
+                    // Mark in-flight BEFORE the RPC so even a crashing orchestrator
+                    // doesn't trigger an immediate retry.
+                    taskService.markQualifyDispatched(task.id, now)
                     val response = pythonOrchestratorClient.qualify(request)
                     if (response != null) {
                         dispatched++
                     } else {
-                        // Circuit-breaker open or HTTP error → leave the flag set,
-                        // RequalificationLoop will retry on its next tick.
+                        // Circuit-breaker open or HTTP error → clear the in-flight
+                        // marker so the next tick retries (but still rate-limited
+                        // by maxPerCycle=1).
+                        taskService.markQualifyDispatched(task.id, null)
                         skipped++
                         logger.debug { "REQUALIFY_SKIPPED: taskId=${task.id} (qualify endpoint unavailable)" }
                     }
                 } catch (e: Exception) {
+                    taskService.markQualifyDispatched(task.id, null)
                     skipped++
                     logger.warn(e) { "REQUALIFY_DISPATCH_FAILED: taskId=${task.id}" }
                 }
@@ -133,9 +153,19 @@ class TaskQualificationService(
         } catch (e: Exception) {
             logger.error(e) { "REQUALIFY_LOOP_ERROR: ${e.message}" }
         }
-        if (dispatched > 0 || skipped > 0) {
-            logger.info { "REQUALIFY_CYCLE_COMPLETE: dispatched=$dispatched skipped=$skipped" }
+        if (dispatched > 0 || skipped > 0 || inflight > 0) {
+            logger.info {
+                "REQUALIFY_CYCLE_COMPLETE: dispatched=$dispatched skipped=$skipped inflight=$inflight"
+            }
         }
+    }
+
+    companion object {
+        // Orchestrator qualifier is capped at 5 iterations × ~30s per LLM hop,
+        // so 5 minutes comfortably covers the happy path. After that we assume
+        // the orchestrator died mid-flight and allow a single retry per cycle.
+        private val QUALIFY_INFLIGHT_WINDOW: java.time.Duration =
+            java.time.Duration.ofMinutes(5)
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)

@@ -265,6 +265,19 @@ data class TaskDocument(
     @Indexed
     val needsQualification: Boolean = false,
     /**
+     * In-flight timestamp of the most recent qualify dispatch. Set when
+     * TaskQualificationService hands the task off to the orchestrator,
+     * cleared by the `qualificationDone` callback. While this is within
+     * [QUALIFY_INFLIGHT_WINDOW] the requalify loop MUST skip the task —
+     * otherwise a slow/stalled orchestrator produces N parallel qualify
+     * runs per task, each of which adds a CRITICAL request to the router
+     * queue and starves every other caller.
+     *
+     * After the window expires the task becomes eligible again so we
+     * recover from orchestrator crashes without human intervention.
+     */
+    val qualifyDispatchedAt: Instant? = null,
+    /**
      * Absolute instant by which a response MUST be out. Drives deadline-first scheduling
      * (nearest deadline wins over priority in same priority tier). Null = no deadline pressure
      * (legacy tasks, batch jobs). Populated by inbound handlers via StructuralUrgencyDetector.
