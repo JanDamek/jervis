@@ -1,5 +1,14 @@
 import AppKit
 import UserNotifications
+import os.log
+
+private let log = OSLog(subsystem: "com.jervis.macApp", category: "push")
+
+private func appLog(_ msg: String) {
+    // %{public}s defeats the macOS unified-log privacy redaction that
+    // would otherwise show every NSLog/print payload as <private>.
+    os_log("%{public}s", log: log, type: .default, msg)
+}
 
 /// macOS AppDelegate — registers APNs and relays tokens + incoming
 /// notification payloads to the Compose Desktop JVM child over a Unix
@@ -14,6 +23,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let composeLauncher = ComposeLauncher()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        appLog("[Jervis/macApp] applicationDidFinishLaunching")
         UNUserNotificationCenter.current().delegate = self
         bridge.start()
 
@@ -21,16 +31,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             options: [.alert, .badge, .sound]
         ) { granted, error in
             if let error = error {
-                print("[Jervis/macApp] Notification permission error: \(error)")
+                appLog("[Jervis/macApp] Notification permission error: \(error)")
                 return
             }
             if granted {
                 DispatchQueue.main.async {
+                    appLog("[Jervis/macApp] Calling registerForRemoteNotifications()")
                     NSApplication.shared.registerForRemoteNotifications()
                 }
-                print("[Jervis/macApp] Notification permission granted")
+                appLog("[Jervis/macApp] Notification permission granted")
             } else {
-                print("[Jervis/macApp] Notification permission denied")
+                appLog("[Jervis/macApp] Notification permission denied")
             }
         }
 
@@ -49,7 +60,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let hexToken = deviceToken.map { String(format: "%02x", $0) }.joined()
         // Stable device identifier on macOS — hardware UUID via IOKit.
         let deviceId = SocketBridge.hardwareUuid() ?? "unknown-mac"
-        print("[Jervis/macApp] APNs token: \(hexToken.prefix(8))... device: \(deviceId)")
+        appLog("[Jervis/macApp] APNs token: \(hexToken.prefix(8))... device: \(deviceId)")
         bridge.sendToken(hexToken: hexToken, deviceId: deviceId)
     }
 
@@ -57,7 +68,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         _ application: NSApplication,
         didFailToRegisterForRemoteNotificationsWithError error: Error
     ) {
-        print("[Jervis/macApp] Failed to register for remote notifications: \(error.localizedDescription)")
+        appLog("[Jervis/macApp] Failed to register for remote notifications: \(error.localizedDescription)")
     }
 
     func application(

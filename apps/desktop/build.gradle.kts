@@ -155,22 +155,7 @@ tasks.register<JavaExec>("runPublic") {
     systemProperty("jervis.server.url", serverUrls["public"]!!)
 }
 
-// macOS native wrapper — builds the Compose Desktop distribution, stages
-// it into apps/macApp/, generates the Xcode project via xcodegen, signs
-// and launches the .app. Delegates to run-mac.sh at the repo root so the
-// Bash + Gradle paths stay in sync.
-tasks.register<Exec>("runMac") {
-    group = "application"
-    description = "Build + launch apps/macApp (Swift host with APNs + embedded Compose Desktop)"
-    onlyIf { org.gradle.internal.os.OperatingSystem.current().isMacOsX }
-    workingDir = rootProject.projectDir
-    commandLine("./run-mac.sh")
-}
-
-tasks.register<Exec>("runMacClean") {
-    group = "application"
-    description = "Like runMac, but wipes the staged JVM runtime + generated xcodeproj first"
-    onlyIf { org.gradle.internal.os.OperatingSystem.current().isMacOsX }
-    workingDir = rootProject.projectDir
-    commandLine("./run-mac.sh", "clean")
-}
+// macOS APNs helper is built and launched from Xcode (open
+// apps/macApp/macApp.xcodeproj). The Compose Desktop JVM dials its
+// Unix socket /tmp/jervis-macapp-apns.sock on startup to pick up the
+// APNs token (see PushTokenRegistrar.jvm.kt).

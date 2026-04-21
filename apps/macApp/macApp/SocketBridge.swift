@@ -19,21 +19,29 @@ final class SocketBridge {
     private var serverFd: Int32 = -1
     private var clientFd: Int32 = -1
     private var pending: [String] = []
-    private let queue = DispatchQueue(label: "jervis.macapp.socketbridge")
+    // State mutex — protects clientFd + pending. The accept() thread must
+    // NOT share a serial queue with send/flush, otherwise the blocking
+    // accept() call holds the queue forever and queued sends never fire.
+    private let stateQueue = DispatchQueue(label: "jervis.macapp.socketbridge.state")
+    // Dedicated accept thread.
+    private var acceptThread: Thread?
 
     init(path: String) {
         self.path = path
     }
 
     func start() {
-        queue.async { [weak self] in
-            self?.openSocket()
-            self?.acceptLoop()
-        }
+        openSocket()
+        let t = Thread { [weak self] in self?.acceptLoop() }
+        t.name = "jervis.macapp.socketbridge.accept"
+        acceptThread = t
+        t.start()
     }
 
     func stop() {
-        if clientFd >= 0 { close(clientFd); clientFd = -1 }
+        stateQueue.sync {
+            if clientFd >= 0 { close(clientFd); clientFd = -1 }
+        }
         if serverFd >= 0 { close(serverFd); serverFd = -1 }
         unlink(path)
     }
@@ -51,15 +59,27 @@ final class SocketBridge {
     }
 
     private func send(line: String) {
-        queue.async { [weak self] in
+        stateQueue.async { [weak self] in
             guard let self = self else { return }
             if self.clientFd >= 0 {
-                line.withCString { ptr in
-                    _ = Darwin.send(self.clientFd, ptr, strlen(ptr), 0)
+                if !self.writeLine(line, fd: self.clientFd) {
+                    // Write failed — client died without closing cleanly.
+                    // Queue the line for the next reconnect.
+                    close(self.clientFd)
+                    self.clientFd = -1
+                    self.pending.append(line)
                 }
             } else {
                 self.pending.append(line)
             }
+        }
+    }
+
+    private func writeLine(_ line: String, fd: Int32) -> Bool {
+        return line.withCString { ptr in
+            let len = strlen(ptr)
+            let written = Darwin.send(fd, ptr, len, 0)
+            return written == Int(len)
         }
     }
 
@@ -108,22 +128,34 @@ final class SocketBridge {
                 perror("[Jervis/macApp] accept")
                 continue
             }
-            clientFd = fd
             print("[Jervis/macApp] JVM child connected")
-            queue.async { [weak self] in
-                self?.flushPending()
+            stateQueue.async { [weak self] in
+                guard let self = self else { return }
+                // Close any previous connection before accepting a new one.
+                if self.clientFd >= 0 { close(self.clientFd) }
+                self.clientFd = fd
+                self.flushPending()
             }
         }
     }
 
+    /// Must be called on stateQueue.
     private func flushPending() {
         guard clientFd >= 0 else { return }
+        var failed = false
         for line in pending {
-            line.withCString { ptr in
-                _ = Darwin.send(clientFd, ptr, strlen(ptr), 0)
+            if !writeLine(line, fd: clientFd) {
+                failed = true
+                break
             }
         }
-        pending.removeAll()
+        if failed {
+            close(clientFd)
+            clientFd = -1
+            // Keep pending queue intact for the next connect.
+        } else {
+            pending.removeAll()
+        }
     }
 
     /// Stable per-machine UUID from IOKit so the deviceId survives

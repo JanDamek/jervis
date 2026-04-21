@@ -17,6 +17,12 @@ jervis backup/
 *.xcuserstate
 xcuserdata/
 
+# macApp — xcodeproj is regenerated from apps/macApp/project.yml by xcodegen
+# on every run. JervisDesktop/ is a staged Compose Desktop jpackage output
+# (~180 MB, produced by `./gradlew :apps:desktop:createDistributable`).
+apps/macApp/macApp.xcodeproj/
+apps/macApp/macApp/Resources/JervisDesktop/
+
 # Python
 __pycache__/
 *.pyc

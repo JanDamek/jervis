@@ -34,16 +34,18 @@ actual object PushTokenRegistrar {
         if (tokenRegistered) return
 
         if (isMacOs()) {
-            val socket = System.getenv("JERVIS_MACAPP_SOCKET")
-            if (!socket.isNullOrBlank()) {
-                val bridge = MacAppSocketBridge.ensureStarted(socket)
-                val token = withTimeoutOrNull(15_000L) { bridge.awaitToken() }
-                if (token != null) {
-                    registerMacOs(token, deviceTokenService)
-                    return
-                }
-                println("macApp: APNs token not available after 15s, falling back to desktop registry")
+            // Default to the well-known socket path — the apps/macApp Swift
+            // host (launched separately from Xcode) owns it. `JERVIS_MACAPP_SOCKET`
+            // env var only exists for overrides (tests, custom layouts).
+            val socket = System.getenv("JERVIS_MACAPP_SOCKET")?.takeIf { it.isNotBlank() }
+                ?: "/tmp/jervis-macapp-apns.sock"
+            val bridge = MacAppSocketBridge.ensureStarted(socket)
+            val token = withTimeoutOrNull(15_000L) { bridge.awaitToken() }
+            if (token != null) {
+                registerMacOs(token, deviceTokenService)
+                return
             }
+            println("macApp: APNs socket $socket has no token after 15s — falling back to plain desktop registry. Is the Xcode-launched Jervis.app helper running?")
         }
 
         registerPlainDesktop(deviceTokenService)
