@@ -181,7 +181,8 @@ class RequestState:
     QUEUED = "queued"
     LOADING_MODEL = "loading_model"
     RUNNING_GPU = "running_gpu"
-    PREEMPTED = "preempted"
+    PREEMPTED = "preempted"                  # preempted by queued CRITICAL within same group
+    PREEMPTED_BY_WHISPER = "preempted_by_whisper"  # whisper took the GPU — retry after WhisperDone
     COMPLETED = "completed"
     FAILED = "failed"
 

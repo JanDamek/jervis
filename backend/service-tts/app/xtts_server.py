@@ -360,6 +360,38 @@ def _synthesize_text(text: str, speed: float = 1.0, language: str = "", speaker:
     return audio_buffer.getvalue()
 
 
+def _run_inference_stream_once(model, text_chunk, language, spk_latent, spk_embedding, speed, chunk_queue):
+    """One pass of inference_stream with CUDA OOM recovery. Returns the
+    number of PCM chunks emitted. Raises on non-OOM failures so the
+    caller can log + report to the client."""
+    chunks_emitted = 0
+    try:
+        stream_gen = model.inference_stream(
+            text=text_chunk,
+            language=language,
+            gpt_cond_latent=spk_latent,
+            speaker_embedding=spk_embedding,
+            speed=speed,
+            stream_chunk_size=30,
+        )
+        for audio_chunk in stream_gen:
+            if isinstance(audio_chunk, torch.Tensor):
+                audio_chunk = audio_chunk.cpu().numpy()
+            audio_chunk = audio_chunk.squeeze()
+            pcm_int16 = np.clip(audio_chunk * 32767, -32768, 32767).astype(np.int16)
+            chunk_queue.put(("pcm", pcm_int16.tobytes()))
+            chunks_emitted += 1
+    except torch.cuda.OutOfMemoryError:
+        # VRAM pressure — another process grabbed memory since XTTS loaded.
+        # Drop our own caches, ask PyTorch to return free blocks to the
+        # allocator, and let the caller retry once. XTTS model tensors
+        # themselves stay resident (permanent by design).
+        print("[TTS] CUDA OOM during inference, clearing cache and retrying", flush=True)
+        torch.cuda.empty_cache()
+        raise
+    return chunks_emitted
+
+
 def _stream_inference(text: str, speed: float, language: str, chunk_queue: queue.Queue, speaker: str | None = None):
     """True streaming TTS using inference_stream() — yields PCM chunks as they're generated.
 
@@ -367,6 +399,8 @@ def _stream_inference(text: str, speed: float, language: str, chunk_queue: queue
     Each chunk is raw int16 PCM bytes (no WAV header) for gapless playback via SourceDataLine.
     Text is split into sentences first (XTTS char limit), then each sentence is streamed.
     """
+    total_emitted = 0
+    chunk_errors: list[str] = []
     try:
         if not language:
             language = _detect_language(text)
@@ -382,7 +416,6 @@ def _stream_inference(text: str, speed: float, language: str, chunk_queue: queue
 
         # Split text into sentence-level chunks (respecting XTTS char limit)
         text_chunks = _split_long_text(text)
-        chunk_idx = 0
 
         for text_chunk in text_chunks:
             text_chunk = text_chunk.strip().rstrip(".!?…,;:\"'""„‟»«")
@@ -391,36 +424,38 @@ def _stream_inference(text: str, speed: float, language: str, chunk_queue: queue
 
             try:
                 if spk_latent is not None and spk_embedding is not None:
-                    # Use inference_stream with pre-computed speaker embedding
-                    stream_gen = model.inference_stream(
-                        text=text_chunk,
-                        language=language,
-                        gpt_cond_latent=spk_latent,
-                        speaker_embedding=spk_embedding,
-                        speed=speed,
-                        stream_chunk_size=30,  # tokens per chunk — larger = better quality, ~2s first chunk on P40
-                    )
-
-                    for audio_chunk in stream_gen:
-                        if isinstance(audio_chunk, torch.Tensor):
-                            audio_chunk = audio_chunk.cpu().numpy()
-                        audio_chunk = audio_chunk.squeeze()
-                        pcm_int16 = np.clip(audio_chunk * 32767, -32768, 32767).astype(np.int16)
-                        chunk_queue.put(("pcm", pcm_int16.tobytes()))
-                        chunk_idx += 1
+                    # Try once; on CUDA OOM recover and retry once more.
+                    try:
+                        total_emitted += _run_inference_stream_once(
+                            model, text_chunk, language, spk_latent, spk_embedding,
+                            speed, chunk_queue,
+                        )
+                    except torch.cuda.OutOfMemoryError:
+                        total_emitted += _run_inference_stream_once(
+                            model, text_chunk, language, spk_latent, spk_embedding,
+                            speed, chunk_queue,
+                        )
                 else:
                     # No speaker embedding — fall back to batch synthesis
                     wav_data = _synthesize_chunk(text_chunk, speed, language, speaker)
                     if wav_data:
-                        # Extract raw PCM from WAV
                         with wave.open(io.BytesIO(wav_data), "rb") as wf:
                             chunk_queue.put(("pcm", wf.readframes(wf.getnframes())))
-                        chunk_idx += 1
+                        total_emitted += 1
 
             except Exception as e:
-                print(f"[TTS] stream chunk error on '{text_chunk[:40]}': {e}", flush=True)
+                # Per-chunk error — log + keep trying the next sentence.
+                err_msg = f"{type(e).__name__}: {e}"
+                chunk_errors.append(err_msg)
+                print(f"[TTS] stream chunk error on '{text_chunk[:40]}': {err_msg}", flush=True)
 
-        chunk_queue.put(("done", chunk_idx))
+        # If we did not emit a single PCM chunk AND we saw errors, the client
+        # should surface an error rather than silently playing nothing — this
+        # was the HEADER→DONE-without-PCM pathology observed in the desktop log.
+        if total_emitted == 0 and chunk_errors:
+            chunk_queue.put(("error", f"no audio produced; {len(chunk_errors)} chunk errors: {chunk_errors[0]}"))
+        else:
+            chunk_queue.put(("done", total_emitted))
     except Exception as e:
         print(f"[TTS] _stream_inference error: {e}", flush=True)
         import traceback

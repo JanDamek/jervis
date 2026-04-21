@@ -61,7 +61,12 @@ GPU_IDLE_S = int(os.environ.get("WHISPER_GPU_IDLE_S", "60"))
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_VLM_MODEL = os.environ.get("OLLAMA_VLM_MODEL", "qwen3-vl-tool:latest")
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
-ROUTER_URL = os.environ.get("ROUTER_URL", "")
+
+# Router gRPC — preempts Ollama LLM/VLM + unloads models before we load whisper.
+# The old REST endpoints (/router/whisper-notify, /router/whisper-done) were
+# retired; the router now exposes these via jervis.router.RouterAdminService.
+ROUTER_GRPC_HOST = os.environ.get("ROUTER_GRPC_HOST", "")
+ROUTER_GRPC_PORT = int(os.environ.get("ROUTER_GRPC_PORT", "5501"))
 
 # ---------------------------------------------------------------------------
 # Global model cache — lazy loaded, auto-unloaded after idle.
@@ -112,53 +117,70 @@ def _load_diarization_pipeline():
 
 
 def _router_notify_gpu():
-    """Tell router we want GPU. Blocks until VLM finishes (if running)."""
-    if not ROUTER_URL:
+    """Tell router we want GPU. Router will actively preempt every in-flight
+    Ollama LLM/VLM, unload those models, and block until VRAM is free.
+    XTTS (separate GPU resident) is untouched."""
+    if not ROUTER_GRPC_HOST:
+        print("Router: ROUTER_GRPC_HOST not set, whisper runs without coordination", flush=True)
         return
     try:
-        resp = http_requests.post(
-            f"{ROUTER_URL}/router/whisper-notify",
-            timeout=3600,
+        import grpc
+        from jervis.router import admin_pb2, admin_pb2_grpc
+        from jervis.common import types_pb2
+
+        channel = grpc.insecure_channel(
+            f"{ROUTER_GRPC_HOST}:{ROUTER_GRPC_PORT}",
+            options=[("grpc.keepalive_time_ms", 30000)],
         )
-        print(f"Router: GPU notify → {resp.status_code}", flush=True)
+        try:
+            stub = admin_pb2_grpc.RouterAdminServiceStub(channel)
+            ctx = types_pb2.RequestContext()
+            resp = stub.WhisperNotify(
+                admin_pb2.WhisperNotifyRequest(ctx=ctx, preempt_timeout_s=30),
+                timeout=60.0,
+            )
+            print(
+                f"Router: whisper-notify granted={resp.granted} "
+                f"preempted={resp.preempted_count} unloaded={resp.unloaded_models}",
+                flush=True,
+            )
+        finally:
+            channel.close()
     except Exception as e:
         print(f"Router: notify failed ({e}), proceeding anyway", flush=True)
 
 
 def _router_notify_done():
-    """Tell router we're done with GPU."""
-    if not ROUTER_URL:
+    """Tell router whisper is done. Preempted Ollama requests in the
+    gRPC retry loop will now resubmit and complete."""
+    if not ROUTER_GRPC_HOST:
         return
     try:
-        http_requests.post(f"{ROUTER_URL}/router/whisper-done", timeout=10)
-        print("Router: done notified", flush=True)
+        import grpc
+        from jervis.router import admin_pb2, admin_pb2_grpc
+        from jervis.common import types_pb2
+
+        channel = grpc.insecure_channel(f"{ROUTER_GRPC_HOST}:{ROUTER_GRPC_PORT}")
+        try:
+            stub = admin_pb2_grpc.RouterAdminServiceStub(channel)
+            ctx = types_pb2.RequestContext()
+            stub.WhisperDone(admin_pb2.WhisperDoneRequest(ctx=ctx), timeout=10.0)
+            print("Router: whisper-done acknowledged", flush=True)
+        finally:
+            channel.close()
     except Exception as e:
         print(f"Router: done notify failed ({e})", flush=True)
 
 
-def _unload_ollama_vlm():
-    """Tell Ollama to unload VLM model to free VRAM for whisper."""
-    try:
-        resp = http_requests.post(
-            f"{OLLAMA_URL}/api/generate",
-            json={"model": OLLAMA_VLM_MODEL, "keep_alive": 0},
-            timeout=15,
-        )
-        if resp.status_code == 200:
-            print(f"Unloaded Ollama VLM ({OLLAMA_VLM_MODEL}) to free VRAM", flush=True)
-        # Ignore errors — VLM might not be loaded
-    except Exception:
-        pass  # VLM not loaded or Ollama not reachable — fine
-
-
 def _acquire_gpu():
-    """Acquire GPU VRAM: unload Ollama VLM, load whisper model."""
+    """Acquire GPU VRAM: router preempts + unloads Ollama, then load whisper."""
     global _gpu_loaded
     if _gpu_loaded and DEFAULT_MODEL in _model_cache:
         return  # Already loaded
     if DEVICE == "cuda":
-        _unload_ollama_vlm()
-        time.sleep(1)  # Brief wait for Ollama to free VRAM
+        # Router-driven preemption — waits until Ollama VRAM is free.
+        # No local Ollama unload call needed, router does it systemically.
+        _router_notify_gpu()
     _load_whisper_model()
     _gpu_loaded = True
 

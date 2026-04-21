@@ -35,6 +35,19 @@ class ProxyError(RuntimeError):
         self.message = message
 
 
+class PreemptedByWhisperError(RuntimeError):
+    """Raised when proxy stream was cut by whisper preemption. The gRPC
+    servicer catches this, waits for `WhisperDone`, and re-submits the
+    same request transparently — the caller sees a single delayed response,
+    not a failure. If the inner stream already emitted chunks we still
+    raise (the partial output is lost), because Ollama has no resume.
+    """
+
+    def __init__(self, emitted_chunks: int) -> None:
+        super().__init__("preempted_by_whisper")
+        self.emitted_chunks = emitted_chunks
+
+
 def _build_timeout() -> httpx.Timeout:
     return httpx.Timeout(
         connect=settings.proxy_connect_timeout_s,
@@ -56,8 +69,11 @@ async def proxy_streaming(
     sees StopAsyncIteration and can react via gRPC context cancellation.
     """
 
+    from .models import RequestState
+
     client = httpx.AsyncClient(timeout=_build_timeout())
     preempted = False
+    emitted = 0
     try:
         async with client.stream(
             "POST",
@@ -75,24 +91,29 @@ async def proxy_streaming(
                 if request.cancel_event.is_set():
                     preempted = True
                     logger.warning(
-                        "PROXY_STREAM: id=%s PREEMPTED (model=%s)",
-                        request.request_id, request.model,
+                        "PROXY_STREAM: id=%s PREEMPTED state=%s emitted=%d",
+                        request.request_id, request.state, emitted,
                     )
+                    if request.state == RequestState.PREEMPTED_BY_WHISPER:
+                        raise PreemptedByWhisperError(emitted)
                     return
                 if not line.strip():
                     continue
                 try:
                     yield json.loads(line)
+                    emitted += 1
                 except json.JSONDecodeError:
                     logger.debug("PROXY_STREAM: non-JSON line: %s", line[:120])
-            logger.info("PROXY_STREAM: id=%s completed", request.request_id)
+            logger.info("PROXY_STREAM: id=%s completed (emitted=%d)", request.request_id, emitted)
     except httpx.RemoteProtocolError:
         if request.cancel_event.is_set():
             preempted = True
             logger.warning(
-                "PROXY_STREAM: id=%s PREEMPTED (protocol error)",
-                request.request_id,
+                "PROXY_STREAM: id=%s PREEMPTED (protocol error) state=%s emitted=%d",
+                request.request_id, request.state, emitted,
             )
+            if request.state == RequestState.PREEMPTED_BY_WHISPER:
+                raise PreemptedByWhisperError(emitted)
             return
         logger.error("PROXY_STREAM: id=%s protocol error", request.request_id)
         raise ProxyError("protocol_error") from None
@@ -142,10 +163,13 @@ async def proxy_non_streaming(
                     pass
 
             if cancel_task in done:
+                from .models import RequestState
                 logger.warning(
-                    "PROXY_NON_STREAM: id=%s CANCELLED (client disconnect or preemption)",
-                    request.request_id,
+                    "PROXY_NON_STREAM: id=%s CANCELLED state=%s",
+                    request.request_id, request.state,
                 )
+                if request.state == RequestState.PREEMPTED_BY_WHISPER:
+                    raise PreemptedByWhisperError(0)
                 raise ProxyError("cancelled")
 
             resp = post_task.result()

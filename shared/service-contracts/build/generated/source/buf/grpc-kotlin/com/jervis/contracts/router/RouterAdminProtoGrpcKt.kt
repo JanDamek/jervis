@@ -73,6 +73,14 @@ public object RouterAdminServiceGrpcKt {
     @JvmStatic
     get() = RouterAdminServiceGrpc.getInvalidateClientTierMethod()
 
+  public val whisperNotifyMethod: MethodDescriptor<WhisperNotifyRequest, WhisperNotifyResponse>
+    @JvmStatic
+    get() = RouterAdminServiceGrpc.getWhisperNotifyMethod()
+
+  public val whisperDoneMethod: MethodDescriptor<WhisperDoneRequest, WhisperDoneResponse>
+    @JvmStatic
+    get() = RouterAdminServiceGrpc.getWhisperDoneMethod()
+
   /**
    * A stub for issuing RPCs to a(n) jervis.router.RouterAdminService service as suspending coroutines.
    */
@@ -262,6 +270,46 @@ public object RouterAdminServiceGrpcKt {
       callOptions,
       headers
     )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun whisperNotify(request: WhisperNotifyRequest, headers: Metadata = Metadata()): WhisperNotifyResponse = unaryRpc(
+      channel,
+      RouterAdminServiceGrpc.getWhisperNotifyMethod(),
+      request,
+      callOptions,
+      headers
+    )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun whisperDone(request: WhisperDoneRequest, headers: Metadata = Metadata()): WhisperDoneResponse = unaryRpc(
+      channel,
+      RouterAdminServiceGrpc.getWhisperDoneMethod(),
+      request,
+      callOptions,
+      headers
+    )
   }
 
   /**
@@ -378,6 +426,30 @@ public object RouterAdminServiceGrpcKt {
      */
     public open suspend fun invalidateClientTier(request: InvalidateClientTierRequest): InvalidateClientTierResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.router.RouterAdminService.InvalidateClientTier is unimplemented"))
 
+    /**
+     * Returns the response to an RPC for jervis.router.RouterAdminService.WhisperNotify.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun whisperNotify(request: WhisperNotifyRequest): WhisperNotifyResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.router.RouterAdminService.WhisperNotify is unimplemented"))
+
+    /**
+     * Returns the response to an RPC for jervis.router.RouterAdminService.WhisperDone.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun whisperDone(request: WhisperDoneRequest): WhisperDoneResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.router.RouterAdminService.WhisperDone is unimplemented"))
+
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(
       context = this.context,
@@ -423,6 +495,16 @@ public object RouterAdminServiceGrpcKt {
       context = this.context,
       descriptor = RouterAdminServiceGrpc.getInvalidateClientTierMethod(),
       implementation = ::invalidateClientTier
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = RouterAdminServiceGrpc.getWhisperNotifyMethod(),
+      implementation = ::whisperNotify
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = RouterAdminServiceGrpc.getWhisperDoneMethod(),
+      implementation = ::whisperDone
     )).build()
   }
 }

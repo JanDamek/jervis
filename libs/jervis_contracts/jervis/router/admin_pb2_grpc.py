@@ -84,6 +84,16 @@ class RouterAdminServiceStub(object):
                 request_serializer=jervis_dot_router_dot_admin__pb2.InvalidateClientTierRequest.SerializeToString,
                 response_deserializer=jervis_dot_router_dot_admin__pb2.InvalidateClientTierResponse.FromString,
                 _registered_method=True)
+        self.WhisperNotify = channel.unary_unary(
+                '/jervis.router.RouterAdminService/WhisperNotify',
+                request_serializer=jervis_dot_router_dot_admin__pb2.WhisperNotifyRequest.SerializeToString,
+                response_deserializer=jervis_dot_router_dot_admin__pb2.WhisperNotifyResponse.FromString,
+                _registered_method=True)
+        self.WhisperDone = channel.unary_unary(
+                '/jervis.router.RouterAdminService/WhisperDone',
+                request_serializer=jervis_dot_router_dot_admin__pb2.WhisperDoneRequest.SerializeToString,
+                response_deserializer=jervis_dot_router_dot_admin__pb2.WhisperDoneResponse.FromString,
+                _registered_method=True)
 
 
 class RouterAdminServiceServicer(object):
@@ -160,6 +170,26 @@ class RouterAdminServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def WhisperNotify(self, request, context):
+        """Whisper on VD signals it wants GPU for transcription. The router
+        preempts every active Ollama LLM/VLM request (embeddings stay —
+        they're tiny and fast), unloads those models to free VRAM, and
+        re-enqueues the preempted requests so they resume automatically
+        after WhisperDone. XTTS is a permanent resident and is never
+        touched. Returns once Ollama has been quiesced (or on timeout).
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def WhisperDone(self, request, context):
+        """Whisper signals transcription is complete — router releases the
+        semaphore and the dispatcher fires waiting queue entries.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_RouterAdminServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -207,6 +237,16 @@ def add_RouterAdminServiceServicer_to_server(servicer, server):
                     servicer.InvalidateClientTier,
                     request_deserializer=jervis_dot_router_dot_admin__pb2.InvalidateClientTierRequest.FromString,
                     response_serializer=jervis_dot_router_dot_admin__pb2.InvalidateClientTierResponse.SerializeToString,
+            ),
+            'WhisperNotify': grpc.unary_unary_rpc_method_handler(
+                    servicer.WhisperNotify,
+                    request_deserializer=jervis_dot_router_dot_admin__pb2.WhisperNotifyRequest.FromString,
+                    response_serializer=jervis_dot_router_dot_admin__pb2.WhisperNotifyResponse.SerializeToString,
+            ),
+            'WhisperDone': grpc.unary_unary_rpc_method_handler(
+                    servicer.WhisperDone,
+                    request_deserializer=jervis_dot_router_dot_admin__pb2.WhisperDoneRequest.FromString,
+                    response_serializer=jervis_dot_router_dot_admin__pb2.WhisperDoneResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -457,6 +497,60 @@ class RouterAdminService(object):
             '/jervis.router.RouterAdminService/InvalidateClientTier',
             jervis_dot_router_dot_admin__pb2.InvalidateClientTierRequest.SerializeToString,
             jervis_dot_router_dot_admin__pb2.InvalidateClientTierResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def WhisperNotify(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.router.RouterAdminService/WhisperNotify',
+            jervis_dot_router_dot_admin__pb2.WhisperNotifyRequest.SerializeToString,
+            jervis_dot_router_dot_admin__pb2.WhisperNotifyResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def WhisperDone(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.router.RouterAdminService/WhisperDone',
+            jervis_dot_router_dot_admin__pb2.WhisperDoneRequest.SerializeToString,
+            jervis_dot_router_dot_admin__pb2.WhisperDoneResponse.FromString,
             options,
             channel_credentials,
             insecure,

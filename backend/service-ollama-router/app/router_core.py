@@ -921,39 +921,107 @@ class OllamaRouter:
             logger.warning("WHISPER_WAIT: timeout after %ds", timeout)
             return False
 
-    async def notify_whisper_wants_gpu(self) -> bool:
-        """Called when whisper wants GPU. Sets flag, waits for VLM to finish."""
+    async def notify_whisper_wants_gpu(self, preempt_timeout_s: int = 30) -> tuple[bool, int, int]:
+        """Whisper demands GPU. Active preemption — not passive wait.
+
+        For every in-flight Ollama LLM/VLM request (embeddings are kept,
+        they're tiny), the router:
+          1. Sets `cancel_event` + marks PREEMPTED so proxy stream ends fast.
+          2. Unloads the model from VRAM — Whisper needs real headroom.
+          3. Re-enqueues the preempted request so it resumes automatically
+             after `WhisperDone`. The original caller's future keeps waiting.
+
+        XTTS is a separate GPU process (different systemd unit, permanent
+        resident) and is never touched.
+
+        Returns `(granted, preempted_count, unloaded_models)`. `granted=False`
+        means we timed out before GPU went quiet.
+        """
+        from .models import EMBEDDING_MODELS, RequestState
+
         self._whisper_active = True
         self._whisper_active_since = time.monotonic()
         self._whisper_done_event.clear()
 
-        p40_2 = self.gpu_pool.backends.get(VLM_GPU)
-        if p40_2 is None:
-            logger.info("WHISPER_NOTIFY: no VLM GPU configured, granting immediately")
-            return True
+        preempted: list[TrackedRequest] = []
+        for gpu in self.gpu_pool.healthy_backends:
+            for req_id, req in list(gpu.active_requests.items()):
+                if req.model in EMBEDDING_MODELS:
+                    continue
+                if req.state == RequestState.PREEMPTED:
+                    continue
+                logger.warning(
+                    "WHISPER_PREEMPT: cancel id=%s model=%s gpu=%s",
+                    req_id, req.model, gpu.name,
+                )
+                req.cancel_event.set()
+                req.state = RequestState.PREEMPTED_BY_WHISPER
+                preempted.append(req)
 
-        vlm_active = any(
+        # The caller-side gRPC layer detects state=PREEMPTED_BY_WHISPER and
+        # retries the whole dispatch_inference once the whisper semaphore
+        # clears — see grpc_server.py:_dispatch_stream. Keeps the re-dispatch
+        # logic out of the priority queue.
+
+        # Unload the models so the VRAM is actually free when whisper loads.
+        # Done in parallel per GPU to keep the notify fast.
+        unloaded_models = 0
+        if self._mgmt_client:
+            unload_tasks: list[asyncio.Task] = []
+            for gpu in self.gpu_pool.healthy_backends:
+                for model_id in list(gpu.loaded_models.keys()):
+                    if model_id in EMBEDDING_MODELS:
+                        continue
+                    unload_tasks.append(asyncio.create_task(
+                        self.gpu_pool.unload_model(gpu, model_id, self._mgmt_client)
+                    ))
+            if unload_tasks:
+                # Bounded wait — we must answer whisper promptly.
+                done, pending = await asyncio.wait(
+                    unload_tasks, timeout=max(5, preempt_timeout_s - 2),
+                )
+                for t in pending:
+                    t.cancel()
+                for t in done:
+                    try:
+                        if t.result():
+                            unloaded_models += 1
+                    except Exception:
+                        pass
+
+        # Wait for any embedding/untracked request to finish so we don't
+        # compete for VRAM while whisper loads. This is bounded.
+        deadline = time.monotonic() + preempt_timeout_s
+        while time.monotonic() < deadline:
+            still_busy = any(
+                r.model not in EMBEDDING_MODELS
+                for gpu in self.gpu_pool.healthy_backends
+                for r in gpu.active_requests.values()
+            )
+            if not still_busy:
+                break
+            await asyncio.sleep(0.2)
+
+        granted = time.monotonic() < deadline or not any(
             r.model not in EMBEDDING_MODELS
-            for r in p40_2.active_requests.values()
+            for gpu in self.gpu_pool.healthy_backends
+            for r in gpu.active_requests.values()
         )
-        if not vlm_active:
-            logger.info("WHISPER_NOTIFY: GPU available, granting immediately")
-            return True
-
-        logger.info("WHISPER_NOTIFY: VLM active on p40-2, waiting for completion")
-        while any(
-            r.model not in EMBEDDING_MODELS
-            for r in p40_2.active_requests.values()
-        ):
-            await asyncio.sleep(2)
-        logger.info("WHISPER_NOTIFY: VLM finished, granting GPU to whisper")
-        return True
+        logger.info(
+            "WHISPER_NOTIFY: granted=%s preempted=%d unloaded=%d",
+            granted, len(preempted), unloaded_models,
+        )
+        return granted, len(preempted), unloaded_models
 
     def notify_whisper_done(self) -> None:
-        """Called when whisper finishes transcription. Clears flag."""
+        """Whisper finished. Dispatcher wakes up, queued Ollama work resumes."""
         self._whisper_active = False
         self._whisper_done_event.set()
-        logger.info("WHISPER_DONE: flag cleared")
+        logger.info("WHISPER_DONE: flag cleared, dispatcher resumed")
+        # Kick every group dispatcher — preempted requests are back in
+        # the queue waiting to run.
+        if self._queue:
+            self._queue.notify_slot_freed(None)
 
     # ── Helpers ─────────────────────────────────────────────────────────
 

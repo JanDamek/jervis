@@ -125,7 +125,11 @@ Environment=WHISPER_REST_PORT=8786
 Environment=WHISPER_GRPC_PORT=5502
 Environment=WHISPER_REST_HOST=0.0.0.0
 Environment=WHISPER_REST_WORKERS=1
-Environment=ROUTER_URL=http://jervis-router.lan.mazlusek.com
+# Router gRPC: whisper signals WhisperNotify/WhisperDone on RouterAdminService
+# so the router actively preempts Ollama LLM/VLM + unloads before we load
+# the whisper model. XTTS (permanent GPU resident) is never touched.
+Environment=ROUTER_GRPC_HOST=jervis-router.lan.mazlusek.com
+Environment=ROUTER_GRPC_PORT=5501
 $HF_TOKEN_LINE
 
 [Install]

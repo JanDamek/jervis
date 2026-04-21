@@ -298,6 +298,68 @@ public final class RouterAdminServiceGrpc {
     return getInvalidateClientTierMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.router.WhisperNotifyRequest,
+      com.jervis.contracts.router.WhisperNotifyResponse> getWhisperNotifyMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "WhisperNotify",
+      requestType = com.jervis.contracts.router.WhisperNotifyRequest.class,
+      responseType = com.jervis.contracts.router.WhisperNotifyResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.router.WhisperNotifyRequest,
+      com.jervis.contracts.router.WhisperNotifyResponse> getWhisperNotifyMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.router.WhisperNotifyRequest, com.jervis.contracts.router.WhisperNotifyResponse> getWhisperNotifyMethod;
+    if ((getWhisperNotifyMethod = RouterAdminServiceGrpc.getWhisperNotifyMethod) == null) {
+      synchronized (RouterAdminServiceGrpc.class) {
+        if ((getWhisperNotifyMethod = RouterAdminServiceGrpc.getWhisperNotifyMethod) == null) {
+          RouterAdminServiceGrpc.getWhisperNotifyMethod = getWhisperNotifyMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.router.WhisperNotifyRequest, com.jervis.contracts.router.WhisperNotifyResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "WhisperNotify"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.router.WhisperNotifyRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.router.WhisperNotifyResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new RouterAdminServiceMethodDescriptorSupplier("WhisperNotify"))
+              .build();
+        }
+      }
+    }
+    return getWhisperNotifyMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.router.WhisperDoneRequest,
+      com.jervis.contracts.router.WhisperDoneResponse> getWhisperDoneMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "WhisperDone",
+      requestType = com.jervis.contracts.router.WhisperDoneRequest.class,
+      responseType = com.jervis.contracts.router.WhisperDoneResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.router.WhisperDoneRequest,
+      com.jervis.contracts.router.WhisperDoneResponse> getWhisperDoneMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.router.WhisperDoneRequest, com.jervis.contracts.router.WhisperDoneResponse> getWhisperDoneMethod;
+    if ((getWhisperDoneMethod = RouterAdminServiceGrpc.getWhisperDoneMethod) == null) {
+      synchronized (RouterAdminServiceGrpc.class) {
+        if ((getWhisperDoneMethod = RouterAdminServiceGrpc.getWhisperDoneMethod) == null) {
+          RouterAdminServiceGrpc.getWhisperDoneMethod = getWhisperDoneMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.router.WhisperDoneRequest, com.jervis.contracts.router.WhisperDoneResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "WhisperDone"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.router.WhisperDoneRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.router.WhisperDoneResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new RouterAdminServiceMethodDescriptorSupplier("WhisperDone"))
+              .build();
+        }
+      }
+    }
+    return getWhisperDoneMethod;
+  }
+
   /**
    * Creates a new async stub that supports all call types for the service
    */
@@ -460,6 +522,32 @@ public final class RouterAdminServiceGrpc {
         io.grpc.stub.StreamObserver<com.jervis.contracts.router.InvalidateClientTierResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getInvalidateClientTierMethod(), responseObserver);
     }
+
+    /**
+     * <pre>
+     * Whisper on VD signals it wants GPU for transcription. The router
+     * preempts every active Ollama LLM/VLM request (embeddings stay —
+     * they're tiny and fast), unloads those models to free VRAM, and
+     * re-enqueues the preempted requests so they resume automatically
+     * after WhisperDone. XTTS is a permanent resident and is never
+     * touched. Returns once Ollama has been quiesced (or on timeout).
+     * </pre>
+     */
+    default void whisperNotify(com.jervis.contracts.router.WhisperNotifyRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.router.WhisperNotifyResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getWhisperNotifyMethod(), responseObserver);
+    }
+
+    /**
+     * <pre>
+     * Whisper signals transcription is complete — router releases the
+     * semaphore and the dispatcher fires waiting queue entries.
+     * </pre>
+     */
+    default void whisperDone(com.jervis.contracts.router.WhisperDoneRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.router.WhisperDoneResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getWhisperDoneMethod(), responseObserver);
+    }
   }
 
   /**
@@ -604,6 +692,34 @@ public final class RouterAdminServiceGrpc {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getInvalidateClientTierMethod(), getCallOptions()), request, responseObserver);
     }
+
+    /**
+     * <pre>
+     * Whisper on VD signals it wants GPU for transcription. The router
+     * preempts every active Ollama LLM/VLM request (embeddings stay —
+     * they're tiny and fast), unloads those models to free VRAM, and
+     * re-enqueues the preempted requests so they resume automatically
+     * after WhisperDone. XTTS is a permanent resident and is never
+     * touched. Returns once Ollama has been quiesced (or on timeout).
+     * </pre>
+     */
+    public void whisperNotify(com.jervis.contracts.router.WhisperNotifyRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.router.WhisperNotifyResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getWhisperNotifyMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     * <pre>
+     * Whisper signals transcription is complete — router releases the
+     * semaphore and the dispatcher fires waiting queue entries.
+     * </pre>
+     */
+    public void whisperDone(com.jervis.contracts.router.WhisperDoneRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.router.WhisperDoneResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getWhisperDoneMethod(), getCallOptions()), request, responseObserver);
+    }
   }
 
   /**
@@ -721,6 +837,32 @@ public final class RouterAdminServiceGrpc {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getInvalidateClientTierMethod(), getCallOptions(), request);
     }
+
+    /**
+     * <pre>
+     * Whisper on VD signals it wants GPU for transcription. The router
+     * preempts every active Ollama LLM/VLM request (embeddings stay —
+     * they're tiny and fast), unloads those models to free VRAM, and
+     * re-enqueues the preempted requests so they resume automatically
+     * after WhisperDone. XTTS is a permanent resident and is never
+     * touched. Returns once Ollama has been quiesced (or on timeout).
+     * </pre>
+     */
+    public com.jervis.contracts.router.WhisperNotifyResponse whisperNotify(com.jervis.contracts.router.WhisperNotifyRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getWhisperNotifyMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * Whisper signals transcription is complete — router releases the
+     * semaphore and the dispatcher fires waiting queue entries.
+     * </pre>
+     */
+    public com.jervis.contracts.router.WhisperDoneResponse whisperDone(com.jervis.contracts.router.WhisperDoneRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getWhisperDoneMethod(), getCallOptions(), request);
+    }
   }
 
   /**
@@ -837,6 +979,32 @@ public final class RouterAdminServiceGrpc {
     public com.jervis.contracts.router.InvalidateClientTierResponse invalidateClientTier(com.jervis.contracts.router.InvalidateClientTierRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getInvalidateClientTierMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * Whisper on VD signals it wants GPU for transcription. The router
+     * preempts every active Ollama LLM/VLM request (embeddings stay —
+     * they're tiny and fast), unloads those models to free VRAM, and
+     * re-enqueues the preempted requests so they resume automatically
+     * after WhisperDone. XTTS is a permanent resident and is never
+     * touched. Returns once Ollama has been quiesced (or on timeout).
+     * </pre>
+     */
+    public com.jervis.contracts.router.WhisperNotifyResponse whisperNotify(com.jervis.contracts.router.WhisperNotifyRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getWhisperNotifyMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * Whisper signals transcription is complete — router releases the
+     * semaphore and the dispatcher fires waiting queue entries.
+     * </pre>
+     */
+    public com.jervis.contracts.router.WhisperDoneResponse whisperDone(com.jervis.contracts.router.WhisperDoneRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getWhisperDoneMethod(), getCallOptions(), request);
     }
   }
 
@@ -964,6 +1132,34 @@ public final class RouterAdminServiceGrpc {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getInvalidateClientTierMethod(), getCallOptions()), request);
     }
+
+    /**
+     * <pre>
+     * Whisper on VD signals it wants GPU for transcription. The router
+     * preempts every active Ollama LLM/VLM request (embeddings stay —
+     * they're tiny and fast), unloads those models to free VRAM, and
+     * re-enqueues the preempted requests so they resume automatically
+     * after WhisperDone. XTTS is a permanent resident and is never
+     * touched. Returns once Ollama has been quiesced (or on timeout).
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.router.WhisperNotifyResponse> whisperNotify(
+        com.jervis.contracts.router.WhisperNotifyRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getWhisperNotifyMethod(), getCallOptions()), request);
+    }
+
+    /**
+     * <pre>
+     * Whisper signals transcription is complete — router releases the
+     * semaphore and the dispatcher fires waiting queue entries.
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.router.WhisperDoneResponse> whisperDone(
+        com.jervis.contracts.router.WhisperDoneRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getWhisperDoneMethod(), getCallOptions()), request);
+    }
   }
 
   private static final int METHODID_GET_MAX_CONTEXT = 0;
@@ -975,6 +1171,8 @@ public final class RouterAdminServiceGrpc {
   private static final int METHODID_TEST_MODEL = 6;
   private static final int METHODID_GET_RATE_LIMITS = 7;
   private static final int METHODID_INVALIDATE_CLIENT_TIER = 8;
+  private static final int METHODID_WHISPER_NOTIFY = 9;
+  private static final int METHODID_WHISPER_DONE = 10;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -1028,6 +1226,14 @@ public final class RouterAdminServiceGrpc {
         case METHODID_INVALIDATE_CLIENT_TIER:
           serviceImpl.invalidateClientTier((com.jervis.contracts.router.InvalidateClientTierRequest) request,
               (io.grpc.stub.StreamObserver<com.jervis.contracts.router.InvalidateClientTierResponse>) responseObserver);
+          break;
+        case METHODID_WHISPER_NOTIFY:
+          serviceImpl.whisperNotify((com.jervis.contracts.router.WhisperNotifyRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.router.WhisperNotifyResponse>) responseObserver);
+          break;
+        case METHODID_WHISPER_DONE:
+          serviceImpl.whisperDone((com.jervis.contracts.router.WhisperDoneRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.router.WhisperDoneResponse>) responseObserver);
           break;
         default:
           throw new AssertionError();
@@ -1110,6 +1316,20 @@ public final class RouterAdminServiceGrpc {
               com.jervis.contracts.router.InvalidateClientTierRequest,
               com.jervis.contracts.router.InvalidateClientTierResponse>(
                 service, METHODID_INVALIDATE_CLIENT_TIER)))
+        .addMethod(
+          getWhisperNotifyMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.router.WhisperNotifyRequest,
+              com.jervis.contracts.router.WhisperNotifyResponse>(
+                service, METHODID_WHISPER_NOTIFY)))
+        .addMethod(
+          getWhisperDoneMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.router.WhisperDoneRequest,
+              com.jervis.contracts.router.WhisperDoneResponse>(
+                service, METHODID_WHISPER_DONE)))
         .build();
   }
 
@@ -1167,6 +1387,8 @@ public final class RouterAdminServiceGrpc {
               .addMethod(getTestModelMethod())
               .addMethod(getGetRateLimitsMethod())
               .addMethod(getInvalidateClientTierMethod())
+              .addMethod(getWhisperNotifyMethod())
+              .addMethod(getWhisperDoneMethod())
               .build();
         }
       }

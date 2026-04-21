@@ -28,7 +28,7 @@ from jervis.router import admin_pb2, admin_pb2_grpc, inference_pb2, inference_pb
 from jervis.common import enums_pb2
 from jervis_contracts.interceptors import ServerContextInterceptor
 
-from .proxy import ProxyError
+from .proxy import PreemptedByWhisperError, ProxyError
 from .request_queue import QueueCancelled
 
 logger = logging.getLogger("ollama-router.grpc")
@@ -257,6 +257,29 @@ class RouterAdminServicer(admin_pb2_grpc.RouterAdminServiceServicer):
         invalidate_cache(client_id)
         return admin_pb2.InvalidateClientTierResponse(invalidated=client_id or "all")
 
+    async def WhisperNotify(
+        self, request: admin_pb2.WhisperNotifyRequest, context: grpc.aio.ServicerContext
+    ) -> admin_pb2.WhisperNotifyResponse:
+        """Whisper wants GPU. Preempt every Ollama LLM/VLM, unload models,
+        return once VRAM is free (or on timeout). XTTS is untouched."""
+        timeout = request.preempt_timeout_s if request.preempt_timeout_s > 0 else 30
+        granted, preempted, unloaded = await self._router.notify_whisper_wants_gpu(
+            preempt_timeout_s=timeout,
+        )
+        return admin_pb2.WhisperNotifyResponse(
+            granted=granted,
+            preempted_count=preempted,
+            unloaded_models=unloaded,
+        )
+
+    async def WhisperDone(
+        self, request: admin_pb2.WhisperDoneRequest, context: grpc.aio.ServicerContext
+    ) -> admin_pb2.WhisperDoneResponse:
+        """Whisper finished. Preempted requests in the gRPC retry loop
+        will now wake up and resubmit."""
+        self._router.notify_whisper_done()
+        return admin_pb2.WhisperDoneResponse(released=True)
+
 
 class RouterInferenceServicer(inference_pb2_grpc.RouterInferenceServiceServicer):
     """gRPC inference surface for every internal module.
@@ -355,29 +378,81 @@ class RouterInferenceServicer(inference_pb2_grpc.RouterInferenceServiceServicer)
         priority = _proto_priority_to_internal(ctx.priority)
         deadline_iso = ctx.deadline_iso or None
 
-        try:
-            result = await self._router.dispatch_inference(
-                api_path, body,
-                capability=capability,
-                client_id=client_id,
-                intent=ctx.intent or "",
-                priority=priority,
-                deadline_iso=deadline_iso,
-            )
-        except QueueCancelled as e:
-            await context.abort(grpc.StatusCode.CANCELLED, str(e))
-            return
-        except ProxyError as e:
-            await _abort_from_proxy_error(context, e)
-            return
+        # Whisper-preemption retry loop. If our run on Ollama is cut short
+        # because whisper grabbed the GPU, wait for WhisperDone and retry
+        # from scratch — the caller sees a single delayed response. We cap
+        # the retries so a stuck whisper semaphore can't spin forever.
+        MAX_WHISPER_RETRIES = 3
+        WHISPER_WAIT_S = 600  # whisper transcriptions rarely exceed 10 min
+        retries = 0
+        while True:
+            try:
+                result = await self._router.dispatch_inference(
+                    api_path, body,
+                    capability=capability,
+                    client_id=client_id,
+                    intent=ctx.intent or "",
+                    priority=priority,
+                    deadline_iso=deadline_iso,
+                )
+            except QueueCancelled as e:
+                await context.abort(grpc.StatusCode.CANCELLED, str(e))
+                return
+            except PreemptedByWhisperError as e:
+                retries += 1
+                if retries > MAX_WHISPER_RETRIES:
+                    logger.error(
+                        "DISPATCH: whisper preemption retry budget exhausted (%d)", retries,
+                    )
+                    await context.abort(
+                        grpc.StatusCode.UNAVAILABLE,
+                        "whisper kept preempting after 3 retries",
+                    )
+                    return
+                logger.warning(
+                    "DISPATCH: preempted by whisper (emitted=%d), retry %d/%d after WhisperDone",
+                    e.emitted_chunks, retries, MAX_WHISPER_RETRIES,
+                )
+                await self._router.wait_for_whisper_done(timeout=WHISPER_WAIT_S)
+                continue
+            except ProxyError as e:
+                await _abort_from_proxy_error(context, e)
+                return
 
-        if isinstance(result, dict):
-            # Non-streaming upstream — emit a single final chunk.
-            yield result
-            return
+            if isinstance(result, dict):
+                # Non-streaming upstream — emit a single final chunk.
+                yield result
+                return
 
-        async for chunk in result:
-            yield chunk
+            # Streaming: if whisper preempts mid-stream we'll propagate
+            # PreemptedByWhisperError through the iterator and retry from
+            # scratch. The caller's view is that the first tokens they saw
+            # were bogus, which is the best we can do since Ollama has no
+            # resume-from-offset. In practice whisper preemption during an
+            # active chat is rare — the user is either typing or dictating,
+            # not both.
+            try:
+                async for chunk in result:
+                    yield chunk
+                return
+            except PreemptedByWhisperError as e:
+                retries += 1
+                if retries > MAX_WHISPER_RETRIES:
+                    logger.error(
+                        "DISPATCH: whisper preemption retry budget exhausted mid-stream (%d)",
+                        retries,
+                    )
+                    await context.abort(
+                        grpc.StatusCode.UNAVAILABLE,
+                        "whisper kept preempting mid-stream",
+                    )
+                    return
+                logger.warning(
+                    "DISPATCH: mid-stream preempted by whisper (emitted=%d), retry %d/%d",
+                    e.emitted_chunks, retries, MAX_WHISPER_RETRIES,
+                )
+                await self._router.wait_for_whisper_done(timeout=WHISPER_WAIT_S)
+                # loop back to dispatch_inference for a fresh run.
 
 
 # ── Proto ↔ Ollama dict helpers ────────────────────────────────────────

@@ -44,6 +44,18 @@ service RouterAdminService {
   // Invalidate the router's cached client tier after cloudModelPolicy
   // changes on the Kotlin server. Empty client_id = invalidate all.
   rpc InvalidateClientTier(InvalidateClientTierRequest) returns (InvalidateClientTierResponse);
+
+  // Whisper on VD signals it wants GPU for transcription. The router
+  // preempts every active Ollama LLM/VLM request (embeddings stay —
+  // they're tiny and fast), unloads those models to free VRAM, and
+  // re-enqueues the preempted requests so they resume automatically
+  // after WhisperDone. XTTS is a permanent resident and is never
+  // touched. Returns once Ollama has been quiesced (or on timeout).
+  rpc WhisperNotify(WhisperNotifyRequest) returns (WhisperNotifyResponse);
+
+  // Whisper signals transcription is complete — router releases the
+  // semaphore and the dispatcher fires waiting queue entries.
+  rpc WhisperDone(WhisperDoneRequest) returns (WhisperDoneResponse);
 }
 
 // ── MaxContext ───────────────────────────────────────────────────────────
@@ -184,4 +196,29 @@ message InvalidateClientTierRequest {
 
 message InvalidateClientTierResponse {
   string invalidated = 1;  // client_id or "all"
+}
+
+// ── Whisper preemption ───────────────────────────────────────────────────
+
+message WhisperNotifyRequest {
+  jervis.common.RequestContext ctx = 1;
+  // How long the router may spend preempting+unloading Ollama before
+  // giving up and returning. Default 30s if zero. On timeout the router
+  // still marks whisper active — upstream calls will keep queueing —
+  // but Ollama may still hold some VRAM.
+  int32 preempt_timeout_s = 2;
+}
+
+message WhisperNotifyResponse {
+  bool granted = 1;           // Router finished freeing VRAM for whisper.
+  int32 preempted_count = 2;  // How many Ollama requests were preempted.
+  int32 unloaded_models = 3;  // How many LLM/VLM models were unloaded.
+}
+
+message WhisperDoneRequest {
+  jervis.common.RequestContext ctx = 1;
+}
+
+message WhisperDoneResponse {
+  bool released = 1;  // Semaphore cleared, dispatcher resumed.
 }

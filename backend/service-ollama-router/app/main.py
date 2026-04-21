@@ -213,12 +213,17 @@ async def router_health():
 # RouterAdminService gRPC (ListModelStats, ListModelErrors,
 # GetRateLimits). Debug queries: grpcurl against :5501.
 
-# /router/whisper-notify, /router/whisper-done — retired. Whisper on VD
-# must migrate to RouterAdminService.WhisperNotify / WhisperDone
-# (proto addition tracked in Phase 1 deferred, blocked on VD gRPC
-# onboarding). Meanwhile whisper runs without the coordination; p40-2
-# VRAM contention falls back to load-on-demand which is slower but
-# never blocks.
+# /router/whisper-notify, /router/whisper-done — retired (REST). The
+# coordination now lives on jervis.router.RouterAdminService:
+#   * WhisperNotify — active preemption: cancels every in-flight Ollama
+#     LLM/VLM request (embeddings are kept, they're small), unloads those
+#     models to free VRAM, and returns once the GPU is quiet. The
+#     preempted requests ride the `PreemptedByWhisperError` retry loop in
+#     _dispatch_stream and resubmit transparently after WhisperDone, so
+#     their callers see only a longer latency.
+#   * WhisperDone — wakes the dispatcher and unblocks the retry loop.
+# XTTS is a permanent GPU resident (separate systemd, own process) and is
+# never touched by this semaphore.
 
 
 @app.get("/router/metrics")
