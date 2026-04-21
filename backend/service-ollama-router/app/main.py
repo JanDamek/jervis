@@ -179,82 +179,15 @@ def _get_priority_header(request: Request) -> int | None:
     return None
 
 
-# ── Ollama inference endpoints — TRANSITIONAL REST WRAP ───────────────
-# The canonical surface is `RouterInferenceService` (gRPC on :5501). The
-# FastAPI handlers below exist only while the remaining internal Jervis
-# modules are being cut over to gRPC. They delegate to the same
-# `router.dispatch_inference` path the gRPC servicer uses, then wrap the
-# iterator/dict back into a Starlette response.
-#
-# Delete these handlers once every caller of `/api/chat`, `/api/generate`,
-# `/api/embed`, `/api/embeddings` has been migrated — see Phase 1
-# deferred in `docs/inter-service-contracts-bigbang.md`.
-
-import json as _json
-from starlette.responses import StreamingResponse, JSONResponse as _JSON
-from .proxy import ProxyError as _ProxyError
-from .request_queue import QueueCancelled as _QueueCancelled
-
-
-async def _rest_inference(api_path: str, body: dict, http_request: Request):
-    """Run inference via the gRPC-shared dispatch path and wrap into HTTP."""
-    capability = (http_request.headers.get("X-Capability") or "").strip().lower() or None
-    client_id = http_request.headers.get("X-Client-Id") or None
-    try:
-        result = await router.dispatch_inference(
-            api_path, body,
-            capability=capability,
-            client_id=client_id,
-            intent=http_request.headers.get("X-Intent", "") or "",
-        )
-    except _QueueCancelled:
-        return _JSON(status_code=499, content={"error": "cancelled"})
-    except _ProxyError as e:
-        status = e.status_code or 502
-        return _JSON(
-            status_code=status,
-            content={"error": e.reason, "message": e.message},
-        )
-
-    if isinstance(result, dict):
-        return _JSON(content=result)
-
-    async def _stream():
-        try:
-            async for chunk in result:
-                yield (_json.dumps(chunk) + "\n").encode()
-        except _ProxyError as e:
-            yield (_json.dumps({
-                "error": e.reason, "status_code": e.status_code,
-                "message": e.message, "done": True,
-            }) + "\n").encode()
-
-    return StreamingResponse(_stream(), media_type="application/x-ndjson")
-
-
-@app.post("/api/generate")
-async def api_generate(request: Request):
-    body = await request.json()
-    return await _rest_inference("/api/generate", body, request)
-
-
-@app.post("/api/chat")
-async def api_chat(request: Request):
-    body = await request.json()
-    return await _rest_inference("/api/chat", body, request)
-
-
-@app.post("/api/embeddings")
-async def api_embeddings(request: Request):
-    body = await request.json()
-    return await _rest_inference("/api/embeddings", body, request)
-
-
-@app.post("/api/embed")
-async def api_embed(request: Request):
-    body = await request.json()
-    return await _rest_inference("/api/embed", body, request)
-
+# ── Ollama inference endpoints REMOVED — gRPC-only input ──────────────
+# `/api/generate`, `/api/chat`, `/api/embeddings`, `/api/embed` are
+# retired on 2026-04-21. Every internal Jervis module dials
+# `RouterInferenceService` gRPC on port 5501
+# (`proto/jervis/router/inference.proto`). No REST endpoint exists on
+# the router's input surface for inference. The remaining HTTP
+# endpoints below (`/api/show`, `/api/pull`, `/api/tags`, `/api/ps`,
+# `/api/delete`) are operator-debug passthroughs to Ollama's admin
+# surface and do not carry model-inference traffic.
 
 @app.post("/api/show")
 @app.post("/api/generate/api/show")
