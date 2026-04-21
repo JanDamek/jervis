@@ -184,37 +184,6 @@ async def _wait_for_cancel(cancel_event: asyncio.Event) -> None:
     await cancel_event.wait()
 
 
-async def proxy_passthrough_get(target_url: str, path: str):
-    """Proxy a GET request transparently. Used by FastAPI ops-only endpoints
-    (/api/tags, /api/ps, /) that forward to a GPU backend."""
-    from starlette.responses import Response, JSONResponse
-    async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
-        try:
-            resp = await client.get(f"{target_url}{path}")
-            return Response(
-                content=resp.content,
-                status_code=resp.status_code,
-                headers=dict(resp.headers),
-                media_type=resp.headers.get("content-type", "application/json"),
-            )
-        except Exception as e:
-            return JSONResponse(
-                status_code=503,
-                content={"error": "backend_unavailable", "message": str(e)},
-            )
-
-
-async def proxy_passthrough_head(target_url: str, path: str):
-    """Proxy a HEAD request transparently."""
-    from starlette.responses import Response
-    async with httpx.AsyncClient(timeout=httpx.Timeout(5.0)) as client:
-        try:
-            resp = await client.head(f"{target_url}{path}")
-            return Response(status_code=resp.status_code, headers=dict(resp.headers))
-        except Exception:
-            return Response(status_code=503)
-
-
 def is_streaming_request(body: dict) -> bool:
     """Ollama defaults stream=true for generate/chat, stream=false for embeddings."""
     return body.get("stream", True)

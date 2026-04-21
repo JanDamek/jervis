@@ -36,8 +36,6 @@ from app.pod_state import PodState, get_or_create_state_manager
 from app.routes.graph_proxy import create_graph_proxy_router
 from app.routes.health import create_health_router
 from app.routes.instruction import create_instruction_router
-from app.routes.meeting import create_meeting_router
-from app.routes.scrape import create_scrape_router
 from app.routes.session import create_session_router
 from app.routes.token import create_token_router
 from app.routes.vnc_auth import create_vnc_auth_router
@@ -196,18 +194,23 @@ app = FastAPI(
 )
 
 app.include_router(create_health_router(browser_manager))
+# /token/{client_id} — consumed by o365-gateway BrowserPoolClient.kt until
+# both sides migrate to a GetToken gRPC RPC (Phase 5 deferred).
 app.include_router(create_token_router(token_extractor))
+# /session/* — fully migrated to gRPC (O365BrowserPoolService). Returned
+# router is intentionally empty; include retained so future surface
+# additions have a hook.
 app.include_router(
     create_session_router(
         browser_manager, token_extractor, tab_registry, scrape_storage,
         meeting_recorder, context_store,
     )
 )
+# /graph/{clientId}/{path:path} — consumed by o365-gateway GraphApiService.kt
+# until both sides migrate to a streaming GraphCall gRPC RPC (Phase 5 deferred).
 app.include_router(create_graph_proxy_router(browser_manager, token_extractor))
-app.include_router(
-    create_scrape_router(tab_registry, browser_manager, scrape_storage)
-)
-app.include_router(create_meeting_router(meeting_recorder))
+# /instruction/{connectionId} — consumed by Kotlin server meeting dispatcher.
+# Kept as the only agent control channel; will migrate to gRPC in a later slice.
 app.include_router(create_instruction_router(browser_manager))
 
 app.include_router(create_vnc_auth_router(vnc_auth_manager))

@@ -284,13 +284,11 @@ app = FastAPI(
 
 # Chat + meeting helper + job logs all on gRPC now — no REST routers registered.
 
-# Register proactive communication router (scheduled triggers)
-from app.proactive.routes import router as proactive_router
-app.include_router(proactive_router)
+# Proactive triggers — scheduler calls functions directly (no HTTP route).
+# See app/proactive/routes.py + scheduler.py.
 
-# Register Claude companion router (adhoc + session lifecycle)
-from app.companion.routes import router as companion_router
-app.include_router(companion_router)
+# Companion — fully migrated to OrchestratorCompanionService gRPC.
+# No HTTP router registered.
 
 
 # /voice/process + /voice/hint migrated to gRPC

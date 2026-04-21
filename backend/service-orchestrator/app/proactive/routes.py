@@ -1,16 +1,12 @@
-"""Proactive communication routes — scheduled triggers.
+"""Proactive communication trigger functions.
 
-Registered as cron-like scheduled tasks:
-- Morning briefing: daily 7:00
-- Invoice overdue check: daily 9:00
-- Weekly summary: Monday 8:00
-
-These routes are called by the internal scheduler or can be triggered manually.
+These are plain async functions invoked by the internal scheduler
+(see `app/proactive/scheduler.py`). Each function dials
+`ServerProactiveService` gRPC on the Kotlin server. No HTTP route
+exposes these — they are internal scheduling hooks only.
 """
 
 import logging
-
-from fastapi import APIRouter
 
 from app.grpc_server_client import server_proactive_stub
 from jervis.server import proactive_pb2
@@ -18,8 +14,6 @@ from jervis.common import types_pb2
 from jervis_contracts.interceptors import prepare_context
 
 logger = logging.getLogger(__name__)
-
-router = APIRouter(tags=["proactive"])
 
 # Default client ID for proactive tasks (Jervis project owner)
 DEFAULT_CLIENT_ID = "68a332361b04695a243e5ae8"
@@ -31,8 +25,7 @@ def _ctx() -> types_pb2.RequestContext:
     return ctx
 
 
-@router.post("/proactive/morning-briefing")
-async def trigger_morning_briefing(client_id: str | None = None):
+async def trigger_morning_briefing(client_id: str | None = None) -> dict:
     """Trigger morning briefing generation."""
     cid = client_id or DEFAULT_CLIENT_ID
     try:
@@ -46,8 +39,7 @@ async def trigger_morning_briefing(client_id: str | None = None):
         return {"status": "error", "error": str(e)}
 
 
-@router.post("/proactive/overdue-check")
-async def trigger_overdue_check():
+async def trigger_overdue_check() -> dict:
     """Trigger overdue invoice check."""
     try:
         resp = await server_proactive_stub().OverdueCheck(
@@ -60,8 +52,7 @@ async def trigger_overdue_check():
         return {"status": "error", "error": str(e)}
 
 
-@router.post("/proactive/weekly-summary")
-async def trigger_weekly_summary(client_id: str | None = None):
+async def trigger_weekly_summary(client_id: str | None = None) -> dict:
     """Trigger weekly summary generation."""
     cid = client_id or DEFAULT_CLIENT_ID
     try:
@@ -75,8 +66,7 @@ async def trigger_weekly_summary(client_id: str | None = None):
         return {"status": "error", "error": str(e)}
 
 
-@router.post("/proactive/vip-alert")
-async def trigger_vip_alert(client_id: str, sender_name: str, subject: str):
+async def trigger_vip_alert(client_id: str, sender_name: str, subject: str) -> dict:
     """Send VIP email alert."""
     try:
         await server_proactive_stub().VipAlert(

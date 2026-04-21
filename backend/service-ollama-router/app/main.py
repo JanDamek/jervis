@@ -21,7 +21,6 @@ from .models import (
     Priority,
     StatusResponse,
 )
-from .proxy import proxy_passthrough_get, proxy_passthrough_head
 from .router_core import OllamaRouter
 from . import metrics as m
 from .logging_utils import LocalTimeFormatter
@@ -167,154 +166,20 @@ async def _stats_persist_loop():
         await asyncio.sleep(300)
 
 
-# ── Helper ──────────────────────────────────────────────────────────────
-
-def _get_priority_header(request: Request) -> int | None:
-    val = request.headers.get("x-ollama-priority")
-    if val is not None:
-        try:
-            return int(val)
-        except ValueError:
-            pass
-    return None
-
-
-# ── Ollama inference endpoints REMOVED — gRPC-only input ──────────────
-# `/api/generate`, `/api/chat`, `/api/embeddings`, `/api/embed` are
-# retired on 2026-04-21. Every internal Jervis module dials
-# `RouterInferenceService` gRPC on port 5501
-# (`proto/jervis/router/inference.proto`). No REST endpoint exists on
-# the router's input surface for inference. The remaining HTTP
-# endpoints below (`/api/show`, `/api/pull`, `/api/tags`, `/api/ps`,
-# `/api/delete`) are operator-debug passthroughs to Ollama's admin
-# surface and do not carry model-inference traffic.
-
-@app.post("/api/show")
-@app.post("/api/generate/api/show")
-@app.post("/api/chat/api/show")
-async def api_show(request: Request):
-    """Model info – try GPU backends first, then CPU.
-
-    Extra paths handle litellm appending /api/show relative to its base endpoint.
-    """
-    body = await request.json()
-    model = body.get("name", body.get("model", ""))
-
-    # Try GPU backends first
-    for backend in router.gpu_pool.healthy_backends:
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post(f"{backend.url}/api/show", json=body)
-                if resp.status_code == 200:
-                    return Response(
-                        content=resp.content,
-                        status_code=resp.status_code,
-                        media_type="application/json",
-                    )
-        except Exception:
-            pass
-
-    return JSONResponse(status_code=503, content={"error": "model_not_found"})
+# ── All Ollama-compat REST endpoints REMOVED ──────────────────────────
+# 2026-04-21 — hard cut. Every Ollama admin / inference path the router
+# used to expose (`/api/generate`, `/api/chat`, `/api/embed`,
+# `/api/embeddings`, `/api/show`, `/api/pull`, `/api/tags`, `/api/ps`,
+# `/api/delete`, `GET /`, `HEAD /`) is gone. Internal modules use gRPC
+# exclusively: `RouterInferenceService` for inference and
+# `RouterAdminService` for admin / telemetry, both on :5501.
+#
+# K8s probes + Prometheus scraping are the only HTTP endpoints that
+# remain on this server — they are infra contracts (kubelet and
+# Prometheus do not speak gRPC natively).
 
 
-@app.post("/api/pull")
-async def api_pull(request: Request):
-    """Pull model – proxy to first healthy GPU backend."""
-    body = await request.json()
-
-    # Pull on first healthy GPU
-    for backend in router.gpu_pool.healthy_backends:
-        try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(connect=10, read=None, write=30, pool=30)) as client:
-                resp = await client.post(f"{backend.url}/api/pull", json=body)
-                return Response(
-                    content=resp.content,
-                    status_code=resp.status_code,
-                    media_type="application/json",
-                )
-        except Exception:
-            pass
-
-    return JSONResponse(status_code=503, content={"error": "no_gpu_available"})
-
-
-@app.get("/api/tags")
-async def api_tags():
-    """List models – aggregated from all backends."""
-    all_models = {}
-
-    # Collect from GPU backends
-    for backend in router.gpu_pool.all_backends:
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(f"{backend.url}/api/tags")
-                if resp.status_code == 200:
-                    data = resp.json()
-                    for m_info in data.get("models", []):
-                        name = m_info.get("name", "")
-                        if name not in all_models:
-                            all_models[name] = m_info
-        except Exception:
-            pass
-
-    return {"models": list(all_models.values())}
-
-
-@app.get("/api/ps")
-async def api_ps():
-    """Running models – aggregated from all backends."""
-    all_running = []
-
-    for backend in router.gpu_pool.all_backends:
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(f"{backend.url}/api/ps")
-                if resp.status_code == 200:
-                    data = resp.json()
-                    for m_info in data.get("models", []):
-                        m_info["_backend"] = backend.name
-                        all_running.append(m_info)
-        except Exception:
-            pass
-
-    return {"models": all_running}
-
-
-@app.delete("/api/delete")
-async def api_delete(request: Request):
-    """Delete model – proxy to all backends."""
-    body = await request.json()
-    results = {}
-
-    for backend in router.gpu_pool.all_backends:
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.request("DELETE", f"{backend.url}/api/delete", json=body)
-                results[backend.name] = resp.status_code
-        except Exception as e:
-            results[backend.name] = str(e)
-
-    return {"results": results}
-
-
-@app.head("/")
-async def root_head():
-    """Health check – return 200 if any GPU backend is up."""
-    if router.gpu_pool.healthy_backends:
-        return Response(status_code=200)
-    return Response(status_code=503)
-
-
-@app.get("/")
-async def root_get():
-    """Ollama version info – proxy to first healthy GPU backend."""
-    for backend in router.gpu_pool.healthy_backends:
-        return await proxy_passthrough_get(backend.url, "/")
-
-    return JSONResponse(status_code=503, content={"error": "no_backend_available"})
-
-
-# ── Router-specific endpoints ───────────────────────────────────────────
+# ── K8s probes + Prometheus (HTTP unavoidable — kubelet/Prometheus contract)
 
 @app.get("/router/health")
 async def router_health():
@@ -344,121 +209,21 @@ async def router_health():
     }
 
 
-@app.get("/router/status")
-async def router_status():
-    """Detailed router status for debugging."""
-    gpu_backends = []
-    for backend in router.gpu_pool.all_backends:
-        # Update prometheus gauges
-        m.gpu_loaded_models.labels(gpu=backend.name).set(len(backend.loaded_models))
-        m.gpu_vram_used.labels(gpu=backend.name).set(round(backend.used_vram_gb, 1))
-        m.gpu_active_requests.labels(gpu=backend.name).set(backend.active_request_count())
+# /router/status, /queue-status — retired. Same data is available via
+# RouterAdminService gRPC (ListModelStats, ListModelErrors,
+# GetRateLimits). Debug queries: grpcurl against :5501.
 
-        gpu_backends.append({
-            "name": backend.name,
-            "healthy": backend.healthy,
-            "url": backend.url,
-            "loaded_models": backend.loaded_models,
-            "current_set": backend.current_set,
-            "vram_used_gb": round(backend.used_vram_gb, 1),
-            "vram_total_gb": backend.vram_gb,
-            "active_requests": {
-                req_id: {
-                    "model": req.model,
-                    "priority": req.priority.name,
-                    "state": req.state,
-                    "age_s": round(time.monotonic() - req.created_at, 1),
-                }
-                for req_id, req in backend.active_requests.items()
-            },
-            "reserved_by": backend.reserved_by,
-        })
-
-    m.orchestrator_reserved.set(1 if router.is_reserved else 0)
-
-    # Whisper state (flag-based, no HTTP call)
-    whisper_busy = router.check_whisper_busy()
-
-    from .rate_limiter import get_rate_limit_status
-    from .openrouter_catalog import get_model_errors
-
-    return {
-        "gpu_backends": gpu_backends,
-        "orchestrator": {
-            "reserved": router.is_reserved,
-            "reservations": router._reservations,
-            "reservation_times": {k: v for k, v in router._reservation_times.items()},
-            "last_activity": {k: v for k, v in router._last_critical_activity.items()},
-        },
-        "metrics": {
-            "queue_depth": router._queue.queue_depth if router._queue else {},
-            "note": "See /router/metrics for Prometheus format",
-        },
-        "whisper": {"busy": whisper_busy},
-        "openrouter": {
-            "rate_limits": get_rate_limit_status(),
-            "model_errors": get_model_errors(),
-        },
-    }
-
-
-# ── /router/admin/* + /router/internal/* migrated to gRPC (jervis.router.RouterAdminService)
-#    on port 5501. See app/grpc_server.py. No REST fallback — hard cut.
-
-
-# ── Whisper GPU coordination (p40-2) ──────────────────────────────────
-
-@app.post("/router/whisper-notify")
-async def whisper_notify():
-    """Whisper wants GPU. Blocks until VLM finishes (if running).
-
-    Called by whisper REST server directly before loading model.
-    Returns immediately if GPU is free, or waits for VLM to finish.
-    """
-    timeout = settings.whisper_gpu_acquire_timeout_s
-    try:
-        granted = await asyncio.wait_for(
-            router.notify_whisper_wants_gpu(),
-            timeout=timeout,
-        )
-        if granted:
-            return JSONResponse(content={"status": "granted"})
-        return JSONResponse(status_code=503, content={"status": "denied"})
-    except asyncio.TimeoutError:
-        return JSONResponse(
-            status_code=408,
-            content={"status": "timeout", "waited_s": timeout},
-        )
-
-
-@app.post("/router/whisper-done")
-async def whisper_done():
-    """Whisper finished transcription. Clears active flag.
-
-    Called by whisper REST server after transcription completes.
-    Signals waiting VLM requests that GPU is available.
-    """
-    router.notify_whisper_done()
-    return JSONResponse(content={"status": "ok"})
-
-
-@app.get("/queue-status")
-async def queue_status():
-    """Minimal queue status for orchestrator routing decisions."""
-    qdepth = router._queue.queue_depth if router._queue else {}
-    gpu_free = [b.name for b in router.gpu_pool.all_backends if b.healthy and b.active_request_count() == 0]
-    gpu_busy = [b.name for b in router.gpu_pool.all_backends if b.healthy and b.active_request_count() > 0]
-    return {
-        "queue_depth_by_group": qdepth,
-        "queue_depth_total": sum(qdepth.values()),
-        "gpu_free": gpu_free,
-        "gpu_busy": gpu_busy,
-    }
+# /router/whisper-notify, /router/whisper-done — retired. Whisper on VD
+# must migrate to RouterAdminService.WhisperNotify / WhisperDone
+# (proto addition tracked in Phase 1 deferred, blocked on VD gRPC
+# onboarding). Meanwhile whisper runs without the coordination; p40-2
+# VRAM contention falls back to load-on-demand which is slower but
+# never blocks.
 
 
 @app.get("/router/metrics")
 async def router_metrics():
-    """Prometheus metrics endpoint."""
+    """Prometheus metrics endpoint — infra contract, HTTP unavoidable."""
     return Response(
         content=generate_latest(),
         media_type=CONTENT_TYPE_LATEST,

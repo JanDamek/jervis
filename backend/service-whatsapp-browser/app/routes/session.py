@@ -54,45 +54,9 @@ def create_session_router(
             await browser_manager.save_state(client_id)
         return {"status": "closed", "client_id": client_id}
 
-    @router.get("/session/{client_id}/debug-dom")
-    async def debug_dom(client_id: str) -> dict:
-        """Debug: inspect sidebar DOM for unread badge selectors."""
-        context = browser_manager.get_context()
-        if not context or not context.pages:
-            return {"error": "no context"}
-        page = context.pages[0]
-        try:
-            # Try various unread badge selectors
-            selectors = {
-                "icon-unread-count": await page.query_selector_all('[data-testid="icon-unread-count"]'),
-                "cell-frame-container": await page.query_selector_all('[data-testid="cell-frame-container"]'),
-                "unread-aria": await page.query_selector_all('span[aria-label*="unread"]'),
-                "pane-side-spans": await page.query_selector_all('#pane-side span[title]'),
-                "badge-any": await page.query_selector_all('#pane-side span.aumms1qt, #pane-side span[data-icon]'),
-                "listitem": await page.query_selector_all('#pane-side div[role="listitem"]'),
-                "row": await page.query_selector_all('#pane-side div[role="row"]'),
-                "grid": await page.query_selector_all('#pane-side div[role="grid"]'),
-                "gridcell": await page.query_selector_all('#pane-side div[role="gridcell"]'),
-            }
-            result = {}
-            for name, els in selectors.items():
-                result[name] = len(els)
-                if els and len(els) <= 5:
-                    texts = []
-                    for el in els[:5]:
-                        t = await el.inner_text() if hasattr(el, 'inner_text') else ""
-                        title = await el.get_attribute('title') or ""
-                        texts.append(f"{title or t[:30]}")
-                    result[f"{name}_samples"] = texts
-            # Get outer HTML of first chat row for structure analysis
-            first_span = await page.query_selector('#pane-side span[title]')
-            if first_span:
-                parent = await first_span.evaluate_handle('el => el.closest("div[tabindex]") || el.parentElement.parentElement.parentElement')
-                html = await parent.evaluate('el => el.outerHTML.substring(0, 800)')
-                result["sample_chat_html"] = html
-            return result
-        except Exception as e:
-            return {"error": str(e)}
+    # /session/{client_id}/debug-dom removed — pod-local REST debug surface
+    # that never belonged on the input side. DOM inspection in the running
+    # pod happens via VNC + devtools when needed.
 
     return router
 
