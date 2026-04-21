@@ -8,13 +8,20 @@ State is `PodAgentState` (MessagesState + pod-level fields). Dependencies
 (Page, TabManager, ScrapeStorage, MeetingRecorder) are resolved from a
 ContextVar — see `app.agent.context`.
 
-Context window management (per docs/teams-pod-agent-langgraph.md §3b):
-every invocation is bounded by `trim_messages(max_tokens=12000,
-strategy='last', allow_partial=False, start_on='human')`. Whole Human →
-AI(tool_calls) → Tool → … → AI(final) triples drop from the head so
-`tool_call_id` pairs stay consistent. Without this the raw message
-history grows unbounded (observed: 258k tokens after 10h of meeting
-scraping → cloud 262k limit overflow).
+Context window management — last N messages only.
+
+The agent only needs the **latest turn** to know where to continue;
+the full history lives in MongoDB (LangGraph `MongoDBSaver` checkpoint)
+and can be queried on demand via a tool. We send the SystemMessage
+head + the last `CONTEXT_KEEP_LAST_N` messages (default 10) to the
+LLM. Whole Human → AI(tool_calls) → Tool → AI(final) triples are
+preserved — we walk from the tail and stop on a Human boundary so
+`tool_call_id` pairs are never split.
+
+Observed 2026-04-21 on mazlušek: without any trim, accumulated state
+hit 258k tokens after 10h of scraping and overflowed the 262k cloud
+context. A count-based trim with N=10 is the minimum that lets the
+agent see its last-emitted action.
 """
 
 from __future__ import annotations
@@ -22,8 +29,13 @@ from __future__ import annotations
 import logging
 import os
 
-from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
-from langchain_core.messages.utils import trim_messages
+from langchain_core.messages import (
+    AIMessage,
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+)
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
@@ -33,34 +45,18 @@ from app.agent.tools import ALL_TOOLS
 
 logger = logging.getLogger("o365-browser-pool.graph")
 
-CONTEXT_TRIM_TOKENS = int(os.getenv("O365_POOL_CONTEXT_TRIM_TOKENS", "12000"))
-
-
-def _char_token_estimator(messages: list[BaseMessage]) -> int:
-    """~4 chars per token. Works for any message type — `trim_messages`
-    only needs a scalar budget function, not a real tokenizer."""
-    total = 0
-    for m in messages:
-        content = m.content or ""
-        if isinstance(content, str):
-            total += len(content) // 4 + 4
-        elif isinstance(content, list):
-            # multimodal content parts
-            for part in content:
-                if isinstance(part, dict):
-                    total += len(str(part.get("text", ""))) // 4 + 4
-                else:
-                    total += len(str(part)) // 4 + 4
-        # tool_calls on AIMessage add ~30 tokens per call (name + args)
-        tc = getattr(m, "tool_calls", None) or []
-        total += len(tc) * 30
-    return total
+CONTEXT_KEEP_LAST_N = int(os.getenv("O365_POOL_CONTEXT_KEEP_LAST_N", "10"))
 
 
 def _trim_for_llm(messages: list[BaseMessage]) -> list[BaseMessage]:
-    """Bound context per invocation. Keeps the SystemMessage head (which
-    carries current-state snapshot + learned patterns) and the tail of
-    the conversation up to CONTEXT_TRIM_TOKENS."""
+    """Keep the SystemMessage head + last N messages, snapped to a
+    Human/System boundary so no orphaned ToolMessage / tool_call_id
+    appears at the start of the body (OpenAI rejects that).
+
+    Everything older lives in the MongoDB checkpoint; the agent can
+    query it via the history tool when it needs context beyond the
+    window.
+    """
     if not messages:
         return messages
 
@@ -72,16 +68,27 @@ def _trim_for_llm(messages: list[BaseMessage]) -> list[BaseMessage]:
         else:
             body.append(m)
 
-    trimmed_body = trim_messages(
-        body,
-        max_tokens=CONTEXT_TRIM_TOKENS,
-        token_counter=_char_token_estimator,
-        strategy="last",
-        include_system=False,
-        allow_partial=False,
-        start_on="human",
-    )
-    return system_head + trimmed_body
+    if len(body) <= CONTEXT_KEEP_LAST_N:
+        return system_head + body
+
+    # Take the last N — then walk forward until we find a valid start
+    # (a HumanMessage or SystemMessage). This avoids starting on an
+    # orphaned AI(tool_calls) or ToolMessage whose pair got dropped.
+    tail = body[-CONTEXT_KEEP_LAST_N:]
+    # Snap to the first Human in the tail — everything before it within
+    # the tail is an incomplete prior triple; drop it.
+    for i, m in enumerate(tail):
+        if isinstance(m, (HumanMessage, SystemMessage)):
+            tail = tail[i:]
+            break
+    else:
+        # No Human in tail (all AI/Tool) — unusual; include the last
+        # Human from body so the LLM has an anchor.
+        for j in range(len(body) - CONTEXT_KEEP_LAST_N - 1, -1, -1):
+            if isinstance(body[j], HumanMessage):
+                tail = body[j:]
+                break
+    return system_head + tail
 
 
 def _agent_node_factory(connection_id: str):
@@ -98,8 +105,8 @@ def _agent_node_factory(connection_id: str):
         trimmed = _trim_for_llm(all_messages)
         if len(trimmed) != len(all_messages):
             logger.info(
-                "context_trim: %d → %d messages (budget=%d tokens)",
-                len(all_messages), len(trimmed), CONTEXT_TRIM_TOKENS,
+                "context_trim: %d → %d messages (keep_last_n=%d)",
+                len(all_messages), len(trimmed), CONTEXT_KEEP_LAST_N,
             )
         reply = await llm.ainvoke(trimmed)
         if not isinstance(reply, AIMessage):
