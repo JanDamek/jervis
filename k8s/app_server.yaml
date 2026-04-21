@@ -238,7 +238,9 @@ spec:
                   name: apns-auth-key
                   key: APNS_TEAM_ID
             - name: APNS_BUNDLE_ID
-              value: com.jervis.mobile
+              # Must match apps/iosApp/.../PRODUCT_BUNDLE_IDENTIFIER.
+              # Mismatch → APNs returns TopicDisallowed → no iOS push.
+              value: com.jervis
             - name: APNS_PRODUCTION
               value: "false"
           volumeMounts:
