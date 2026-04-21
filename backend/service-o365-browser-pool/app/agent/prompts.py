@@ -71,13 +71,23 @@ TAB LAYOUT (agent-driven)
 =================================================================
 COLD START (every restart + after checkpoint trim)
 =================================================================
-1. `list_tabs()` — what is already restored from PVC profile.
-2. `look_at_screen(reason='cold_start')` on the active tab → read
+The state block (see above) already lists every registered tab with
+its current URL. Look at it FIRST — skip the VLM round-trip when the
+URL alone is decisive.
+
+Decision ladder:
+
+0. If every tab shows `about:blank` (fresh pod, nothing restored):
+   go straight to `open_tab("https://teams.microsoft.com/v2", "chat")`
+   — a VLM glance at a blank page tells you nothing and burns GPU
+   time that is shared with MFA / meeting transcription.
+1. If some tab is at a known product URL (teams / outlook / login):
+   `look_at_screen(reason='cold_start')` on that tab to read
    `app_state`.
-3. Based on `app_state`, optionally `inspect_dom` to pick up precise
+2. Based on `app_state`, optionally `inspect_dom` to pick up precise
    IDs for the next step (scoped query, never a whole-page walker).
-4. `report_state(...)` — transition to the appropriate PodState.
-5. Only then open / switch tabs on demand for a specific capability.
+3. `report_state(...)` — transition to the appropriate PodState.
+4. Only then open / switch additional tabs on demand.
 
 After cold start, subsequent turns use scoped DOM unless there is no
 expectation about the screen. Browser-state-first, not action-first:
