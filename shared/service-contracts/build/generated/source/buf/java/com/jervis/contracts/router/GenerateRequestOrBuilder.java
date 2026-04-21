@@ -92,4 +92,30 @@ public interface GenerateRequestOrBuilder extends
    * <code>.jervis.router.ChatOptions options = 5 [json_name = "options"];</code>
    */
   com.jervis.contracts.router.ChatOptionsOrBuilder getOptionsOrBuilder();
+
+  /**
+   * <pre>
+   * Optional Ollama `format` directive — "json" forces the model to
+   * emit a single valid JSON object, bypassing chain-of-thought
+   * preambles. Empty = free-form text. Maps 1:1 to Ollama's
+   * `format` top-level field.
+   * </pre>
+   *
+   * <code>string response_format = 6 [json_name = "responseFormat"];</code>
+   * @return The responseFormat.
+   */
+  java.lang.String getResponseFormat();
+  /**
+   * <pre>
+   * Optional Ollama `format` directive — "json" forces the model to
+   * emit a single valid JSON object, bypassing chain-of-thought
+   * preambles. Empty = free-form text. Maps 1:1 to Ollama's
+   * `format` top-level field.
+   * </pre>
+   *
+   * <code>string response_format = 6 [json_name = "responseFormat"];</code>
+   * @return The bytes for responseFormat.
+   */
+  com.google.protobuf.ByteString
+      getResponseFormatBytes();
 }

@@ -31,6 +31,7 @@ private static final long serialVersionUID = 0L;
     modelHint_ = "";
     prompt_ = "";
     images_ = emptyList(com.google.protobuf.ByteString.class);
+    responseFormat_ = "";
   }
 
   public static final com.google.protobuf.Descriptors.Descriptor
@@ -223,6 +224,59 @@ private static final long serialVersionUID = 0L;
     return options_ == null ? com.jervis.contracts.router.ChatOptions.getDefaultInstance() : options_;
   }
 
+  public static final int RESPONSE_FORMAT_FIELD_NUMBER = 6;
+  @SuppressWarnings("serial")
+  private volatile java.lang.Object responseFormat_ = "";
+  /**
+   * <pre>
+   * Optional Ollama `format` directive — "json" forces the model to
+   * emit a single valid JSON object, bypassing chain-of-thought
+   * preambles. Empty = free-form text. Maps 1:1 to Ollama's
+   * `format` top-level field.
+   * </pre>
+   *
+   * <code>string response_format = 6 [json_name = "responseFormat"];</code>
+   * @return The responseFormat.
+   */
+  @java.lang.Override
+  public java.lang.String getResponseFormat() {
+    java.lang.Object ref = responseFormat_;
+    if (ref instanceof java.lang.String) {
+      return (java.lang.String) ref;
+    } else {
+      com.google.protobuf.ByteString bs = 
+          (com.google.protobuf.ByteString) ref;
+      java.lang.String s = bs.toStringUtf8();
+      responseFormat_ = s;
+      return s;
+    }
+  }
+  /**
+   * <pre>
+   * Optional Ollama `format` directive — "json" forces the model to
+   * emit a single valid JSON object, bypassing chain-of-thought
+   * preambles. Empty = free-form text. Maps 1:1 to Ollama's
+   * `format` top-level field.
+   * </pre>
+   *
+   * <code>string response_format = 6 [json_name = "responseFormat"];</code>
+   * @return The bytes for responseFormat.
+   */
+  @java.lang.Override
+  public com.google.protobuf.ByteString
+      getResponseFormatBytes() {
+    java.lang.Object ref = responseFormat_;
+    if (ref instanceof java.lang.String) {
+      com.google.protobuf.ByteString b = 
+          com.google.protobuf.ByteString.copyFromUtf8(
+              (java.lang.String) ref);
+      responseFormat_ = b;
+      return b;
+    } else {
+      return (com.google.protobuf.ByteString) ref;
+    }
+  }
+
   private byte memoizedIsInitialized = -1;
   @java.lang.Override
   public final boolean isInitialized() {
@@ -251,6 +305,9 @@ private static final long serialVersionUID = 0L;
     }
     if (((bitField0_ & 0x00000002) != 0)) {
       output.writeMessage(5, getOptions());
+    }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(responseFormat_)) {
+      com.google.protobuf.GeneratedMessage.writeString(output, 6, responseFormat_);
     }
     getUnknownFields().writeTo(output);
   }
@@ -284,6 +341,9 @@ private static final long serialVersionUID = 0L;
       size += com.google.protobuf.CodedOutputStream
         .computeMessageSize(5, getOptions());
     }
+    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(responseFormat_)) {
+      size += com.google.protobuf.GeneratedMessage.computeStringSize(6, responseFormat_);
+    }
     size += getUnknownFields().getSerializedSize();
     memoizedSize = size;
     return size;
@@ -315,6 +375,8 @@ private static final long serialVersionUID = 0L;
       if (!getOptions()
           .equals(other.getOptions())) return false;
     }
+    if (!getResponseFormat()
+        .equals(other.getResponseFormat())) return false;
     if (!getUnknownFields().equals(other.getUnknownFields())) return false;
     return true;
   }
@@ -342,6 +404,8 @@ private static final long serialVersionUID = 0L;
       hash = (37 * hash) + OPTIONS_FIELD_NUMBER;
       hash = (53 * hash) + getOptions().hashCode();
     }
+    hash = (37 * hash) + RESPONSE_FORMAT_FIELD_NUMBER;
+    hash = (53 * hash) + getResponseFormat().hashCode();
     hash = (29 * hash) + getUnknownFields().hashCode();
     memoizedHashCode = hash;
     return hash;
@@ -493,6 +557,7 @@ private static final long serialVersionUID = 0L;
         optionsBuilder_.dispose();
         optionsBuilder_ = null;
       }
+      responseFormat_ = "";
       return this;
     }
 
@@ -549,6 +614,9 @@ private static final long serialVersionUID = 0L;
             : optionsBuilder_.build();
         to_bitField0_ |= 0x00000002;
       }
+      if (((from_bitField0_ & 0x00000020) != 0)) {
+        result.responseFormat_ = responseFormat_;
+      }
       result.bitField0_ |= to_bitField0_;
     }
 
@@ -590,6 +658,11 @@ private static final long serialVersionUID = 0L;
       }
       if (other.hasOptions()) {
         mergeOptions(other.getOptions());
+      }
+      if (!other.getResponseFormat().isEmpty()) {
+        responseFormat_ = other.responseFormat_;
+        bitField0_ |= 0x00000020;
+        onChanged();
       }
       this.mergeUnknownFields(other.getUnknownFields());
       onChanged();
@@ -647,6 +720,11 @@ private static final long serialVersionUID = 0L;
               bitField0_ |= 0x00000010;
               break;
             } // case 42
+            case 50: {
+              responseFormat_ = input.readStringRequireUtf8();
+              bitField0_ |= 0x00000020;
+              break;
+            } // case 50
             default: {
               if (!super.parseUnknownField(input, extensionRegistry, tag)) {
                 done = true; // was an endgroup tag
@@ -1160,6 +1238,113 @@ private static final long serialVersionUID = 0L;
         options_ = null;
       }
       return optionsBuilder_;
+    }
+
+    private java.lang.Object responseFormat_ = "";
+    /**
+     * <pre>
+     * Optional Ollama `format` directive — "json" forces the model to
+     * emit a single valid JSON object, bypassing chain-of-thought
+     * preambles. Empty = free-form text. Maps 1:1 to Ollama's
+     * `format` top-level field.
+     * </pre>
+     *
+     * <code>string response_format = 6 [json_name = "responseFormat"];</code>
+     * @return The responseFormat.
+     */
+    public java.lang.String getResponseFormat() {
+      java.lang.Object ref = responseFormat_;
+      if (!(ref instanceof java.lang.String)) {
+        com.google.protobuf.ByteString bs =
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        responseFormat_ = s;
+        return s;
+      } else {
+        return (java.lang.String) ref;
+      }
+    }
+    /**
+     * <pre>
+     * Optional Ollama `format` directive — "json" forces the model to
+     * emit a single valid JSON object, bypassing chain-of-thought
+     * preambles. Empty = free-form text. Maps 1:1 to Ollama's
+     * `format` top-level field.
+     * </pre>
+     *
+     * <code>string response_format = 6 [json_name = "responseFormat"];</code>
+     * @return The bytes for responseFormat.
+     */
+    public com.google.protobuf.ByteString
+        getResponseFormatBytes() {
+      java.lang.Object ref = responseFormat_;
+      if (ref instanceof String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        responseFormat_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+    /**
+     * <pre>
+     * Optional Ollama `format` directive — "json" forces the model to
+     * emit a single valid JSON object, bypassing chain-of-thought
+     * preambles. Empty = free-form text. Maps 1:1 to Ollama's
+     * `format` top-level field.
+     * </pre>
+     *
+     * <code>string response_format = 6 [json_name = "responseFormat"];</code>
+     * @param value The responseFormat to set.
+     * @return This builder for chaining.
+     */
+    public Builder setResponseFormat(
+        java.lang.String value) {
+      if (value == null) { throw new NullPointerException(); }
+      responseFormat_ = value;
+      bitField0_ |= 0x00000020;
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * Optional Ollama `format` directive — "json" forces the model to
+     * emit a single valid JSON object, bypassing chain-of-thought
+     * preambles. Empty = free-form text. Maps 1:1 to Ollama's
+     * `format` top-level field.
+     * </pre>
+     *
+     * <code>string response_format = 6 [json_name = "responseFormat"];</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearResponseFormat() {
+      responseFormat_ = getDefaultInstance().getResponseFormat();
+      bitField0_ = (bitField0_ & ~0x00000020);
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * Optional Ollama `format` directive — "json" forces the model to
+     * emit a single valid JSON object, bypassing chain-of-thought
+     * preambles. Empty = free-form text. Maps 1:1 to Ollama's
+     * `format` top-level field.
+     * </pre>
+     *
+     * <code>string response_format = 6 [json_name = "responseFormat"];</code>
+     * @param value The bytes for responseFormat to set.
+     * @return This builder for chaining.
+     */
+    public Builder setResponseFormatBytes(
+        com.google.protobuf.ByteString value) {
+      if (value == null) { throw new NullPointerException(); }
+      checkByteStringIsUtf8(value);
+      responseFormat_ = value;
+      bitField0_ |= 0x00000020;
+      onChanged();
+      return this;
     }
 
     // @@protoc_insertion_point(builder_scope:jervis.router.GenerateRequest)

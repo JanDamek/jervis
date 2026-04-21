@@ -91,18 +91,20 @@ class ChatChunk(_message.Message):
     def __init__(self, content_delta: _Optional[str] = ..., thinking_delta: _Optional[str] = ..., tool_calls: _Optional[_Iterable[_Union[ToolCall, _Mapping]]] = ..., done: bool = ..., finish_reason: _Optional[str] = ..., prompt_tokens: _Optional[int] = ..., completion_tokens: _Optional[int] = ..., model_used: _Optional[str] = ...) -> None: ...
 
 class GenerateRequest(_message.Message):
-    __slots__ = ("ctx", "model_hint", "prompt", "images", "options")
+    __slots__ = ("ctx", "model_hint", "prompt", "images", "options", "response_format")
     CTX_FIELD_NUMBER: _ClassVar[int]
     MODEL_HINT_FIELD_NUMBER: _ClassVar[int]
     PROMPT_FIELD_NUMBER: _ClassVar[int]
     IMAGES_FIELD_NUMBER: _ClassVar[int]
     OPTIONS_FIELD_NUMBER: _ClassVar[int]
+    RESPONSE_FORMAT_FIELD_NUMBER: _ClassVar[int]
     ctx: _types_pb2.RequestContext
     model_hint: str
     prompt: str
     images: _containers.RepeatedScalarFieldContainer[bytes]
     options: ChatOptions
-    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., model_hint: _Optional[str] = ..., prompt: _Optional[str] = ..., images: _Optional[_Iterable[bytes]] = ..., options: _Optional[_Union[ChatOptions, _Mapping]] = ...) -> None: ...
+    response_format: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., model_hint: _Optional[str] = ..., prompt: _Optional[str] = ..., images: _Optional[_Iterable[bytes]] = ..., options: _Optional[_Union[ChatOptions, _Mapping]] = ..., response_format: _Optional[str] = ...) -> None: ...
 
 class GenerateChunk(_message.Message):
     __slots__ = ("response_delta", "done", "prompt_tokens", "completion_tokens", "model_used", "finish_reason")

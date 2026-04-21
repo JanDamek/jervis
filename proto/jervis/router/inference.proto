@@ -143,6 +143,11 @@ message GenerateRequest {
   // Raw JPEG/PNG bytes for VLM. Empty for text-only generate.
   repeated bytes images = 4;
   ChatOptions options = 5;
+  // Optional Ollama `format` directive — "json" forces the model to
+  // emit a single valid JSON object, bypassing chain-of-thought
+  // preambles. Empty = free-form text. Maps 1:1 to Ollama's
+  // `format` top-level field.
+  string response_format = 6;
 }
 
 message GenerateChunk {

@@ -120,31 +120,32 @@ public final class RouterInferenceProto extends com.google.protobuf.GeneratedFil
       "inishReason\022#\n\rprompt_tokens\030\006 \001(\003R\014prom" +
       "ptTokens\022+\n\021completion_tokens\030\007 \001(\003R\020com" +
       "pletionTokens\022\035\n\nmodel_used\030\010 \001(\tR\tmodel" +
-      "Used\"\307\001\n\017GenerateRequest\022/\n\003ctx\030\001 \001(\0132\035." +
+      "Used\"\360\001\n\017GenerateRequest\022/\n\003ctx\030\001 \001(\0132\035." +
       "jervis.common.RequestContextR\003ctx\022\035\n\nmod" +
       "el_hint\030\002 \001(\tR\tmodelHint\022\026\n\006prompt\030\003 \001(\t" +
       "R\006prompt\022\026\n\006images\030\004 \003(\014R\006images\0224\n\007opti" +
       "ons\030\005 \001(\0132\032.jervis.router.ChatOptionsR\007o" +
-      "ptions\"\340\001\n\rGenerateChunk\022%\n\016response_del" +
-      "ta\030\001 \001(\tR\rresponseDelta\022\022\n\004done\030\002 \001(\010R\004d" +
-      "one\022#\n\rprompt_tokens\030\003 \001(\003R\014promptTokens" +
-      "\022+\n\021completion_tokens\030\004 \001(\003R\020completionT" +
-      "okens\022\035\n\nmodel_used\030\005 \001(\tR\tmodelUsed\022#\n\r" +
-      "finish_reason\030\006 \001(\tR\014finishReason\"v\n\014Emb" +
-      "edRequest\022/\n\003ctx\030\001 \001(\0132\035.jervis.common.R" +
-      "equestContextR\003ctx\022\035\n\nmodel_hint\030\002 \001(\tR\t" +
-      "modelHint\022\026\n\006inputs\030\003 \003(\tR\006inputs\"h\n\rEmb" +
-      "edResponse\0228\n\nembeddings\030\001 \003(\0132\030.jervis." +
-      "router.EmbeddingR\nembeddings\022\035\n\nmodel_us" +
-      "ed\030\002 \001(\tR\tmodelUsed\"#\n\tEmbedding\022\026\n\006vect" +
-      "or\030\001 \003(\002R\006vector2\350\001\n\026RouterInferenceServ" +
-      "ice\022>\n\004Chat\022\032.jervis.router.ChatRequest\032" +
-      "\030.jervis.router.ChatChunk0\001\022J\n\010Generate\022" +
-      "\036.jervis.router.GenerateRequest\032\034.jervis" +
-      ".router.GenerateChunk0\001\022B\n\005Embed\022\033.jervi" +
-      "s.router.EmbedRequest\032\034.jervis.router.Em" +
-      "bedResponseB5\n\033com.jervis.contracts.rout" +
-      "erB\024RouterInferenceProtoP\001b\006proto3"
+      "ptions\022\'\n\017response_format\030\006 \001(\tR\016respons" +
+      "eFormat\"\340\001\n\rGenerateChunk\022%\n\016response_de" +
+      "lta\030\001 \001(\tR\rresponseDelta\022\022\n\004done\030\002 \001(\010R\004" +
+      "done\022#\n\rprompt_tokens\030\003 \001(\003R\014promptToken" +
+      "s\022+\n\021completion_tokens\030\004 \001(\003R\020completion" +
+      "Tokens\022\035\n\nmodel_used\030\005 \001(\tR\tmodelUsed\022#\n" +
+      "\rfinish_reason\030\006 \001(\tR\014finishReason\"v\n\014Em" +
+      "bedRequest\022/\n\003ctx\030\001 \001(\0132\035.jervis.common." +
+      "RequestContextR\003ctx\022\035\n\nmodel_hint\030\002 \001(\tR" +
+      "\tmodelHint\022\026\n\006inputs\030\003 \003(\tR\006inputs\"h\n\rEm" +
+      "bedResponse\0228\n\nembeddings\030\001 \003(\0132\030.jervis" +
+      ".router.EmbeddingR\nembeddings\022\035\n\nmodel_u" +
+      "sed\030\002 \001(\tR\tmodelUsed\"#\n\tEmbedding\022\026\n\006vec" +
+      "tor\030\001 \003(\002R\006vector2\350\001\n\026RouterInferenceSer" +
+      "vice\022>\n\004Chat\022\032.jervis.router.ChatRequest" +
+      "\032\030.jervis.router.ChatChunk0\001\022J\n\010Generate" +
+      "\022\036.jervis.router.GenerateRequest\032\034.jervi" +
+      "s.router.GenerateChunk0\001\022B\n\005Embed\022\033.jerv" +
+      "is.router.EmbedRequest\032\034.jervis.router.E" +
+      "mbedResponseB5\n\033com.jervis.contracts.rou" +
+      "terB\024RouterInferenceProtoP\001b\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
@@ -193,7 +194,7 @@ public final class RouterInferenceProto extends com.google.protobuf.GeneratedFil
     internal_static_jervis_router_GenerateRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_router_GenerateRequest_descriptor,
-        new java.lang.String[] { "Ctx", "ModelHint", "Prompt", "Images", "Options", });
+        new java.lang.String[] { "Ctx", "ModelHint", "Prompt", "Images", "Options", "ResponseFormat", });
     internal_static_jervis_router_GenerateChunk_descriptor =
       getDescriptor().getMessageType(7);
     internal_static_jervis_router_GenerateChunk_fieldAccessorTable = new

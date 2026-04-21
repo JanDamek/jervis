@@ -536,6 +536,10 @@ def _generate_request_to_body(req: inference_pb2.GenerateRequest) -> dict:
         "prompt": req.prompt,
         "stream": True,
     }
+    if req.response_format:
+        # "json" forces the model to emit a single valid JSON object.
+        # Bypasses qwen3-vl chain-of-thought streams.
+        body["format"] = req.response_format
     if req.images:
         import base64
         body["images"] = [base64.b64encode(b).decode() for b in req.images]

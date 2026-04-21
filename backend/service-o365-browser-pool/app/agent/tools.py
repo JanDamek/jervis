@@ -151,18 +151,15 @@ async def look_at_screen(
         return {"app_state": "unknown", "summary": f"screenshot failed: {e}",
                 "visible_actions": [], "detected_text": {}}
 
-    # `/no_think` disables qwen3-vl chain-of-thought — the model emits the
-    # JSON answer directly instead of streaming paragraphs of reasoning.
-    # Without it we paid 1000+ chunks of "Let's look at the image..." and
-    # never got a parseable JSON object.
     prompt = (
-        "/no_think Output ONLY a single JSON object. No prose, no "
-        "reasoning, no code fences. Shape:\n"
-        '{"app_state":"login|mfa|chat_list|conversation|meeting_stage|loading|unknown",'
-        '"summary":"<short sentence in English>",'
-        '"visible_actions":[{"label":"<button text>","bbox":{"x":0,"y":0,"w":0,"h":0}}],'
-        '"detected_text":{}}\n'
-        "Describe this Microsoft 365 web screen."
+        "Describe this Microsoft 365 web screen. Return a JSON object with "
+        "these fields:\n"
+        '- app_state: one of "login", "mfa", "chat_list", "conversation", '
+        '"meeting_stage", "loading", "unknown"\n'
+        '- summary: one short English sentence describing the screen\n'
+        '- visible_actions: array of {"label": "<button text>", '
+        '"bbox": {"x": 0, "y": 0, "w": 0, "h": 0}} for clickable elements\n'
+        '- detected_text: object with any focused answers'
         + (f"\nFocused question: {ask}\nPut the focused answer into detected_text." if ask else "")
     )
 
@@ -179,6 +176,9 @@ async def look_at_screen(
         prompt=prompt,
         images=[shot],
         options=inference_pb2.ChatOptions(temperature=0.0, num_predict=1024),
+        # Ollama `format: "json"` — forces a single valid JSON object
+        # as output, bypassing qwen3-vl chain-of-thought streams.
+        response_format="json",
     )
 
     body_parts: list[str] = []
