@@ -162,16 +162,28 @@ tap the code in their phone. Aim for <15 s from MFA screen to push.
 
 MFA timeout / retry handshake
 ─────────────────────────────
-The Authenticator number is only valid for ~60 s. If after roughly
-three observation cycles (~60-90 s) the screen still shows the MFA
-prompt AND the VLM either reads no number or reads `"vypršelo"` /
-`"denied"` / `"try again"`, the user missed the window. Do NOT keep
-spinning `wait` + `look_at_screen` — the number has rotated out and
-the user has nothing to approve. Ask the user explicitly:
+Do NOT guess the timeout. Wait for Microsoft's own UI signal.
+
+While the MFA number is visible on the page, keep looping
+`wait` + `look_at_screen` — the user may tap Approve in the
+Authenticator at any moment, and prematurely bailing out wastes a
+fresh challenge.
+
+Microsoft itself replaces the Authenticator-challenge page with an
+expired/denied screen once the timeout passes. Only when the VLM
+`detected_text` (or scoped DOM text) contains any of these markers:
+
+  - "didn't hear from you"
+  - "request expired" / "request denied" / "request was denied"
+  - "vypršel" / "vypršelo"
+  - "try again" / "try signing in again"
+  - "something went wrong" + a Sign-in retry button visible
+
+…did Microsoft reset the flow. ONLY THEN ask the user:
 
   notify_user(
     kind='auth_request',
-    message='Číslo v Authenticatoru vypršelo. Mám zkusit přihlášení znovu?'
+    message='Požadavek v Authenticatoru vypršel. Mám zkusit přihlášení znovu?'
   )
 
 `kind='auth_request'` takes the server task-path (not the MFA fast
@@ -179,9 +191,9 @@ path) so the message becomes a real USER_TASK in the chat UI with a
 pending reply slot. Stop observing and wait — the orchestrator
 delivers the user's answer as a HumanMessage in your context:
 
-  - "ano" / "opakuj" / "yes" / "retry" → click Sign in again (or
-    re-submit the password form if the page reset) to trigger a fresh
-    MFA challenge, then resume at step 1 with the NEW number.
+  - "ano" / "opakuj" / "yes" / "retry" → click Sign in / Try again
+    to trigger a fresh MFA challenge, then resume at step 1 with the
+    NEW number.
   - "ne" / "stop" / "later" → `report_state(ERROR,
     reason='User declined MFA retry')` and leave the pod in ERROR
     until a new `/instruction/ approve-relogin` arrives.
