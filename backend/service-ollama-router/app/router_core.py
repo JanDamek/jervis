@@ -450,33 +450,94 @@ class OllamaRouter:
 
         estimated_tokens = self._estimate_tokens(body)
 
-        decision = await self.decide_route(
-            capability=capability,
-            estimated_tokens=estimated_tokens,
-            client_id=client_id,
-            require_tools=require_tools,
-            max_tier_override=max_tier_override,
-        )
+        # Cascade: if the caller-requested tier (or the client's default
+        # tier) hits a quota / credit wall on OpenRouter, step down and
+        # try the next tier. Order: current → FREE → NONE (local). Stops
+        # the pipeline from collapsing when a single tier is unavailable
+        # — matches the user policy "429 → next; until GPU; paid if
+        # allowed", with credits-exhausted (402) treated the same as
+        # rate-limit (429).
+        from app.proxy import ProxyError
+        tier_cascade: list[str | None] = []
+        current_override = max_tier_override
+        # Seed: try the caller's requested tier first (if any), then drop
+        # through FREE and finally local. Dedup preserves order.
+        seen: set[str | None] = set()
+        for step in (current_override, "FREE", "NONE"):
+            key = (step or "").upper() or None
+            if key in seen:
+                continue
+            seen.add(key)
+            tier_cascade.append(step)
 
-        if decision.get("target") == "openrouter":
-            request_id = f"inf-{str(uuid.uuid4())[:6]}"
-            if is_streaming_request(body) and api_path not in EMBEDDING_PATHS:
-                from app.openrouter_proxy import stream_openrouter
-                return stream_openrouter(
-                    body, decision["model"], decision["api_key"], request_id,
-                )
-            from app.openrouter_proxy import call_openrouter
-            return await call_openrouter(
-                body, decision["model"], decision["api_key"], request_id,
+        last_error: Exception | None = None
+        for attempt, tier_for_attempt in enumerate(tier_cascade):
+            decision = await self.decide_route(
+                capability=capability,
+                estimated_tokens=estimated_tokens,
+                client_id=client_id,
+                require_tools=require_tools,
+                max_tier_override=tier_for_attempt,
             )
 
-        # Local path — substitute model and hand off to the queue.
-        local_model = decision.get("model")
-        if local_model:
-            body["model"] = local_model
-        return await self.route_request(
-            api_path, body, priority=priority, intent=intent, deadline_iso=deadline_iso,
-        )
+            if decision.get("target") == "openrouter":
+                request_id = f"inf-{str(uuid.uuid4())[:6]}"
+                try:
+                    if is_streaming_request(body) and api_path not in EMBEDDING_PATHS:
+                        from app.openrouter_proxy import stream_openrouter
+                        # Prime the generator so quota errors on the first
+                        # upstream chunk are caught here and can trigger a
+                        # cascade step, not surface to the caller mid-flow.
+                        gen = stream_openrouter(
+                            body, decision["model"], decision["api_key"], request_id,
+                        )
+                        first_chunk = await gen.__anext__()
+
+                        async def _replay(first, rest):
+                            yield first
+                            async for chunk in rest:
+                                yield chunk
+                        return _replay(first_chunk, gen)
+                    from app.openrouter_proxy import call_openrouter
+                    return await call_openrouter(
+                        body, decision["model"], decision["api_key"], request_id,
+                    )
+                except ProxyError as e:
+                    # 402 insufficient credits / 429 rate limit → cascade.
+                    # Anything else is a real upstream error and must
+                    # surface to the caller as-is.
+                    if getattr(e, "status_code", None) in (402, 429):
+                        last_error = e
+                        logger.warning(
+                            "CLOUD_CASCADE: tier=%s exhausted (status=%s) — "
+                            "falling back to next step",
+                            tier_for_attempt, e.status_code,
+                        )
+                        continue
+                    raise
+                except StopAsyncIteration:
+                    # Empty stream — not a quota issue, just return empty.
+                    async def _empty():
+                        if False:
+                            yield
+                    return _empty()
+            # Local path — substitute model and hand off to the queue.
+            # Reached either because the tier we asked for is NONE, or
+            # because cascade walked all the way down from cloud.
+            local_model = decision.get("model")
+            if local_model:
+                body["model"] = local_model
+            return await self.route_request(
+                api_path, body,
+                priority=priority, intent=intent, deadline_iso=deadline_iso,
+            )
+
+        # All cascade steps (cloud tiers + local) raised quota-style
+        # errors — reraise the last one so the caller sees a real fault
+        # rather than a silent empty response.
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("dispatch cascade exhausted without dispatching")
 
     @staticmethod
     def _estimate_tokens(body: dict) -> int:
