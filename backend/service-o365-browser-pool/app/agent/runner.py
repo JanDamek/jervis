@@ -256,41 +256,43 @@ class PodAgent:
 
     async def _on_stuck(self) -> None:
         """The agent repeated the same tool_call STUCK_REPEAT_THRESHOLD
-        times in a row. Notify the user, transition to ERROR, and wait
-        for an `/instruction/` from the orchestrator / user.
+        times in a row. This is an internal self-recovery signal — the
+        user does NOT want a USER_TASK to appear in the chat asking
+        them to "help the agent". Just log it, transition to ERROR
+        (server sees the state via report_state), clear the loop
+        memory, and inject a synthetic HumanMessage so the next agent
+        turn knows to try a completely different approach instead of
+        repeating the same tool call.
+
+        Restart-from-ERROR is handled by the existing watcher /
+        report_state(STARTING) recovery path — no notify, no task.
         """
         name, args_repr = self._recent_tool_calls[-1]
         logger.warning(
-            "STUCK: agent repeated %s(%s) %d× — breaking out",
+            "STUCK: agent repeated %s(%s) %d× — breaking out (no user task)",
             name, args_repr, STUCK_REPEAT_THRESHOLD,
         )
         self._recent_tool_calls.clear()
         try:
-            from app.grpc_clients import server_o365_session_stub
-            from jervis.common import types_pb2
-            from jervis.server import o365_session_pb2
-            from jervis_contracts.interceptors import prepare_context
-
-            grpc_ctx = types_pb2.RequestContext()
-            prepare_context(grpc_ctx)
-            await server_o365_session_stub().Notify(
-                o365_session_pb2.NotifyRequest(
-                    ctx=grpc_ctx,
-                    connection_id=self.connection_id,
-                    kind="error",
-                    message=(
-                        f"Pod agent uvízl — opakoval {name}({args_repr}) "
-                        f"{STUCK_REPEAT_THRESHOLD}× v řadě. Čeká na instrukci."
-                    ),
-                ),
-                timeout=10.0,
-            )
-        except Exception as e:
-            logger.warning("STUCK notify failed: %s", e)
-        try:
             await self.ctx.state_manager.transition(
                 PodState.ERROR,
                 reason=f"stuck: repeat {name} {STUCK_REPEAT_THRESHOLD}×",
+            )
+        except Exception:
+            pass
+        # Nudge the next iteration with concrete advice so the LLM
+        # doesn't immediately re-emit the same call. The HumanMessage
+        # gets prepended via `_pending_inputs` and read by `_next_input`.
+        try:
+            self._pending_inputs.put_nowait(
+                f"Internal recovery hint: you just repeated `{name}` "
+                f"{STUCK_REPEAT_THRESHOLD} times in a row with the same "
+                f"arguments and it kept failing. Stop using that tool/"
+                f"selector for this objective. Try a different approach "
+                f"— inspect_dom with a broader selector, look_at_screen "
+                f"to re-read the current view, or `press` a keyboard "
+                f"shortcut. Do NOT call `{name}` again in the next "
+                f"three turns."
             )
         except Exception:
             pass
