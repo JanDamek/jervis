@@ -281,6 +281,7 @@ class OllamaRouter:
         client_id: str | None = None,
         require_tools: bool = False,
         max_tier_override: str | None = None,
+        intent: str = "",
     ) -> dict:
         """Router's single routing decision. Caller sends only `capability`
         and `client_id`; everything else — tier, model, retries, cooldowns —
@@ -304,6 +305,19 @@ class OllamaRouter:
         """
         cap_lower = (capability or "").strip().lower()
         api_base = f"http://jervis-ollama-router:{settings.router_port}"
+
+        # XTTS normalize is pinned to qwen3:14b on the VLM GPU: same card
+        # as XTTS itself, so LLM → synthesis happens with no inter-pod
+        # round-trip and no cloud quotas. The model stays VRAM-resident
+        # between calls (GPU_MODEL_SETS + TTS preempt carve-out below),
+        # so this path never waits for a load. Bypasses the tier cascade
+        # entirely — intent=tts_normalize is a hard local-only contract.
+        if (intent or "").lower() == "tts_normalize":
+            return {
+                "target": "local",
+                "model": "qwen3:14b",
+                "api_base": api_base,
+            }
 
         # Resolve tier: caller-supplied override wins over CloudModelPolicy.
         # This lets individual callers (e.g. TTS normalize) bypass the
@@ -478,6 +492,7 @@ class OllamaRouter:
                 client_id=client_id,
                 require_tools=require_tools,
                 max_tier_override=tier_for_attempt,
+                intent=intent,
             )
 
             if decision.get("target") == "openrouter":
@@ -1147,16 +1162,20 @@ class OllamaRouter:
         self._tts_done_event.clear()
 
         # Preempt only the VLM GPU (p40-2) — that's where XTTS lives.
-        # Ollama work on other GPUs (incl. the chat model servicing our
-        # own tts_normalize requests on p40-1) keeps running, so XTTS
-        # normalization isn't starved while synthesis is preparing.
+        # Normalize LLM (qwen3:14b) lives on the SAME card by design:
+        # XTTS owns the GPU during synthesis, normalize runs in-process
+        # on the same GPU so there's no inter-pod round-trip and no
+        # cloud dependency. So two carve-outs compared to whisper:
+        #   * tts_normalize requests are NOT cancelled
+        #   * the normalize model is NOT unloaded from VRAM
+        TTS_NORMALIZE_MODEL = "qwen3:14b"
         preempted: list[TrackedRequest] = []
         for gpu in self.gpu_pool.healthy_backends:
             if gpu.name != VLM_GPU:
                 continue
             for req_id, req in list(gpu.active_requests.items()):
                 if getattr(req, "intent", None) == "tts_normalize":
-                    continue  # defensive — wouldn't be on VLM_GPU anyway
+                    continue  # our own normalize path
                 if req.state == RequestState.PREEMPTED:
                     continue
                 logger.warning(
@@ -1174,6 +1193,8 @@ class OllamaRouter:
                 if gpu.name != VLM_GPU:
                     continue
                 for model_id in list(gpu.loaded_models.keys()):
+                    if model_id == TTS_NORMALIZE_MODEL:
+                        continue  # keep normalize model resident
                     unload_tasks.append(asyncio.create_task(
                         self.gpu_pool.unload_model(gpu, model_id, self._mgmt_client)
                     ))
@@ -1190,22 +1211,25 @@ class OllamaRouter:
                     except Exception:
                         pass
 
+        def _still_busy() -> bool:
+            # Normalize requests share the card on purpose — they're
+            # not contention from our point of view.
+            for gpu in self.gpu_pool.healthy_backends:
+                if gpu.name != VLM_GPU:
+                    continue
+                for req in gpu.active_requests.values():
+                    if getattr(req, "intent", None) == "tts_normalize":
+                        continue
+                    return True
+            return False
+
         deadline = time.monotonic() + preempt_timeout_s
         while time.monotonic() < deadline:
-            still_busy = any(
-                gpu.active_requests
-                for gpu in self.gpu_pool.healthy_backends
-                if gpu.name == VLM_GPU
-            )
-            if not still_busy:
+            if not _still_busy():
                 break
             await asyncio.sleep(0.2)
 
-        granted = not any(
-            gpu.active_requests
-            for gpu in self.gpu_pool.healthy_backends
-            if gpu.name == VLM_GPU
-        )
+        granted = not _still_busy()
         logger.info(
             "TTS_NOTIFY: granted=%s preempted=%d unloaded=%d",
             granted, len(preempted), unloaded_models,

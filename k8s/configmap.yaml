@@ -126,11 +126,12 @@ data:
       # local chat GPU is saturated) instead of tier=NONE local-only.
       normalizeClientId: "68a332361b04695a243e5ae8"
       normalizeProjectId: "68a3318f1b04695a243e5adf"
-      # Temporary: send normalize to the PAID OpenRouter queue so the
-      # FREE 2000/day quota isn't exhausted by background kb-extract
-      # jobs. Switch back to T1 once the orchestrator stops burning the
-      # free-tier budget. Per-project override planned for a later pass.
-      normalizeMaxTier: "T2"
+      # Normalize runs on the SAME GPU as XTTS (p40-2 / VLM_GPU) via the
+      # pinned intent=tts_normalize → qwen3:14b routing in the router.
+      # Local-only tier means no OpenRouter dependency: no FREE quota,
+      # no PAID credits, no cascade. The model stays loaded because the
+      # TTS preempt carve-out keeps it in VRAM across synthesis runs.
+      normalizeMaxTier: "NONE"
 
     # -- Coding tools (Claude Code only) ----------------------------------------
     coding-tools:
