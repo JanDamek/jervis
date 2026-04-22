@@ -41,8 +41,8 @@ ROUTER_GRPC_PORT = int(os.getenv("ROUTER_GRPC_PORT", "5501"))
 
 # Hard ceilings — user is waiting for audio, a slow LLM falls back to
 # raw sentence split so playback is never blocked.
-NORMALIZE_DEADLINE_S = 30.0
-FIRST_TOKEN_DEADLINE_S = 8.0
+NORMALIZE_DEADLINE_S = 60.0
+FIRST_TOKEN_DEADLINE_S = 20.0
 
 _GRPC_MAX_MSG_BYTES = 16 * 1024 * 1024
 
@@ -88,8 +88,14 @@ def _system_prompt(language: str) -> str:
             "- Expand acronyms phonetically (API -> ay pee eye, HTTP -> aitch tee tee pee,\n"
             "  JSON -> jay son, URL -> you are ell, SQL -> ess queue ell, AI -> ay eye,\n"
             "  GPU -> gee pee you, CPU -> see pee you, PDF -> pee dee eff).\n"
-            "- Spell long digit/hex runs as the word 'identifier' or omit them.\n"
-            "- Strip markdown (**bold**, `code`, # headings, list bullets, links).\n"
+            "- Spell short numbers as words (69 -> sixty nine).\n"
+            "- Hex / UUID / long alphanumeric IDs (6+ chars) MUST NOT be read aloud.\n"
+            "  If the sentence reads fine without the ID, drop it. If the ID is\n"
+            "  essential, replace with 'by identifier' — the listener never sees\n"
+            "  the ID in chat, reading character blocks is useless noise.\n"
+            "- Same for URLs, file paths, email, hex colour codes, hashes —\n"
+            "  drop or replace with a descriptor ('link', 'file', 'email').\n"
+            "- Strip markdown (**bold**, `code`, # headings, list bullets).\n"
             "- Output one SENTENCE PER LINE — newline separates sentences. No blank lines.\n"
         )
     return (
@@ -102,9 +108,15 @@ def _system_prompt(language: str) -> str:
         "    GPU → dží-pí-jú, CPU → sí-pí-jú, PDF → pí-dý-ef).\n"
         "  * České zkratky / interní kódy → foneticky česky (SBO → es-bé-ó,\n"
         "    BMS → bé-em-es, VD → vé-dé, ČR → čé-er, DPH → dé-pé-há, IČO → í-čé-ó).\n"
-        "- Čísla převeď slovně (69 → šedesát devět, 2026 → dva tisíce dvacet šest).\n"
-        "- Dlouhé hex/ID řetězce (6+ znaků) nahraď slovem 'identifikátor' nebo vynech.\n"
-        "- Odstraň markdown (**tučně**, `kód`, # nadpisy, odrážky, odkazy).\n"
+        "- Krátká čísla převeď slovně (69 → šedesát devět, 2026 → dva tisíce dvacet šest).\n"
+        "- Hex / UUID / dlouhé alfanumerické ID (6+ znaků) NEČTI doslova.\n"
+        "  Pokud věta dává smysl bez identifikátoru, vynech ho úplně.\n"
+        "  Pokud je pro větu nezbytný, nahraď ho slovy 'podle identifikátoru' nebo\n"
+        "  'podle ID' — posluchač identifikátor nikdy neuvidí v chatu, takže číst\n"
+        "  bloky znaků je zbytečné a rušivé.\n"
+        "- Stejně zacházej s URL, cesty souborů, e-mailem, hex kódy barev, hash\n"
+        "  řetězci — vynech nebo nahraď popisným slovem ('odkaz', 'soubor', 'e-mail').\n"
+        "- Odstraň markdown (**tučně**, `kód`, # nadpisy, odrážky).\n"
         "- Výstup: JEDNA VĚTA NA ŘÁDEK — nový řádek odděluje věty. Žádné prázdné řádky.\n"
     )
 

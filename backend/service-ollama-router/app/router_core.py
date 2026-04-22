@@ -541,6 +541,7 @@ class OllamaRouter:
             api_path=api_path,
             body=body,
             deadline_iso=deadline_iso,
+            intent=intent or "",
         )
 
         self._last_any_gpu_activity = time.monotonic()
@@ -1062,12 +1063,13 @@ class OllamaRouter:
             return False
 
     async def notify_tts_wants_gpu(self, preempt_timeout_s: int = 30) -> tuple[bool, int, int]:
-        """XTTS demands exclusive GPU. Same preempt flow as whisper:
-        cancel every in-flight Ollama LLM/VLM request (embeddings included —
-        a user-facing audio stream must not share compute), unload the
-        models, wait for quiesce. Re-enqueued requests resume when
-        `notify_tts_done` fires. Whisper's permanent-audio rule also
-        applies to XTTS, so both flags guard Ollama dispatch symmetrically.
+        """XTTS demands GPU. Same preempt flow as whisper, with one
+        difference: XTTS itself calls `RouterInferenceService.Chat`
+        (intent=`tts_normalize`) for per-sentence text rewriting while
+        synthesis is running. We MUST keep those requests — and the
+        chat model they loaded — alive so the XTTS sentence pump doesn't
+        stall. Everything else (qualifier, kb-extract, VLM work) gets
+        preempted + unloaded as usual.
         """
         from .models import RequestState
 
@@ -1075,9 +1077,17 @@ class OllamaRouter:
         self._tts_active_since = time.monotonic()
         self._tts_done_event.clear()
 
+        # Preempt only the VLM GPU (p40-2) — that's where XTTS lives.
+        # Ollama work on other GPUs (incl. the chat model servicing our
+        # own tts_normalize requests on p40-1) keeps running, so XTTS
+        # normalization isn't starved while synthesis is preparing.
         preempted: list[TrackedRequest] = []
         for gpu in self.gpu_pool.healthy_backends:
+            if gpu.name != VLM_GPU:
+                continue
             for req_id, req in list(gpu.active_requests.items()):
+                if getattr(req, "intent", None) == "tts_normalize":
+                    continue  # defensive — wouldn't be on VLM_GPU anyway
                 if req.state == RequestState.PREEMPTED:
                     continue
                 logger.warning(
@@ -1092,6 +1102,8 @@ class OllamaRouter:
         if self._mgmt_client:
             unload_tasks: list[asyncio.Task] = []
             for gpu in self.gpu_pool.healthy_backends:
+                if gpu.name != VLM_GPU:
+                    continue
                 for model_id in list(gpu.loaded_models.keys()):
                     unload_tasks.append(asyncio.create_task(
                         self.gpu_pool.unload_model(gpu, model_id, self._mgmt_client)

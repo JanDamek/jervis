@@ -204,6 +204,10 @@ class TrackedRequest:
     capability: str = Capability.CHAT.value
     min_model_size: int = 0    # 0 = no size floor (accept any)
     deadline_iso: str | None = None   # absolute deadline (ISO-8601); router derives urgency
+    # Free-form sub-capability tag for telemetry + preempt carve-outs.
+    # TTS preempt checks `intent == "tts_normalize"` so it doesn't
+    # cancel XTTS's own sentence normalizer.
+    intent: str = ""
 
     @property
     def queue_group(self) -> QueueGroup:
