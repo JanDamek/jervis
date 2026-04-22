@@ -126,12 +126,14 @@ data:
       # local chat GPU is saturated) instead of tier=NONE local-only.
       normalizeClientId: "68a332361b04695a243e5ae8"
       normalizeProjectId: "68a3318f1b04695a243e5adf"
-      # Normalize runs on the SAME GPU as XTTS (p40-2 / VLM_GPU) via the
-      # pinned intent=tts_normalize → qwen3:14b routing in the router.
-      # Local-only tier means no OpenRouter dependency: no FREE quota,
-      # no PAID credits, no cascade. The model stays loaded because the
-      # TTS preempt carve-out keeps it in VRAM across synthesis runs.
-      normalizeMaxTier: "NONE"
+      # Normalize cascade: FREE → PAID → local. OpenRouter free tier
+      # first (near-zero cost); if exhausted (429), try PAID (cheap
+      # latency); if that also fails (402 no credits), drop to local
+      # qwen3-coder-tool:30b on p40-1 — where CASCADE priority preempts
+      # whatever is running so the user-waiting audio doesn't queue
+      # behind background work. Router handles the whole chain in
+      # dispatch_inference (see CLOUD_CASCADE logic).
+      normalizeMaxTier: "T2"
 
     # -- Coding tools (Claude Code only) ----------------------------------------
     coding-tools:
@@ -224,10 +226,17 @@ data:
   ROUTER_PORT: "11430"
   GPU_BACKENDS: '[{"url":"http://nas.lan.mazlusek.com:11434","vram_gb":24,"name":"p40-1"},{"url":"http://ollama.lan.mazlusek.com:11434","vram_gb":24,"name":"p40-2"}]'
   ORCHESTRATOR_MODEL: "qwen3-coder-tool:30b"
-  # p40-2 also hosts qwen3:14b — the TTS normalize pin routes
-  # intent=tts_normalize here (same card as XTTS). Preempt carve-out
-  # keeps it resident so the next normalize call hits a warm model.
-  GPU_MODEL_SETS: '{"p40-1":["bge-m3","qwen3-coder-tool:30b"],"p40-2":["bge-m3","qwen3:14b","qwen3-vl-tool:latest"]}'
+  # p40-2 = pure audio GPU: XTTS only (permanent in its own process).
+  # No Ollama LLM here — TTS_NOTIFY freezes everything on this card so
+  # XTTS has the whole P40 to itself. bge-m3 stays for embedding access;
+  # it's tiny (~1 GB) and doesn't fight XTTS for compute.
+  #
+  # p40-1 = compute GPU: qwen3-coder-tool:30b for everything (orchestrator,
+  # qualifier, kb-extract, TTS normalize). Normalize runs with CASCADE
+  # priority and preempts running jobs so user-waiting audio doesn't
+  # queue behind background work. Prompt tuned to 30B (coding-strong,
+  # handles long-form normalization cleanly).
+  GPU_MODEL_SETS: '{"p40-1":["bge-m3","qwen3-coder-tool:30b"],"p40-2":["bge-m3"]}'
   ORCHESTRATOR_RESERVATION_TIMEOUT_S: "600"
   ORCHESTRATOR_IDLE_TIMEOUT_S: "60"
   MODEL_LOAD_TIMEOUT_S: "300"

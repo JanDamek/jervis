@@ -245,19 +245,12 @@ class RequestQueue:
         """Find an available GPU backend. Returns "gpu:<name>" or None."""
         is_critical = request.priority <= Priority.CRITICAL
         is_embedding = request.model in EMBEDDING_MODELS
-        is_tts_normalize = getattr(request, "intent", "") == "tts_normalize"
 
         max_concurrent = self._max_concurrent_embeddings if is_embedding else self._max_concurrent_llm
         min_size = request.min_model_size
 
         gpu_candidates: list[tuple[GpuBackend, str | None]] = []
         for b in self.gpu_pool.healthy_backends:
-            if is_tts_normalize and b.name != VLM_GPU:
-                # TTS normalize is pinned to the audio GPU — we don't
-                # want MODEL_REDIRECT to send it to p40-1 / qwen3:30b
-                # just because 14b isn't loaded yet. _prepare_gpu will
-                # load it on VLM_GPU.
-                continue
             if is_embedding:
                 active = sum(1 for r in b.active_requests.values() if r.model in EMBEDDING_MODELS)
             else:
@@ -504,18 +497,31 @@ class RequestQueue:
         if group is not None and self._queues[group].empty():
             return False
 
+        # Compare against the head-of-queue priority in this group so
+        # that CASCADE in queue can evict CRITICAL that's already running
+        # (user-facing TTS normalize must not wait behind a qualifier).
+        waiting_priority: Priority | None = None
+        if group is not None:
+            pq = self._queues[group]
+            if not pq.empty():
+                peek = pq.queue[0]
+                waiting_priority = peek[2].request.priority
+
         for gpu in self.gpu_pool.healthy_backends:
             for req_id, req in list(gpu.active_requests.items()):
                 if req.state == RequestState.PREEMPTED:
                     continue
-                if req.priority < Priority.NORMAL:
+                # Don't preempt something with the same-or-higher urgency
+                # than what's waiting. Priority is ordered: CASCADE < CRITICAL
+                # < NORMAL < BACKGROUND (lower IntEnum value = more urgent).
+                if waiting_priority is not None and req.priority <= waiting_priority:
                     continue
                 if group is not None and req.queue_group != group:
                     continue
                 if req.model in EMBEDDING_MODELS and not settings.preempt_embeddings:
                     continue
                 logger.warning(
-                    "PREEMPT_FOR_QUEUE: id=%s group=%s model=%s on GPU %s — preempted for queued CRITICAL",
+                    "PREEMPT_FOR_QUEUE: id=%s group=%s model=%s on GPU %s — preempted for queued higher-priority",
                     req_id, req.queue_group.value, req.model, gpu.name,
                 )
                 req.cancel_event.set()

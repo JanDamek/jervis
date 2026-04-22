@@ -306,19 +306,6 @@ class OllamaRouter:
         cap_lower = (capability or "").strip().lower()
         api_base = f"http://jervis-ollama-router:{settings.router_port}"
 
-        # XTTS normalize is pinned to qwen3:14b on the VLM GPU: same card
-        # as XTTS itself, so LLM → synthesis happens with no inter-pod
-        # round-trip and no cloud quotas. The model stays VRAM-resident
-        # between calls (GPU_MODEL_SETS + TTS preempt carve-out below),
-        # so this path never waits for a load. Bypasses the tier cascade
-        # entirely — intent=tts_normalize is a hard local-only contract.
-        if (intent or "").lower() == "tts_normalize":
-            return {
-                "target": "local",
-                "model": "qwen3:14b",
-                "api_base": api_base,
-            }
-
         # Resolve tier: caller-supplied override wins over CloudModelPolicy.
         # This lets individual callers (e.g. TTS normalize) bypass the
         # client's default tier when they need a specific queue (PAID to
