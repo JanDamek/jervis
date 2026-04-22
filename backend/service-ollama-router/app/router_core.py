@@ -510,10 +510,29 @@ class OllamaRouter:
                     # surface to the caller as-is.
                     if getattr(e, "status_code", None) in (402, 429):
                         last_error = e
+                        # Park the model that just hit the wall. When the
+                        # upstream sends `X-RateLimit-Reset`, honor it so
+                        # the catalog skips the model for the full quota
+                        # window instead of probing it back open.
+                        try:
+                            from app.openrouter_catalog import report_model_error
+                            report_model_error(
+                                decision["model"],
+                                error_message=f"{e.status_code}: {e.message[:200]}",
+                                rate_limit_reset_epoch_ms=getattr(
+                                    e, "rate_limit_reset_epoch_ms", None
+                                ),
+                                rate_limit_scope=getattr(
+                                    e, "rate_limit_scope", None
+                                ),
+                            )
+                        except Exception:
+                            logger.debug("report_model_error failed", exc_info=True)
                         logger.warning(
-                            "CLOUD_CASCADE: tier=%s exhausted (status=%s) — "
+                            "CLOUD_CASCADE: tier=%s exhausted (status=%s, scope=%s) — "
                             "falling back to next step",
                             tier_for_attempt, e.status_code,
+                            getattr(e, "rate_limit_scope", None),
                         )
                         continue
                     raise

@@ -22,6 +22,55 @@ logger = logging.getLogger("ollama-router.openrouter-proxy")
 OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 
 
+def _parse_rate_limit_headers(error_text: str) -> tuple[int | None, str | None]:
+    """Extract `X-RateLimit-Reset` (epoch ms) and the scope string from
+    an OpenRouter 429 response body.
+
+    OpenRouter returns 429 with a JSON envelope shaped like:
+        {"error":{"message":"Rate limit exceeded: free-models-per-day-high-balance. ",
+                   "code":429,
+                   "metadata":{"headers":{"X-RateLimit-Limit":"2000",
+                                           "X-RateLimit-Remaining":"0",
+                                           "X-RateLimit-Reset":"1776902400000"}}}}
+
+    Returns `(reset_epoch_ms, scope)`. Either may be None if absent.
+    """
+    try:
+        data = json.loads(error_text)
+    except (json.JSONDecodeError, ValueError):
+        return None, None
+
+    err = data.get("error") if isinstance(data, dict) else None
+    if not isinstance(err, dict):
+        return None, None
+
+    headers = ((err.get("metadata") or {}).get("headers") or {})
+    reset_raw = headers.get("X-RateLimit-Reset")
+    reset_ms: int | None = None
+    if reset_raw is not None:
+        try:
+            reset_ms = int(str(reset_raw))
+        except (TypeError, ValueError):
+            reset_ms = None
+
+    # Scope lives in the free-form message ("Rate limit exceeded: <scope>.")
+    scope: str | None = None
+    msg = err.get("message")
+    if isinstance(msg, str):
+        lower = msg.lower()
+        for marker in (
+            "free-models-per-day-high-balance",
+            "free-models-per-day",
+            "per-day",
+            "per-minute",
+            "per-hour",
+        ):
+            if marker in lower:
+                scope = marker
+                break
+    return reset_ms, scope
+
+
 def _build_openai_body(body: dict, cloud_model: str) -> dict:
     raw_messages = body.get("messages", [])
     if not raw_messages and body.get("prompt"):
@@ -123,16 +172,22 @@ async def stream_openrouter(
                 error_text = ""
                 async for chunk in upstream.aiter_text():
                     error_text += chunk
-                    if len(error_text) > 800:
+                    if len(error_text) > 2000:
                         break
                 logger.warning(
                     "OPENROUTER_PROXY: %s error %d: %s",
                     request_id, upstream.status_code, error_text[:200],
                 )
+                reset_ms: int | None = None
+                scope: str | None = None
+                if upstream.status_code == 429:
+                    reset_ms, scope = _parse_rate_limit_headers(error_text)
                 raise ProxyError(
                     "upstream_error",
                     status_code=upstream.status_code,
                     message=error_text[:500],
+                    rate_limit_reset_epoch_ms=reset_ms,
+                    rate_limit_scope=scope,
                 )
 
             async for line in upstream.aiter_lines():
@@ -191,10 +246,16 @@ async def call_openrouter(
             json=openai_body, headers=_headers(api_key),
         )
         if resp.status_code != 200:
+            reset_ms: int | None = None
+            scope: str | None = None
+            if resp.status_code == 429:
+                reset_ms, scope = _parse_rate_limit_headers(resp.text)
             raise ProxyError(
                 "upstream_error",
                 status_code=resp.status_code,
                 message=resp.text[:500],
+                rate_limit_reset_epoch_ms=reset_ms,
+                rate_limit_scope=scope,
             )
         data = resp.json()
         choice = (data.get("choices") or [{}])[0]

@@ -26,13 +26,34 @@ class ProxyError(RuntimeError):
     """Raised from proxy calls when the upstream GPU cannot serve the
     request. Carries a short reason and, when available, the upstream
     HTTP status code. The gRPC servicer maps these to gRPC Status codes.
+
+    For OpenRouter 429s where the upstream provides `X-RateLimit-Reset`
+    (free-models daily cap, per-minute cap, …), the proxy layer parses
+    the reset timestamp and attaches it here so the catalog can disable
+    the model until the actual reset instead of the default 15 s pause.
     """
 
-    def __init__(self, reason: str, *, status_code: int | None = None, message: str = "") -> None:
+    def __init__(
+        self,
+        reason: str,
+        *,
+        status_code: int | None = None,
+        message: str = "",
+        rate_limit_reset_epoch_ms: int | None = None,
+        rate_limit_scope: str | None = None,
+    ) -> None:
         super().__init__(reason)
         self.reason = reason
         self.status_code = status_code
         self.message = message
+        # Epoch **milliseconds** — matches the value OpenRouter returns in
+        # `error.metadata.headers["X-RateLimit-Reset"]`. None = unknown
+        # (e.g. upstream didn't send the header, or non-429 error).
+        self.rate_limit_reset_epoch_ms = rate_limit_reset_epoch_ms
+        # Scope from OpenRouter's error message, e.g.
+        # "free-models-per-day-high-balance" / "rate-per-minute". Used
+        # only for logging — the catalog keys off reset_epoch.
+        self.rate_limit_scope = rate_limit_scope
 
 
 class PreemptedByWhisperError(RuntimeError):

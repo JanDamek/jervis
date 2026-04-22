@@ -346,11 +346,23 @@ async def _first_cloud_model(
     return selected
 
 
-def report_model_error(model_id: str, error_message: str = "") -> bool:
+def report_model_error(
+    model_id: str,
+    error_message: str = "",
+    *,
+    rate_limit_reset_epoch_ms: int | None = None,
+    rate_limit_scope: str | None = None,
+) -> bool:
     """Report a model error. Returns True if model was just disabled.
 
     Error types handled:
-    - Rate limit (429 / "rate limit"): pause for _RATE_LIMIT_PAUSE_S (60s), don't increment counter
+    - Rate limit with upstream `X-RateLimit-Reset` (e.g.
+      `free-models-per-day-high-balance`): disable the model until the
+      exact reset timestamp the provider reported. No retries in between
+      — the quota window is a hard wall, reopening it on each tick
+      burns one request and gets another 429 back.
+    - Rate limit without reset hint (plain 429 / "rate limit"): pause for
+      _RATE_LIMIT_PAUSE_S, disable after _RATE_LIMIT_DISABLE_AFTER consecutive hits.
     - Empty response / provider error: increment counter, disable after _MAX_CONSECUTIVE_ERRORS
     - Disabled models auto-recover after _AUTO_RECOVERY_S (5 min)
     """
@@ -371,7 +383,28 @@ def report_model_error(model_id: str, error_message: str = "") -> bool:
         if len(errors) > _MAX_ERROR_HISTORY:
             info["errors"] = errors[-_MAX_ERROR_HISTORY:]
 
-    # Rate limit (429): pause for 60s each time, disable after N consecutive 429s.
+    # Provider-reported hard reset → park the model until the exact reset
+    # timestamp and skip the probe/retry dance. Free-tier daily caps
+    # (free-models-per-day-high-balance) send this; probing before
+    # `X-RateLimit-Reset` just burns another request for another 429.
+    if rate_limit_reset_epoch_ms is not None and rate_limit_reset_epoch_ms > 0:
+        epoch_s = rate_limit_reset_epoch_ms / 1000.0
+        wall_now = time.time()
+        delay_s = max(0.0, epoch_s - wall_now)
+        info["disabled"] = True
+        info["disabled_until"] = now + delay_s
+        info["rate_limit_reset_epoch_ms"] = rate_limit_reset_epoch_ms
+        info["rate_limit_scope"] = rate_limit_scope or "unknown"
+        # Explicitly NOT `needs_probe` — reopening before reset is pointless.
+        info["needs_probe"] = False
+        info["consecutive_429"] = 0
+        logger.warning(
+            "Model %s DISABLED until provider reset (scope=%s, in %ds)",
+            model_id, info["rate_limit_scope"], int(delay_s),
+        )
+        return True
+
+    # Rate limit without reset hint: pause for 60s each time, disable after N consecutive 429s.
     # Upstream provider rate limits can't be controlled — fast disable is better
     # than wasting time retrying a model that's going to 429 again.
     is_rate_limit = "429" in msg_lower or "rate limit" in msg_lower or "too many" in msg_lower
