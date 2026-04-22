@@ -500,12 +500,17 @@ class RequestQueue:
         # Compare against the head-of-queue priority in this group so
         # that CASCADE in queue can evict CRITICAL that's already running
         # (user-facing TTS normalize must not wait behind a qualifier).
+        # asyncio.PriorityQueue stores entries in the internal _queue list
+        # in heap order, so [0] is the highest-priority (lowest IntEnum)
+        # head; good enough for a single-step eviction decision.
         waiting_priority: Priority | None = None
         if group is not None:
             pq = self._queues[group]
             if not pq.empty():
-                peek = pq.queue[0]
-                waiting_priority = peek[2].request.priority
+                heap = getattr(pq, "_queue", None)
+                if heap:
+                    _, _, entry = heap[0]
+                    waiting_priority = entry.request.priority
 
         for gpu in self.gpu_pool.healthy_backends:
             for req_id, req in list(gpu.active_requests.items()):
