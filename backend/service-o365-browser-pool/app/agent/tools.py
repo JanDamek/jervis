@@ -170,9 +170,24 @@ async def look_at_screen(
         + (f"\nFocused question: {ask}" if ask else "")
     )
 
+    # MFA detection is on the critical path of a sign-in: the
+    # Authenticator number rotates roughly every 30 s, so any time the
+    # observation feeds into MFA (post_signin, mfa_code, post_action_verify
+    # right after a Sign in click), the VLM call MUST jump the queue or
+    # the user gets a stale number to type. Anything else is best-effort
+    # observation — keep BACKGROUND so we don't starve interactive work.
+    reason_lc = reason.lower()
+    is_mfa_path = any(
+        k in reason_lc
+        for k in ("mfa", "post_signin", "post_sign_in", "authenticator")
+    )
+    priority = (
+        enums_pb2.PRIORITY_CRITICAL if is_mfa_path
+        else enums_pb2.PRIORITY_BACKGROUND
+    )
     req_ctx = types_pb2.RequestContext(
         scope=types_pb2.Scope(client_id=ctx.client_id),
-        priority=enums_pb2.PRIORITY_BACKGROUND,
+        priority=priority,
         capability=enums_pb2.CAPABILITY_VISUAL,
         intent="o365-pod-vlm-observe",
     )
