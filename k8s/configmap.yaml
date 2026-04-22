@@ -118,7 +118,9 @@ data:
     # -- TTS (XTTS v2 GPU on VD) ------------------------------------------------
     tts:
       url: http://ollama.lan.mazlusek.com:8787
-      speed: 1.2
+      # User tuning: 1.2 felt too fast for Czech (unnatural for the cloned
+      # voice). 1.0 is XTTS's natural speaker tempo.
+      speed: 1.0
 
     # -- Coding tools (Claude Code only) ----------------------------------------
     coding-tools:

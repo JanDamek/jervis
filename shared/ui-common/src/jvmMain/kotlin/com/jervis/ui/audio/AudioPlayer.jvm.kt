@@ -22,11 +22,13 @@ actual class AudioPlayer actual constructor() {
     private val prefillBuffer = ByteArrayOutputStream()
     private var streamStarted: Boolean = false
 
-    /** Prefill ~400ms before starting playback, so the first underrun can't
-     *  happen as soon as the network blips. XTTS chunks arrive with noticeable
-     *  jitter (VD GPU → Kotlin gRPC → kRPC CBOR → Base64), so the line needs
-     *  a headroom bigger than the worst inter-chunk gap. */
-    private val prefillMs: Int = 400
+    /** Prefill 2 s before starting playback so a brief GPU stall doesn't
+     *  starve the audio line mid-sentence. XTTS on P40 runs roughly at
+     *  0.6-0.75 real-time — close enough that any contention with Ollama
+     *  makes chunks arrive slower than playback. 2 s headroom absorbs the
+     *  jitter; the playback latency cost is acceptable because the user is
+     *  still waiting for the first sentence to land anyway. */
+    private val prefillMs: Int = 2_000
 
     actual fun startStream(sampleRate: Int, sampleSizeInBits: Int, channels: Int) {
         stopStream()
@@ -36,8 +38,9 @@ actual class AudioPlayer actual constructor() {
         val info = DataLine.Info(SourceDataLine::class.java, format)
         val line = AudioSystem.getLine(info) as SourceDataLine
         val bytesPerSecond = sampleRate * channels * (sampleSizeInBits / 8)
-        // 2-second line buffer gives backpressure room while still capping latency.
-        val bufferSize = bytesPerSecond * 2
+        // 5 s line buffer: extra headroom on top of the 2 s prefill so that
+        // multiple consecutive slow chunks still don't cause audible gaps.
+        val bufferSize = bytesPerSecond * 5
         line.open(format, bufferSize)
         // Do NOT start() yet — wait until we have prefillMs worth of PCM so the
         // very first frames don't hit an empty buffer and cause a stall.
