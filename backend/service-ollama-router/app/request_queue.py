@@ -245,12 +245,19 @@ class RequestQueue:
         """Find an available GPU backend. Returns "gpu:<name>" or None."""
         is_critical = request.priority <= Priority.CRITICAL
         is_embedding = request.model in EMBEDDING_MODELS
+        is_tts_normalize = getattr(request, "intent", "") == "tts_normalize"
 
         max_concurrent = self._max_concurrent_embeddings if is_embedding else self._max_concurrent_llm
         min_size = request.min_model_size
 
         gpu_candidates: list[tuple[GpuBackend, str | None]] = []
         for b in self.gpu_pool.healthy_backends:
+            if is_tts_normalize and b.name != VLM_GPU:
+                # TTS normalize is pinned to the audio GPU — we don't
+                # want MODEL_REDIRECT to send it to p40-1 / qwen3:30b
+                # just because 14b isn't loaded yet. _prepare_gpu will
+                # load it on VLM_GPU.
+                continue
             if is_embedding:
                 active = sum(1 for r in b.active_requests.values() if r.model in EMBEDDING_MODELS)
             else:
@@ -405,7 +412,14 @@ class RequestQueue:
 
             # Ensure VRAM coordination on the VLM GPU. Either whisper or
             # XTTS being active keeps Ollama off the card — user policy.
-            if gpu.name == VLM_GPU and request.model not in EMBEDDING_MODELS:
+            # Exception: tts_normalize requests MUST run on VLM_GPU
+            # alongside XTTS (same card owns audio). The preempt carve-out
+            # guarantees qwen3:14b stays loaded, so normalize has a warm
+            # model to hit; blocking it here would route it elsewhere
+            # (swap to p40-1 / qwen3-coder-tool:30b) and defeat the whole
+            # "one audio GPU" layout.
+            is_tts_normalize = getattr(request, "intent", "") == "tts_normalize"
+            if gpu.name == VLM_GPU and request.model not in EMBEDDING_MODELS and not is_tts_normalize:
                 if self._router.check_whisper_busy():
                     logger.info(
                         "VLM_WAIT_WHISPER: whisper active, waiting before loading %s",
