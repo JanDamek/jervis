@@ -161,11 +161,16 @@ class TaskQualificationService(
     }
 
     companion object {
-        // Orchestrator qualifier is capped at 5 iterations × ~30s per LLM hop,
-        // so 5 minutes comfortably covers the happy path. After that we assume
-        // the orchestrator died mid-flight and allow a single retry per cycle.
+        // The orchestrator's happy path is cheap (5 iterations × tens of
+        // seconds), but during router congestion a single qualify can sit
+        // in the LLM queue for many minutes — bumping back to "retry" too
+        // soon ADDS another CRITICAL extraction request to the same queue
+        // and accelerates the meltdown. 30 minutes is the new cap; an
+        // orchestrator pod restart resets state externally anyway, so the
+        // only thing this window protects against is genuine zombie
+        // dispatches with no callback.
         private val QUALIFY_INFLIGHT_WINDOW: java.time.Duration =
-            java.time.Duration.ofMinutes(5)
+            java.time.Duration.ofMinutes(30)
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
