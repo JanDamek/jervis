@@ -3,6 +3,7 @@ package com.jervis.infrastructure.grpc
 import com.google.protobuf.ByteString
 import com.jervis.contracts.common.RequestContext
 import com.jervis.contracts.common.Scope
+import com.jervis.contracts.common.TierCap
 import com.jervis.contracts.tts.AudioChunk
 import com.jervis.contracts.tts.SpeakRequest
 import com.jervis.contracts.tts.SpeakResponse
@@ -46,7 +47,11 @@ class TtsGrpcClient(
 
     private val stub = TtsServiceGrpcKt.TtsServiceCoroutineStub(channel)
 
-    private fun ctx(clientId: String = "", projectId: String = ""): RequestContext =
+    private fun ctx(
+        clientId: String = "",
+        projectId: String = "",
+        maxTier: TierCap = TierCap.TIER_CAP_UNSPECIFIED,
+    ): RequestContext =
         RequestContext.newBuilder()
             .setScope(
                 Scope.newBuilder()
@@ -54,9 +59,17 @@ class TtsGrpcClient(
                     .setProjectId(projectId)
                     .build(),
             )
+            .setMaxTier(maxTier)
             .setRequestId(UUID.randomUUID().toString())
             .setIssuedAtUnixMs(System.currentTimeMillis())
             .build()
+
+    private fun tierFromString(tier: String): TierCap = when (tier.uppercase()) {
+        "NONE" -> TierCap.TIER_CAP_NONE
+        "T1" -> TierCap.TIER_CAP_T1
+        "T2" -> TierCap.TIER_CAP_T2
+        else -> TierCap.TIER_CAP_UNSPECIFIED
+    }
 
     suspend fun speak(
         text: String,
@@ -64,10 +77,11 @@ class TtsGrpcClient(
         language: String = "",
         clientId: String = "",
         projectId: String = "",
+        maxTier: String = "",
     ): ByteArray {
         val resp: SpeakResponse = stub.speak(
             SpeakRequest.newBuilder()
-                .setCtx(ctx(clientId, projectId))
+                .setCtx(ctx(clientId, projectId, tierFromString(maxTier)))
                 .setText(text)
                 .setSpeed(speed)
                 .setLanguage(language)
@@ -82,10 +96,11 @@ class TtsGrpcClient(
         language: String = "",
         clientId: String = "",
         projectId: String = "",
+        maxTier: String = "",
     ): Flow<AudioChunk> =
         stub.speakStream(
             SpeakRequest.newBuilder()
-                .setCtx(ctx(clientId, projectId))
+                .setCtx(ctx(clientId, projectId, tierFromString(maxTier)))
                 .setText(text)
                 .setSpeed(speed)
                 .setLanguage(language)

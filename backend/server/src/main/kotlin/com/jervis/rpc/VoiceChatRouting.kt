@@ -443,6 +443,7 @@ fun Routing.installVoiceChatApi(
                     language = "cs",
                     clientId = ttsProperties.normalizeClientId,
                     projectId = ttsProperties.normalizeProjectId,
+                    maxTier = ttsProperties.normalizeMaxTier,
                 ).collect { chunk ->
                     val data = chunk.data.toByteArray()
                     if (data.isNotEmpty()) {

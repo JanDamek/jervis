@@ -96,6 +96,7 @@ class TtsServicer(speak_pb2_grpc.TtsServiceServicer):
         voice = request.voice or None
         client_id = request.ctx.scope.client_id if request.HasField("ctx") else ""
         project_id = request.ctx.scope.project_id if request.HasField("ctx") else ""
+        max_tier = request.ctx.max_tier if request.HasField("ctx") else 0
 
         # Tell the router to clear the GPU before we start pulling sentences
         # — user policy: "during whisper streaming AND during XTTS
@@ -122,7 +123,10 @@ class TtsServicer(speak_pb2_grpc.TtsServiceServicer):
         async def _pump_sentences():
             try:
                 async for sentence in router_normalize.stream_sentences(
-                    text, language, client_id=client_id, project_id=project_id,
+                    text, language,
+                    client_id=client_id,
+                    project_id=project_id,
+                    max_tier=max_tier,
                 ):
                     sentence_q.put(sentence)
             finally:

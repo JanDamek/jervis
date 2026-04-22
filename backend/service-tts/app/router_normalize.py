@@ -164,7 +164,7 @@ def _fallback_sentences(text: str) -> list[str]:
     return parts if parts else [text.strip()]
 
 
-def _build_ctx(client_id: str, project_id: str) -> types_pb2.RequestContext:
+def _build_ctx(client_id: str, project_id: str, max_tier: int) -> types_pb2.RequestContext:
     scope = types_pb2.Scope(client_id=client_id or "", project_id=project_id or "")
     # Tight deadline + CRITICAL priority: the user is already waiting for
     # audio, this request MUST jump ahead of background kb-extract jobs.
@@ -176,6 +176,7 @@ def _build_ctx(client_id: str, project_id: str) -> types_pb2.RequestContext:
         scope=scope,
         capability=enums_pb2.CAPABILITY_CHAT,
         priority=enums_pb2.PRIORITY_CRITICAL,
+        max_tier=max_tier or enums_pb2.TIER_CAP_UNSPECIFIED,
         intent="tts_normalize",
         deadline_iso=deadline_iso,
         request_id=str(uuid.uuid4()),
@@ -188,6 +189,7 @@ async def stream_sentences(
     language: str,
     client_id: str = "",
     project_id: str = "",
+    max_tier: int = 0,
 ) -> AsyncIterator[str]:
     """Yield complete, normalized sentences as they arrive from the router.
 
@@ -199,7 +201,7 @@ async def stream_sentences(
     stub = _get_stub()
 
     request = inference_pb2.ChatRequest(
-        ctx=_build_ctx(client_id, project_id),
+        ctx=_build_ctx(client_id, project_id, max_tier),
         # No model_hint — let the router pick the default chat model on
         # the GPU that does NOT host XTTS (p40-1 with qwen3-coder-tool:30b).
         # qwen3:14b would technically be faster, but it lives on p40-2 next
