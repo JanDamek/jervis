@@ -437,7 +437,13 @@ fun Routing.installVoiceChatApi(
             // chunks through SSE. No sentence splitting, no pre-processing.
             var totalPcm = 0
             try {
-                grpc.speakStream(body.text, speed = body.speed.toDouble(), language = "cs").collect { chunk ->
+                grpc.speakStream(
+                    body.text,
+                    speed = body.speed.toDouble(),
+                    language = "cs",
+                    clientId = ttsProperties.normalizeClientId,
+                    projectId = ttsProperties.normalizeProjectId,
+                ).collect { chunk ->
                     val data = chunk.data.toByteArray()
                     if (data.isNotEmpty()) {
                         totalPcm++

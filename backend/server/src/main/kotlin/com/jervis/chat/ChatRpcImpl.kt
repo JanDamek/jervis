@@ -1060,6 +1060,8 @@ class ChatRpcImpl(
                 text = text,
                 speed = ttsProperties.speed.toDouble(),
                 language = "cs",
+                clientId = ttsProperties.normalizeClientId,
+                projectId = ttsProperties.normalizeProjectId,
             ).collect { chunk ->
                 val bytes = chunk.data.toByteArray()
                 if (bytes.isNotEmpty()) {

@@ -42,8 +42,14 @@ ROUTER_GRPC_PORT = int(os.getenv("ROUTER_GRPC_PORT", "5501"))
 
 # Hard ceilings — user is waiting for audio, a slow LLM falls back to
 # raw sentence split so playback is never blocked.
-NORMALIZE_DEADLINE_S = 90.0
-FIRST_TOKEN_DEADLINE_S = 30.0
+# First-token deadline has to cover the case where a kb-extract /
+# qualifier job is mid-inference on the chat GPU: CASCADE priority
+# jumps the queue but can't preempt a running 30B request, so we may
+# wait a minute before our first token lands. UI watchdog (kRPC) is
+# 90 s, which leaves enough budget for normalize + synth even at
+# worst case.
+NORMALIZE_DEADLINE_S = 120.0
+FIRST_TOKEN_DEADLINE_S = 60.0
 
 _GRPC_MAX_MSG_BYTES = 16 * 1024 * 1024
 

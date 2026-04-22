@@ -46,17 +46,28 @@ class TtsGrpcClient(
 
     private val stub = TtsServiceGrpcKt.TtsServiceCoroutineStub(channel)
 
-    private fun ctx(): RequestContext =
+    private fun ctx(clientId: String = "", projectId: String = ""): RequestContext =
         RequestContext.newBuilder()
-            .setScope(Scope.newBuilder().build())
+            .setScope(
+                Scope.newBuilder()
+                    .setClientId(clientId)
+                    .setProjectId(projectId)
+                    .build(),
+            )
             .setRequestId(UUID.randomUUID().toString())
             .setIssuedAtUnixMs(System.currentTimeMillis())
             .build()
 
-    suspend fun speak(text: String, speed: Double = 1.0, language: String = ""): ByteArray {
+    suspend fun speak(
+        text: String,
+        speed: Double = 1.0,
+        language: String = "",
+        clientId: String = "",
+        projectId: String = "",
+    ): ByteArray {
         val resp: SpeakResponse = stub.speak(
             SpeakRequest.newBuilder()
-                .setCtx(ctx())
+                .setCtx(ctx(clientId, projectId))
                 .setText(text)
                 .setSpeed(speed)
                 .setLanguage(language)
@@ -65,10 +76,16 @@ class TtsGrpcClient(
         return resp.wav.toByteArray()
     }
 
-    fun speakStream(text: String, speed: Double = 1.0, language: String = ""): Flow<AudioChunk> =
+    fun speakStream(
+        text: String,
+        speed: Double = 1.0,
+        language: String = "",
+        clientId: String = "",
+        projectId: String = "",
+    ): Flow<AudioChunk> =
         stub.speakStream(
             SpeakRequest.newBuilder()
-                .setCtx(ctx())
+                .setCtx(ctx(clientId, projectId))
                 .setText(text)
                 .setSpeed(speed)
                 .setLanguage(language)

@@ -121,6 +121,11 @@ data:
       # User tuning: 1.2 felt too fast for Czech (unnatural for the cloned
       # voice). 1.0 is XTTS's natural speaker tempo.
       speed: 1.0
+      # Jervis infra client — sent in the SpeakRequest ctx so the router's
+      # normalize LLM call resolves to the right tier (cloud fallback when
+      # local chat GPU is saturated) instead of tier=NONE local-only.
+      normalizeClientId: "68a332361b04695a243e5ae8"
+      normalizeProjectId: "68a3318f1b04695a243e5adf"
 
     # -- Coding tools (Claude Code only) ----------------------------------------
     coding-tools:
