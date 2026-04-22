@@ -1126,12 +1126,17 @@ class OllamaRouter:
             still_busy = any(
                 gpu.active_requests
                 for gpu in self.gpu_pool.healthy_backends
+                if gpu.name == VLM_GPU
             )
             if not still_busy:
                 break
             await asyncio.sleep(0.2)
 
-        granted = not any(gpu.active_requests for gpu in self.gpu_pool.healthy_backends)
+        granted = not any(
+            gpu.active_requests
+            for gpu in self.gpu_pool.healthy_backends
+            if gpu.name == VLM_GPU
+        )
         logger.info(
             "TTS_NOTIFY: granted=%s preempted=%d unloaded=%d",
             granted, len(preempted), unloaded_models,

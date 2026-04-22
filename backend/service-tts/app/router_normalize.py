@@ -21,6 +21,7 @@ prettier pronunciation.
 from __future__ import annotations
 
 import asyncio
+import datetime
 import logging
 import os
 import re
@@ -41,8 +42,8 @@ ROUTER_GRPC_PORT = int(os.getenv("ROUTER_GRPC_PORT", "5501"))
 
 # Hard ceilings — user is waiting for audio, a slow LLM falls back to
 # raw sentence split so playback is never blocked.
-NORMALIZE_DEADLINE_S = 60.0
-FIRST_TOKEN_DEADLINE_S = 20.0
+NORMALIZE_DEADLINE_S = 90.0
+FIRST_TOKEN_DEADLINE_S = 30.0
 
 _GRPC_MAX_MSG_BYTES = 16 * 1024 * 1024
 
@@ -128,10 +129,15 @@ def _fallback_sentences(text: str) -> list[str]:
 
 def _build_ctx(client_id: str, project_id: str) -> types_pb2.RequestContext:
     scope = types_pb2.Scope(client_id=client_id or "", project_id=project_id or "")
+    # Tight deadline so the router treats this as urgent — user is waiting
+    # for audio, this request must jump ahead of background kb-extract /
+    # qualifier jobs that also target the chat queue.
+    deadline_iso = (datetime.datetime.utcnow() + datetime.timedelta(seconds=15)).isoformat() + "Z"
     return types_pb2.RequestContext(
         scope=scope,
         capability=enums_pb2.CAPABILITY_CHAT,
         intent="tts_normalize",
+        deadline_iso=deadline_iso,
         request_id=str(uuid.uuid4()),
         issued_at_unix_ms=int(time.time() * 1000),
     )
@@ -154,6 +160,12 @@ async def stream_sentences(
 
     request = inference_pb2.ChatRequest(
         ctx=_build_ctx(client_id, project_id),
+        # No model_hint — let the router pick the default chat model on
+        # the GPU that does NOT host XTTS (p40-1 with qwen3-coder-tool:30b).
+        # qwen3:14b would technically be faster, but it lives on p40-2 next
+        # to XTTS and would fight for compute. 30B on p40-1 is slower per
+        # token but runs without contention, and TTS normalization is
+        # short so the total wait is tolerable.
         messages=[
             inference_pb2.ChatMessage(role="system", content=_system_prompt(language)),
             inference_pb2.ChatMessage(role="user", content=text),
