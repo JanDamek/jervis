@@ -69,6 +69,11 @@ _TIER_CAP_TO_STR = {
 
 
 class RouterAdminServicer(admin_pb2_grpc.RouterAdminServiceServicer):
+    def __init__(self, router):
+        # Needed for Whisper/TTS preempt handlers; the catalog / model-stats
+        # RPCs below use module-level helpers and don't touch `router`.
+        self._router = router
+
     async def GetMaxContext(
         self, request: admin_pb2.MaxContextRequest, context: grpc.aio.ServicerContext
     ) -> admin_pb2.MaxContextResponse:
@@ -667,7 +672,7 @@ async def start_grpc_server(router, port: int = 5501) -> grpc.aio.Server:
         interceptors=[ServerContextInterceptor()],
         options=build_server_options(),
     )
-    admin_pb2_grpc.add_RouterAdminServiceServicer_to_server(RouterAdminServicer(), server)
+    admin_pb2_grpc.add_RouterAdminServiceServicer_to_server(RouterAdminServicer(router), server)
     inference_pb2_grpc.add_RouterInferenceServiceServicer_to_server(
         RouterInferenceServicer(router), server,
     )
