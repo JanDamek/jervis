@@ -280,6 +280,7 @@ class OllamaRouter:
         estimated_tokens: int = 0,
         client_id: str | None = None,
         require_tools: bool = False,
+        max_tier_override: str | None = None,
     ) -> dict:
         """Router's single routing decision. Caller sends only `capability`
         and `client_id`; everything else — tier, model, retries, cooldowns —
@@ -304,13 +305,18 @@ class OllamaRouter:
         cap_lower = (capability or "").strip().lower()
         api_base = f"http://jervis-ollama-router:{settings.router_port}"
 
-        # Resolve tier from client's CloudModelPolicy.
-        if client_id:
+        # Resolve tier: caller-supplied override wins over CloudModelPolicy.
+        # This lets individual callers (e.g. TTS normalize) bypass the
+        # client's default tier when they need a specific queue (PAID to
+        # skip FREE quota exhaustion). Override is still bounded by the
+        # normalize_tier() whitelist, so invalid values fall back gracefully.
+        if max_tier_override:
+            max_tier = normalize_tier(max_tier_override)
+        elif client_id:
             from app.client_tier_cache import resolve_client_tier
-            max_tier = await resolve_client_tier(client_id)
+            max_tier = normalize_tier(await resolve_client_tier(client_id))
         else:
             max_tier = "NONE"
-        max_tier = normalize_tier(max_tier)
         tier_level = TIER_LEVELS.get(max_tier, 0)
 
         local_model = self._find_local_model_for_capability(cap_lower, min_model_size=0)
@@ -429,6 +435,7 @@ class OllamaRouter:
         intent: str = "",
         priority: Priority = Priority.NORMAL,
         deadline_iso: str | None = None,
+        max_tier_override: str | None = None,
     ) -> Union[AsyncIterator[dict], dict]:
         """Single-pass route + dispatch, returning an async iterator for
         streaming (chat / generate) or a parsed dict for unary (embeddings).
@@ -448,6 +455,7 @@ class OllamaRouter:
             estimated_tokens=estimated_tokens,
             client_id=client_id,
             require_tools=require_tools,
+            max_tier_override=max_tier_override,
         )
 
         if decision.get("target") == "openrouter":

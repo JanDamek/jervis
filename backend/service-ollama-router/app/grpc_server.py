@@ -63,8 +63,8 @@ _CAPABILITY_PROTO_TO_STR = {
 _TIER_CAP_TO_STR = {
     enums_pb2.TIER_CAP_UNSPECIFIED: "NONE",
     enums_pb2.TIER_CAP_NONE: "NONE",
-    enums_pb2.TIER_CAP_T1: "T1",
-    enums_pb2.TIER_CAP_T2: "T2",
+    enums_pb2.TIER_CAP_T1: "FREE",
+    enums_pb2.TIER_CAP_T2: "PAID",
 }
 
 
@@ -405,6 +405,11 @@ class RouterInferenceServicer(inference_pb2_grpc.RouterInferenceServiceServicer)
         client_id = ctx.scope.client_id or None
         priority = _proto_priority_to_internal(ctx.priority)
         deadline_iso = ctx.deadline_iso or None
+        max_tier_override = (
+            _TIER_CAP_TO_STR.get(ctx.max_tier)
+            if ctx.max_tier != enums_pb2.TIER_CAP_UNSPECIFIED
+            else None
+        )
 
         # Whisper-preemption retry loop. If our run on Ollama is cut short
         # because whisper grabbed the GPU, wait for WhisperDone and retry
@@ -422,6 +427,7 @@ class RouterInferenceServicer(inference_pb2_grpc.RouterInferenceServiceServicer)
                     intent=ctx.intent or "",
                     priority=priority,
                     deadline_iso=deadline_iso,
+                    max_tier_override=max_tier_override,
                 )
             except QueueCancelled as e:
                 await context.abort(grpc.StatusCode.CANCELLED, str(e))
