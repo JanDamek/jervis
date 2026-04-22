@@ -419,7 +419,7 @@ fun Routing.installVoiceChatApi(
             return@post
         }
 
-        logger.info { "TTS_STREAM | text=${body.text.take(50)} | speed=${body.speed}" }
+        logger.info { "TTS_STREAM | len=${body.text.length} | speed=${body.speed}" }
 
         call.response.headers.append("Cache-Control", "no-cache, no-store")
         call.response.headers.append("X-Accel-Buffering", "no")
@@ -432,14 +432,23 @@ fun Routing.installVoiceChatApi(
                 sse("error", """{"text":"TTS client not wired"}""")
                 return@respondTextWriter
             }
+            // Pure proxy: XTTS does its own LLM normalization and streams
+            // PCM chunks back. We forward raw text + language and tunnel
+            // chunks through SSE. No sentence splitting, no pre-processing.
+            var totalPcm = 0
             try {
-                grpc.speakStream(body.text, speed = body.speed.toDouble()).collect { chunk ->
-                    val b64 = Base64.getEncoder().encodeToString(chunk.data.toByteArray())
-                    sse("tts_pcm", """{"data":"$b64"}""")
+                grpc.speakStream(body.text, speed = body.speed.toDouble(), language = "cs").collect { chunk ->
+                    val data = chunk.data.toByteArray()
+                    if (data.isNotEmpty()) {
+                        totalPcm++
+                        val b64 = Base64.getEncoder().encodeToString(data)
+                        sse("tts_pcm", """{"data":"$b64"}""")
+                    }
                     if (chunk.isLast) sse("done", "{}")
                 }
+                logger.info { "TTS_STREAM_DONE: pcmChunks=$totalPcm" }
             } catch (e: Exception) {
-                logger.warn { "TTS_STREAM_ERROR: ${e::class.simpleName}: ${e.message}" }
+                logger.warn { "TTS_STREAM_ERROR: ${e::class.simpleName}: ${e.message} (pcmEmitted=$totalPcm)" }
                 try { sse("error", """{"text":"${e.message?.take(100)?.escapeJson() ?: "Chyba"}"}""") } catch (_: Exception) {}
             }
         }
@@ -873,3 +882,4 @@ data class VoiceChatResponse(
     val ttsAudio: String? = null, // Base64-encoded WAV
     val complete: Boolean = false,
 )
+

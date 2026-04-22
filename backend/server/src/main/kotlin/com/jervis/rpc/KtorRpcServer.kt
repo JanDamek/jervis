@@ -140,11 +140,15 @@ class KtorRpcServer(
                     embeddedServer(Netty, port = port, host = "0.0.0.0") {
                         install(WebSockets) {
                             maxFrameSize = Long.MAX_VALUE
-                            // Aligned with client pingInterval = 10s (NetworkModule.kt).
-                            // Fast detection of dead clients so the server doesn't keep
-                            // stale WebSocket sessions. Max detection window ~15s.
-                            pingPeriodMillis = 10_000  // 10 seconds (was 30s)
-                            timeoutMillis = 5_000      // 5 seconds (was 15s)
+                            // No application-layer ping. The server is a pure proxy
+                            // for long-lived streams (TTS audio, meeting transcripts,
+                            // live-assist) — any watchdog that kills a quiet session
+                            // also kills legitimate long generations. TCP RST / OS
+                            // keepalive is what detects truly dead peers; application
+                            // ping only adds cancellation risk to streams where the
+                            // client audio thread is momentarily busy writing PCM.
+                            pingPeriodMillis = 0
+                            timeoutMillis = 0
                         }
                         install(ContentNegotiation) {
                             json(Json { ignoreUnknownKeys = true })

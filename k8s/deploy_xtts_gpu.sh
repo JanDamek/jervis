@@ -127,7 +127,7 @@ After=network.target
 Type=simple
 User=$GPU_USER
 WorkingDirectory=$INSTALL_DIR
-ExecStart=$INSTALL_DIR/venv/bin/python -m app.xtts_server
+ExecStart=$INSTALL_DIR/venv/bin/python -m app
 Restart=on-failure
 RestartSec=10
 Environment=TTS_GRPC_PORT=5501

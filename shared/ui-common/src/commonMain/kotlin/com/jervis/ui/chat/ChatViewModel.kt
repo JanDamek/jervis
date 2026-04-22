@@ -46,8 +46,10 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlin.time.Clock
 
@@ -1988,42 +1990,51 @@ class ChatViewModel(
                 // kick off an infinite re-subscribe loop — the exact pathology
                 // seen in the UI log (HEADER → DONE → re-subscribe, repeated).
                 val services = connectionManager.awaitConnected()
-                services.chatService.streamTts(text).collect { event ->
-                    when (event.type) {
-                        com.jervis.dto.chat.TtsChunkEventType.HEADER -> {
-                            val sampleRate = if (event.sampleRate > 0) event.sampleRate else 24000
-                            println("TTS: opening audio stream, sampleRate=$sampleRate")
-                            withContext(Dispatchers.Default) {
-                                ttsPlayer.startStream(sampleRate)
-                            }
-                        }
-                        com.jervis.dto.chat.TtsChunkEventType.PCM -> {
-                            val audioB64 = event.audioData
-                            if (audioB64.isNotBlank()) {
-                                val pcmBytes = Base64.decode(audioB64)
+                // 90s total budget covers warmed-up XTTS for ~600 char replies.
+                // If generation is slower than that something is wrong (GPU
+                // contention, stuck backend) — give up so the speaker icon
+                // returns and the user can retry instead of waiting on a
+                // silent stream.
+                withTimeout(90_000L) {
+                    services.chatService.streamTts(text).collect { event ->
+                        when (event.type) {
+                            com.jervis.dto.chat.TtsChunkEventType.HEADER -> {
+                                val sampleRate = if (event.sampleRate > 0) event.sampleRate else 24000
+                                println("TTS: opening audio stream, sampleRate=$sampleRate")
                                 withContext(Dispatchers.Default) {
-                                    ttsPlayer.streamPcm(pcmBytes)
+                                    ttsPlayer.startStream(sampleRate)
                                 }
                             }
-                        }
-                        com.jervis.dto.chat.TtsChunkEventType.DONE -> {
-                            println("TTS: stream done, draining audio")
-                            withContext(Dispatchers.Default) {
-                                ttsPlayer.finishStream()
+                            com.jervis.dto.chat.TtsChunkEventType.PCM -> {
+                                val audioB64 = event.audioData
+                                if (audioB64.isNotBlank()) {
+                                    val pcmBytes = Base64.decode(audioB64)
+                                    withContext(Dispatchers.Default) {
+                                        ttsPlayer.streamPcm(pcmBytes)
+                                    }
+                                }
                             }
-                            return@collect
-                        }
-                        com.jervis.dto.chat.TtsChunkEventType.ERROR -> {
-                            println("TTS stream error: ${event.errorMessage}")
-                            withContext(Dispatchers.Default) {
-                                ttsPlayer.stopStream()
+                            com.jervis.dto.chat.TtsChunkEventType.DONE -> {
+                                println("TTS: stream done, draining audio")
+                                withContext(Dispatchers.Default) {
+                                    ttsPlayer.finishStream()
+                                }
+                                return@collect
                             }
-                            return@collect
+                            com.jervis.dto.chat.TtsChunkEventType.ERROR -> {
+                                println("TTS stream error: ${event.errorMessage}")
+                                withContext(Dispatchers.Default) {
+                                    ttsPlayer.stopStream()
+                                }
+                                return@collect
+                            }
                         }
                     }
                 }
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: TimeoutCancellationException) {
+                println("TTS timeout: no completion within 90s, resetting")
             } catch (e: Exception) {
                 println("TTS play error: ${e::class.simpleName}: ${e.message}")
             } finally {

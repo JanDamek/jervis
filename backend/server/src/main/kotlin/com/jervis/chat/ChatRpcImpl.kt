@@ -20,7 +20,6 @@ import com.jervis.task.TaskRepository
 import com.jervis.task.TaskService
 import com.jervis.infrastructure.config.properties.TtsProperties
 import com.jervis.infrastructure.grpc.TtsGrpcClient
-import com.jervis.infrastructure.llm.CascadeLlmClient
 import com.jervis.infrastructure.llm.CloudModelPolicyResolver
 import com.jervis.service.chat.IChatService
 import com.jervis.task.BackgroundEngine
@@ -64,7 +63,6 @@ class ChatRpcImpl(
     private val ttsGrpcClient: TtsGrpcClient,
     private val ttsProperties: TtsProperties,
     private val taskService: TaskService,
-    private val cascadeLlmClient: CascadeLlmClient,
 ) : IChatService {
     private val logger = KotlinLogging.logger {}
     private val backgroundScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -1043,24 +1041,29 @@ class ChatRpcImpl(
             return@flow
         }
 
-        // LLM preprocessing — XTTS reads raw text literally, so acronyms
-        // ("SBO") sound like "s-b-o", hex IDs are read as "šest devět b…",
-        // and markdown / URLs leak into the audio. Normalize through a
-        // cheap chat call before synthesis. Keep fully silent on failure —
-        // if the LLM times out or errors, the original text is still
-        // readable, just less pretty.
-        val ttsText = normalizeForTts(text)
+        logger.info { "TTS_STREAM_START: textLen=${text.length}" }
 
-        // Upstream AudioChunk has no sample_rate field; XTTS emits 24kHz PCM.
-        // TODO: propagate sample_rate via proto once tts.AudioChunk is extended.
+        // Pure proxy: XTTS service does its own LLM-driven normalization
+        // (per-language phonetic expansion, markdown/URL stripping) and
+        // streams raw int16 PCM chunks back. Kotlin forwards the caller's
+        // raw text and tunnels the audio through untouched. Language is
+        // Czech by default — the UI has no language selector yet.
         emit(com.jervis.dto.chat.TtsChunkEvent(
             type = com.jervis.dto.chat.TtsChunkEventType.HEADER,
             sampleRate = 24000,
         ))
+        logger.info { "TTS_STREAM_HEADER_EMITTED" }
+
+        var totalPcm = 0
         try {
-            ttsGrpcClient.speakStream(ttsText, speed = ttsProperties.speed.toDouble()).collect { chunk ->
+            ttsGrpcClient.speakStream(
+                text = text,
+                speed = ttsProperties.speed.toDouble(),
+                language = "cs",
+            ).collect { chunk ->
                 val bytes = chunk.data.toByteArray()
                 if (bytes.isNotEmpty()) {
+                    totalPcm++
                     emit(com.jervis.dto.chat.TtsChunkEvent(
                         type = com.jervis.dto.chat.TtsChunkEventType.PCM,
                         audioData = java.util.Base64.getEncoder().encodeToString(bytes),
@@ -1070,61 +1073,14 @@ class ChatRpcImpl(
                     emit(com.jervis.dto.chat.TtsChunkEvent(type = com.jervis.dto.chat.TtsChunkEventType.DONE))
                 }
             }
+            logger.info { "TTS_STREAM_DONE: pcmChunks=$totalPcm" }
         } catch (e: Exception) {
-            logger.warn(e) { "streamTts failed: ${e.message}" }
+            logger.warn(e) { "TTS_STREAM_FAILED: ${e.message} (pcmEmitted=$totalPcm)" }
             emit(com.jervis.dto.chat.TtsChunkEvent(
                 type = com.jervis.dto.chat.TtsChunkEventType.ERROR,
                 errorMessage = e.message.orEmpty().take(200),
             ))
         }
-    }
-
-    /** Rewrite text for voice synthesis: expand Czech-read acronyms,
-     *  spell numbers, strip markdown + IDs / URLs. The raw string is
-     *  returned as a fallback if the LLM is unreachable. */
-    private suspend fun normalizeForTts(text: String): String {
-        // Cheap heuristic: short texts without scary characters skip the
-        // LLM round-trip entirely — typical greetings or single sentences
-        // don't need rewriting and the added latency would be felt.
-        if (text.length < 40 && !text.any { it.isUpperCase() && it.isLetter() } &&
-            !text.contains(Regex("[0-9a-f]{8,}")) &&
-            !text.contains(Regex("[*_`#\\[\\]]"))) {
-            return text
-        }
-
-        val system = """
-            Jsi pomocník, který upravuje český text pro hlasové čtení (TTS).
-            Tvá jediná práce: vrátit upravený text. Žádný úvod, žádné vysvětlení.
-            Pravidla:
-            - Zkratky rozepiš foneticky podle toho, jak se reálně vyslovují:
-              * Anglické IT/odborné zkratky → anglicky:
-                API → ej-pí-aj, HTTP → ejč-tí-tí-pí, HTTPS → ejč-tí-tí-pí-es,
-                JSON → džej-sn, SQL → es-kvé-el, URL → jú-ár-el, XML → iks-em-el,
-                CSS → sí-es-es, HTML → ejč-tí-em-el, REST → rest, JWT → džej-dablju-tý,
-                AI → ej-aj, ML → em-el, GPU → dží-pí-jú, CPU → sí-pí-jú,
-                RAM → ram, PDF → pí-dý-ef, PNG → pí-en-dží, JPG → džej-pí-dží.
-              * České zkratky / interní kódy → foneticky česky:
-                SBO → es-bé-ó, BMS → bé-em-es, VD → vé-dé, MMB → em-em-bé,
-                ČR → čé-er, DPH → dé-pé-há, IČO → í-čé-ó, s.r.o. → es er o,
-                a neznámé (2-4 velká písmena, ne zjevně anglické) → česky.
-              * Pokud si nejsi jist, preferuj český foneticky.
-            - Čísla převeď na slova (69 → šedesát devět, 2026 → dva tisíce dvacet šest).
-            - Dlouhé hex/ID stringy (8+ znaků [0-9a-f]) nahraď "identifikátor" nebo vynech úplně.
-            - Odstraň markdown značky (**tučně**, `kód`, # nadpisy, - odrážky).
-            - URL a e-maily nahraď popisem ("odkaz", "e-mail") nebo vynech.
-            - Zachovej význam a přirozený český slovosled.
-        """.trimIndent()
-
-        val rewritten = try {
-            cascadeLlmClient.prompt(prompt = text, system = system, clientId = null)
-        } catch (e: Exception) {
-            logger.warn(e) { "TTS_NORMALIZE: LLM failed, falling back to raw text" }
-            null
-        }
-
-        val cleaned = rewritten?.trim()?.takeIf { it.isNotBlank() } ?: return text
-        logger.info { "TTS_NORMALIZE: ${text.length} → ${cleaned.length} chars" }
-        return cleaned
     }
 }
 

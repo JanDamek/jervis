@@ -76,6 +76,7 @@ class TtsServicer(speak_pb2_grpc.TtsServiceServicer):
         context: grpc.aio.ServicerContext,
     ):
         from app import xtts_server
+        from app import router_normalize
 
         text = (request.text or "").strip()
         if not text:
@@ -90,53 +91,76 @@ class TtsServicer(speak_pb2_grpc.TtsServiceServicer):
             await asyncio.get_event_loop().run_in_executor(None, xtts_server._load_tts)
 
         speed = request.speed if request.speed > 0 else 1.0
-        language = request.language or ""
+        language = request.language or xtts_server.TTS_LANGUAGE
         voice = request.voice or None
+        client_id = request.ctx.scope.client_id if request.HasField("ctx") else ""
+        project_id = request.ctx.scope.project_id if request.HasField("ctx") else ""
 
-        # _stream_inference runs in a worker thread and pushes
-        # ("header"|"pcm"|"done"|"error", data) tuples into the queue.
+        # Two queues bridging three coroutines / threads:
+        #   [normalize task] --sentence_q--> [inference thread] --chunk_q--> [gRPC yield]
+        # The LLM normalizer streams sentences as fast as tokens arrive; the
+        # inference thread starts synthesizing the first sentence the moment
+        # it lands, overlapping GPU work with remaining LLM tokens. The gRPC
+        # yield drains PCM chunks at whatever pace the caller consumes them
+        # — the unbounded queues decouple GPU speed from network speed.
+        sentence_q: queue.Queue = queue.Queue()
         chunk_q: queue.Queue = queue.Queue()
         thread = threading.Thread(
-            target=xtts_server._stream_inference,
-            args=(text, speed, language, chunk_q, voice),
+            target=xtts_server._stream_inference_from_sentence_queue,
+            args=(sentence_q, speed, language, chunk_q, voice),
             daemon=True,
         )
         thread.start()
 
+        async def _pump_sentences():
+            try:
+                async for sentence in router_normalize.stream_sentences(
+                    text, language, client_id=client_id, project_id=project_id,
+                ):
+                    sentence_q.put(sentence)
+            finally:
+                sentence_q.put(None)  # end-of-stream sentinel
+
+        pump_task = asyncio.create_task(_pump_sentences())
+
         loop = asyncio.get_event_loop()
         start = time.monotonic()
         total_chunks = 0
+        try:
+            while True:
+                try:
+                    msg_type, data = await loop.run_in_executor(None, chunk_q.get, True, 120.0)
+                except Exception:
+                    await context.abort(grpc.StatusCode.DEADLINE_EXCEEDED, "Timeout waiting for audio chunk")
+                    return
 
-        while True:
-            try:
-                msg_type, data = await loop.run_in_executor(None, chunk_q.get, True, 60.0)
-            except Exception:
-                await context.abort(grpc.StatusCode.DEADLINE_EXCEEDED, "Timeout waiting for audio chunk")
-                return
+                if msg_type == "header":
+                    continue  # sample rate is a fixed contract, clients assume 24 kHz
 
-            if msg_type == "header":
-                # Header (sample_rate) is implicit — clients infer it from the WAV
-                # shape Kotlin emits over Compose playback. Skipped in the stream.
-                continue
+                if msg_type == "pcm":
+                    total_chunks += 1
+                    yield speak_pb2.AudioChunk(data=data, is_last=False)
+                    continue
 
-            if msg_type == "pcm":
-                total_chunks += 1
-                yield speak_pb2.AudioChunk(data=data, is_last=False)
-                continue
+                if msg_type == "done":
+                    elapsed = time.monotonic() - start
+                    logger.info(
+                        "[TTS] gRPC SpeakStream %d chars → %d PCM chunks in %.2fs (lang=%s)",
+                        len(text), total_chunks, elapsed, language,
+                    )
+                    yield speak_pb2.AudioChunk(data=b"", is_last=True)
+                    return
 
-            if msg_type == "done":
-                # Final sentinel with empty payload + is_last=True.
-                elapsed = time.monotonic() - start
-                logger.info(
-                    "[TTS] gRPC SpeakStream %d chars → %d PCM chunks in %.2fs",
-                    len(text), total_chunks, elapsed,
-                )
-                yield speak_pb2.AudioChunk(data=b"", is_last=True)
-                return
-
-            if msg_type == "error":
-                await context.abort(grpc.StatusCode.INTERNAL, str(data))
-                return
+                if msg_type == "error":
+                    await context.abort(grpc.StatusCode.INTERNAL, str(data))
+                    return
+        finally:
+            # Caller went away (cancel / disconnect) — stop the normalizer
+            # so it doesn't keep pulling from the router for a dead client.
+            # The inference thread will exit on its own once it sees the
+            # sentinel on sentence_q.
+            if not pump_task.done():
+                pump_task.cancel()
 
 
 async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:

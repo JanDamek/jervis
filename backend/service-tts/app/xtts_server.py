@@ -463,13 +463,128 @@ def _stream_inference(text: str, speed: float, language: str, chunk_queue: queue
         chunk_queue.put(("error", str(e)))
 
 
+def _stream_inference_from_sentence_queue(
+    sentence_queue: queue.Queue,
+    speed: float,
+    language: str,
+    chunk_queue: queue.Queue,
+    speaker: str | None = None,
+):
+    """Streaming TTS worker driven by a sentence queue (new pipeline).
+
+    The producer (the gRPC handler's async normalize loop) pushes
+    already-normalized sentences into `sentence_queue`. A `None` on the
+    queue is the end-of-stream sentinel. This worker runs in a daemon
+    thread because XTTS `inference_stream` is a blocking generator; it
+    pulls each sentence, runs inference, and writes raw int16 PCM into
+    `chunk_queue` as `("pcm", bytes)`. Terminal state is emitted as
+    `("done", N)` or `("error", msg)` once the sentinel arrives.
+
+    Compared to the legacy `_stream_inference` this never holds the full
+    text: the normalizer streams sentences from the router LLM, and the
+    moment the first sentence lands we start inference — the LLM and the
+    GPU overlap their work, and the first PCM chunk arrives roughly one
+    sentence of tokens after the user pressed play.
+    """
+    total_emitted = 0
+    chunk_errors: list[str] = []
+    try:
+        if not language:
+            language = TTS_LANGUAGE
+
+        model = _tts.synthesizer.tts_model
+        sample_rate = _tts.synthesizer.output_sample_rate
+        chunk_queue.put(("header", {"sample_rate": sample_rate}))
+
+        spk_latent, spk_embedding = _get_speaker(speaker)
+
+        while True:
+            item = sentence_queue.get()
+            if item is None:
+                break  # producer signalled end-of-stream
+            sentence = item.strip().rstrip('.!?…,;:"\'""„‟»«')
+            if not sentence:
+                continue
+
+            try:
+                # XTTS has a ~180 char ceiling per call; if the LLM handed
+                # us something longer, split on clauses/words to stay
+                # within the limit without losing prosody.
+                for piece in _split_long_text(sentence):
+                    piece = piece.strip().rstrip('.!?…,;:"\'""„‟»«')
+                    if not piece:
+                        continue
+                    if spk_latent is not None and spk_embedding is not None:
+                        try:
+                            total_emitted += _run_inference_stream_once(
+                                model, piece, language, spk_latent, spk_embedding,
+                                speed, chunk_queue,
+                            )
+                        except torch.cuda.OutOfMemoryError:
+                            total_emitted += _run_inference_stream_once(
+                                model, piece, language, spk_latent, spk_embedding,
+                                speed, chunk_queue,
+                            )
+                    else:
+                        wav_data = _synthesize_chunk(piece, speed, language, speaker)
+                        if wav_data:
+                            with wave.open(io.BytesIO(wav_data), "rb") as wf:
+                                chunk_queue.put(("pcm", wf.readframes(wf.getnframes())))
+                            total_emitted += 1
+            except Exception as e:
+                err_msg = f"{type(e).__name__}: {e}"
+                chunk_errors.append(err_msg)
+                print(f"[TTS] stream chunk error on '{sentence[:40]}': {err_msg}", flush=True)
+
+        if total_emitted == 0 and chunk_errors:
+            chunk_queue.put(("error", f"no audio produced; {len(chunk_errors)} chunk errors: {chunk_errors[0]}"))
+        else:
+            chunk_queue.put(("done", total_emitted))
+    except Exception as e:
+        print(f"[TTS] _stream_inference_from_sentence_queue error: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        chunk_queue.put(("error", str(e)))
+
+
+def _warmup_inference() -> None:
+    """Run one tiny dummy inference to compile CUDA kernels.
+
+    Without this, the first real SpeakStream spends 10-15 s on JIT kernel
+    compilation before emitting its first PCM chunk. Here we invoke
+    inference_stream once with a throwaway utterance and drain the generator,
+    so the first user-facing request gets the fast path.
+    """
+    if _tts is None or _gpt_cond_latent is None or _speaker_embedding is None:
+        return
+    try:
+        print("[TTS] Warming up CUDA kernels...", flush=True)
+        start = time.monotonic()
+        model = _tts.synthesizer.tts_model
+        stream_gen = model.inference_stream(
+            text="ok",
+            language=TTS_LANGUAGE,
+            gpt_cond_latent=_gpt_cond_latent,
+            speaker_embedding=_speaker_embedding,
+            speed=1.0,
+            stream_chunk_size=30,
+        )
+        for _ in stream_gen:
+            pass  # discard audio — we only care about kernel compilation
+        print(f"[TTS] Warmup complete in {time.monotonic() - start:.1f}s", flush=True)
+    except Exception as e:
+        print(f"[TTS] Warmup failed (non-fatal): {e}", flush=True)
+
+
 async def _main() -> None:
-    """gRPC-only entrypoint. Pre-loads XTTS + speaker embedding, then spins up
-    the TtsService gRPC server and blocks until a termination signal arrives."""
+    """gRPC-only entrypoint. Pre-loads XTTS + speaker embedding, runs a
+    throwaway inference to compile CUDA kernels, then spins up the
+    TtsService gRPC server and blocks until a termination signal arrives."""
     logger.info("[TTS] Starting XTTS v2 gRPC service on :%d", TTS_GRPC_PORT)
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, _load_tts)
-    logger.info("[TTS] Model + speaker loaded, accepting gRPC requests")
+    await loop.run_in_executor(None, _warmup_inference)
+    logger.info("[TTS] Model + speaker loaded + warmed up, accepting gRPC requests")
 
     from app.grpc_server import start_grpc_server
 
@@ -486,6 +601,7 @@ async def _main() -> None:
         await grpc_server.stop(grace=5.0)
 
 
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s %(message)s")
-    asyncio.run(_main())
+# Entrypoint lives in `app/__main__.py` — running this file directly (or via
+# `python -m app.xtts_server`) would create a duplicate module instance
+# alongside `app.xtts_server` imported by grpc_server.py, doubling the load
+# of every XTTS global. Always start via `python -m app`.
