@@ -46,27 +46,38 @@ class NotificationViewModel(
         scope.launch {
             NotificationActionChannel.actions.collect { result ->
                 // Native mobile push action buttons (iOS actionable category /
-                // Android notification actions) deliver taskId here. If the
-                // currently-displayed event is a chat approval for the same
-                // taskId, route through the chat RPC instead of sendToAgent.
-                val chatApprovalAction = _userTaskDialogEvent.value
-                    ?.takeIf { it.taskId == result.taskId }
-                    ?.chatApprovalAction
+                // Android notification actions) deliver taskId here. Route to
+                // the correct backend call based on the currently-displayed
+                // event: ephemeral prompt (no TaskDocument), chat approval,
+                // or regular USER_TASK.
+                val matching = _userTaskDialogEvent.value?.takeIf { it.taskId == result.taskId }
+                val ephemeralPromptId = matching?.ephemeralPromptId
+                val chatApprovalAction = matching?.chatApprovalAction
                 when (result.action) {
                     NotificationAction.APPROVE -> {
                         try {
-                            if (chatApprovalAction != null) {
-                                repository.chat.approveChatAction(
-                                    approved = true,
-                                    always = false,
-                                    action = chatApprovalAction,
-                                )
-                            } else {
-                                repository.userTasks.sendToAgent(
-                                    taskId = result.taskId,
-                                    routingMode = TaskRoutingMode.DIRECT_TO_AGENT,
-                                    additionalInput = null,
-                                )
+                            when {
+                                ephemeralPromptId != null -> {
+                                    repository.userTasks.answerEphemeralPrompt(
+                                        promptId = ephemeralPromptId,
+                                        approved = true,
+                                        reply = null,
+                                    )
+                                }
+                                chatApprovalAction != null -> {
+                                    repository.chat.approveChatAction(
+                                        approved = true,
+                                        always = false,
+                                        action = chatApprovalAction,
+                                    )
+                                }
+                                else -> {
+                                    repository.userTasks.sendToAgent(
+                                        taskId = result.taskId,
+                                        routingMode = TaskRoutingMode.DIRECT_TO_AGENT,
+                                        additionalInput = null,
+                                    )
+                                }
                             }
                             refreshUserTaskCount()
                         } catch (e: Exception) {
@@ -75,31 +86,50 @@ class NotificationViewModel(
                         _userTaskDialogEvent.value = null
                     }
                     NotificationAction.DENY -> {
-                        if (chatApprovalAction != null) {
-                            try {
-                                repository.chat.approveChatAction(
-                                    approved = false,
-                                    always = false,
-                                    action = chatApprovalAction,
-                                )
-                                refreshUserTaskCount()
-                            } catch (e: Exception) {
-                                println("Failed to deny chat approval ${result.taskId}: ${e.message}")
+                        try {
+                            when {
+                                ephemeralPromptId != null -> {
+                                    repository.userTasks.answerEphemeralPrompt(
+                                        promptId = ephemeralPromptId,
+                                        approved = false,
+                                        reply = null,
+                                    )
+                                    refreshUserTaskCount()
+                                    _userTaskDialogEvent.value = null
+                                }
+                                chatApprovalAction != null -> {
+                                    repository.chat.approveChatAction(
+                                        approved = false,
+                                        always = false,
+                                        action = chatApprovalAction,
+                                    )
+                                    refreshUserTaskCount()
+                                    _userTaskDialogEvent.value = null
+                                }
+                                // else: real USER_TASK deny — show in-app dialog for reason input
                             }
-                            _userTaskDialogEvent.value = null
+                        } catch (e: Exception) {
+                            println("Failed to deny ${result.taskId}: ${e.message}")
                         }
-                        // else: real USER_TASK deny — show in-app dialog for reason input
                     }
                     NotificationAction.REPLY -> {
                         // Inline reply (e.g. MFA code from notification RemoteInput)
                         val text = result.replyText
                         if (!text.isNullOrBlank()) {
                             try {
-                                repository.userTasks.sendToAgent(
-                                    taskId = result.taskId,
-                                    routingMode = TaskRoutingMode.DIRECT_TO_AGENT,
-                                    additionalInput = text,
-                                )
+                                if (ephemeralPromptId != null) {
+                                    repository.userTasks.answerEphemeralPrompt(
+                                        promptId = ephemeralPromptId,
+                                        approved = true,
+                                        reply = text,
+                                    )
+                                } else {
+                                    repository.userTasks.sendToAgent(
+                                        taskId = result.taskId,
+                                        routingMode = TaskRoutingMode.DIRECT_TO_AGENT,
+                                        additionalInput = text,
+                                    )
+                                }
                                 refreshUserTaskCount()
                             } catch (e: Exception) {
                                 println("Failed to reply to task ${result.taskId}: ${e.message}")
@@ -128,29 +158,40 @@ class NotificationViewModel(
     }
 
     fun approveTask(taskId: String, onError: (String) -> Unit = {}) {
-        // Branch: chat approvals use IChatService.approveChatAction (ephemeral
-        // in-flight tool call), real USER_TASKs use the sendToAgent flow.
+        // Branch: (1) ephemeral prompts (no TaskDocument) go through
+        // answerEphemeralPrompt. (2) chat approvals use
+        // IChatService.approveChatAction. (3) real USER_TASKs use sendToAgent.
         val current = _userTaskDialogEvent.value
-        val chatApprovalAction = current
-            ?.takeIf { it.taskId == taskId }
-            ?.chatApprovalAction
+        val matching = current?.takeIf { it.taskId == taskId }
+        val ephemeralPromptId = matching?.ephemeralPromptId
+        val chatApprovalAction = matching?.chatApprovalAction
         scope.launch {
             try {
-                if (chatApprovalAction != null) {
-                    // Chat approval path — taskId is a synthetic approvalId,
-                    // not a TaskDocument. Route through chat RPC; Python resolves
-                    // the asyncio future and broadcasts a dismiss to other devices.
-                    repository.chat.approveChatAction(
-                        approved = true,
-                        always = false,
-                        action = chatApprovalAction,
-                    )
-                } else {
-                    repository.userTasks.sendToAgent(
-                        taskId = taskId,
-                        routingMode = TaskRoutingMode.DIRECT_TO_AGENT,
-                        additionalInput = null,
-                    )
+                when {
+                    ephemeralPromptId != null -> {
+                        repository.userTasks.answerEphemeralPrompt(
+                            promptId = ephemeralPromptId,
+                            approved = true,
+                            reply = null,
+                        )
+                    }
+                    chatApprovalAction != null -> {
+                        // Chat approval path — taskId is a synthetic approvalId,
+                        // not a TaskDocument. Route through chat RPC; Python resolves
+                        // the asyncio future and broadcasts a dismiss to other devices.
+                        repository.chat.approveChatAction(
+                            approved = true,
+                            always = false,
+                            action = chatApprovalAction,
+                        )
+                    }
+                    else -> {
+                        repository.userTasks.sendToAgent(
+                            taskId = taskId,
+                            routingMode = TaskRoutingMode.DIRECT_TO_AGENT,
+                            additionalInput = null,
+                        )
+                    }
                 }
                 _userTaskDialogEvent.value = null
                 notificationManager.cancelNotification(taskId)
@@ -163,26 +204,36 @@ class NotificationViewModel(
 
     fun denyTask(taskId: String, reason: String, onError: (String) -> Unit = {}) {
         val current = _userTaskDialogEvent.value
-        val chatApprovalAction = current
-            ?.takeIf { it.taskId == taskId }
-            ?.chatApprovalAction
+        val matching = current?.takeIf { it.taskId == taskId }
+        val ephemeralPromptId = matching?.ephemeralPromptId
+        val chatApprovalAction = matching?.chatApprovalAction
         scope.launch {
             try {
-                if (chatApprovalAction != null) {
-                    // Chat approval path — `reason` is lost here because
-                    // approveChatAction has no free-text field. Captured by the
-                    // chat message history; future work: add reason to RPC.
-                    repository.chat.approveChatAction(
-                        approved = false,
-                        always = false,
-                        action = chatApprovalAction,
-                    )
-                } else {
-                    repository.userTasks.sendToAgent(
-                        taskId = taskId,
-                        routingMode = TaskRoutingMode.DIRECT_TO_AGENT,
-                        additionalInput = reason,
-                    )
+                when {
+                    ephemeralPromptId != null -> {
+                        repository.userTasks.answerEphemeralPrompt(
+                            promptId = ephemeralPromptId,
+                            approved = false,
+                            reply = reason.takeIf { it.isNotBlank() },
+                        )
+                    }
+                    chatApprovalAction != null -> {
+                        // Chat approval path — `reason` is lost here because
+                        // approveChatAction has no free-text field. Captured by the
+                        // chat message history; future work: add reason to RPC.
+                        repository.chat.approveChatAction(
+                            approved = false,
+                            always = false,
+                            action = chatApprovalAction,
+                        )
+                    }
+                    else -> {
+                        repository.userTasks.sendToAgent(
+                            taskId = taskId,
+                            routingMode = TaskRoutingMode.DIRECT_TO_AGENT,
+                            additionalInput = reason,
+                        )
+                    }
                 }
                 _userTaskDialogEvent.value = null
                 notificationManager.cancelNotification(taskId)
@@ -194,13 +245,24 @@ class NotificationViewModel(
     }
 
     fun replyToTask(taskId: String, reply: String, onError: (String) -> Unit = {}) {
+        val current = _userTaskDialogEvent.value
+        val matching = current?.takeIf { it.taskId == taskId }
+        val ephemeralPromptId = matching?.ephemeralPromptId
         scope.launch {
             try {
-                repository.userTasks.sendToAgent(
-                    taskId = taskId,
-                    routingMode = TaskRoutingMode.DIRECT_TO_AGENT,
-                    additionalInput = reply,
-                )
+                if (ephemeralPromptId != null) {
+                    repository.userTasks.answerEphemeralPrompt(
+                        promptId = ephemeralPromptId,
+                        approved = true,
+                        reply = reply,
+                    )
+                } else {
+                    repository.userTasks.sendToAgent(
+                        taskId = taskId,
+                        routingMode = TaskRoutingMode.DIRECT_TO_AGENT,
+                        additionalInput = reply,
+                    )
+                }
                 _userTaskDialogEvent.value = null
                 notificationManager.cancelNotification(taskId)
                 refreshUserTaskCount()

@@ -42,4 +42,19 @@ interface IUserTaskService {
 
     /** Dismiss ALL pending user tasks — bulk move to DONE. Returns count of dismissed tasks. */
     suspend fun dismissAll(): Int
+
+    /**
+     * Answer an **ephemeral prompt** — transient pod→user→pod Q&A that
+     * never became a TaskDocument. Routes through [EphemeralPromptRegistry]
+     * and dispatches the corresponding pod action (approveRelogin /
+     * suppressAlone / ...). Returns true if the prompt was still valid and
+     * the answer was dispatched, false if it already expired.
+     *
+     * See `docs/architecture.md` §ephemeral-prompts.
+     */
+    suspend fun answerEphemeralPrompt(
+        promptId: String,
+        approved: Boolean,
+        reply: String? = null,
+    ): Boolean
 }

@@ -35,6 +35,25 @@ sealed class JervisEvent {
          * `action` argument so "always" auto-approval rules can be captured.
          */
         val chatApprovalAction: String? = null,
+        /**
+         * When set, this event represents an EPHEMERAL prompt — a transient
+         * Q&A pass-through between a pod agent (O365 / WhatsApp / meeting
+         * bot) and the user. No TaskDocument exists; `taskId` is a synthetic
+         * promptId the server holds in-memory with a short TTL.
+         *
+         * UI must route approve/deny/reply through
+         * [IUserTaskService.answerEphemeralPrompt] — NOT `sendToAgent`. See
+         * `docs/architecture.md` §ephemeral-prompts for the rationale (pod
+         * agent → user → pod agent, no task lifecycle).
+         */
+        val ephemeralPromptId: String? = null,
+        /**
+         * Prompt kind for ephemeral prompts, e.g. "auth_request",
+         * "meeting_alone_check". Used by the server to dispatch the
+         * corresponding action (approveRelogin, suppressAlone, ...) when
+         * the user responds.
+         */
+        val ephemeralPromptKind: String? = null,
     ) : JervisEvent()
 
     @Serializable

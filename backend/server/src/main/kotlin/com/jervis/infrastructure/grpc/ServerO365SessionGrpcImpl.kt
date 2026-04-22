@@ -16,6 +16,7 @@ import com.jervis.dto.connection.ConnectionStateEnum
 import com.jervis.dto.task.TaskStateEnum
 import com.jervis.dto.task.TaskTypeEnum
 import com.jervis.infrastructure.notification.ApnsPushService
+import com.jervis.infrastructure.notification.EphemeralPromptRegistry
 import com.jervis.infrastructure.notification.FcmPushService
 import com.jervis.meeting.isAloneSuppressed
 import com.jervis.preferences.DeviceTokenRepository
@@ -36,6 +37,7 @@ class ServerO365SessionGrpcImpl(
     private val notificationRpc: NotificationRpcImpl,
     private val fcmPushService: FcmPushService,
     private val apnsPushService: ApnsPushService,
+    private val ephemeralPromptRegistry: EphemeralPromptRegistry,
     private val deviceTokenRepository: DeviceTokenRepository? = null,
 ) : ServerO365SessionServiceGrpcKt.ServerO365SessionServiceCoroutineImplBase() {
     private val logger = KotlinLogging.logger {}
@@ -206,6 +208,52 @@ class ServerO365SessionGrpcImpl(
                     mfaType = null,
                     mfaNumber = request.mfaCode.takeIf { it.isNotBlank() },
                 )
+            }
+            return NotifyResponse.newBuilder()
+                .setStatus("ok").setKind(request.kind).setPriority(priority).build()
+        }
+
+        // Ephemeral prompt short-circuit (auth_request): this is a plain
+        // "ask the user Yes/No, forward the answer back to the pod" — no
+        // ongoing work for Jervis to own. A TaskDocument would attract KB
+        // indexing, qualifier runs, sidebar presence, and a permanent
+        // history entry for what is fundamentally a 30-second Q&A. See
+        // `docs/architecture.md` §ephemeral-prompts.
+        if (request.kind == "auth_request") {
+            for (cid in clientIds) {
+                val prompt = ephemeralPromptRegistry.register(
+                    kind = request.kind,
+                    clientId = cid.toString(),
+                    connectionId = request.connectionId,
+                )
+                notificationRpc.emitUserTaskCreated(
+                    clientId = cid.toString(),
+                    taskId = prompt.id,
+                    title = title,
+                    interruptAction = request.kind,
+                    interruptDescription = description,
+                    isApproval = true,
+                    connectionName = connection.name,
+                    ephemeralPromptId = prompt.id,
+                    ephemeralPromptKind = request.kind,
+                )
+                val pushData = buildMap {
+                    put("type", "ephemeral_prompt")
+                    put("ephemeralPromptId", prompt.id)
+                    put("ephemeralPromptKind", request.kind)
+                    put("interruptAction", request.kind)
+                    put("connectionId", request.connectionId)
+                }
+                try {
+                    fcmPushService.sendPushNotification(cid.toString(), "Microsoft 365", title, pushData)
+                } catch (e: Exception) {
+                    logger.warn { "FCM auth_request push failed for $cid: ${e.message}" }
+                }
+                try {
+                    apnsPushService.sendPushNotification(cid.toString(), "Microsoft 365", title, pushData)
+                } catch (e: Exception) {
+                    logger.warn { "APNs auth_request push failed for $cid: ${e.message}" }
+                }
             }
             return NotifyResponse.newBuilder()
                 .setStatus("ok").setKind(request.kind).setPriority(priority).build()

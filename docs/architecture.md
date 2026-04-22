@@ -2052,6 +2052,71 @@ Python Orchestrator → interrupt (approval required)
     → UserTaskNotificationDialog (approval/clarification)
 ```
 
+### Ephemeral Prompts — Pass-Through Q&A (no TaskDocument)
+
+Pod agents (O365 browser, WhatsApp browser, meeting bot) sometimes need a
+direct Yes/No answer from the user that is **not work Jervis owns**. The
+classic example is the off-hours `auth_request` push: Teams pod idled for
+hours, its session cookie expired, it wants the user to confirm before
+re-logging in. That question has:
+
+- no history worth keeping (it's not a conversation)
+- no KB content worth indexing (there are no entities / topics)
+- no priority or classification to determine (the pod already decided it
+  needs to ask)
+- no follow-up work Jervis would schedule after the answer (the pod takes
+  over again)
+
+Routing such a prompt through the full TaskDocument lifecycle is harmful —
+it fires the qualifier, runs KB ingest, shows up in the sidebar "K
+vyřízení" list as a first-class task, and persists in history forever.
+
+The ephemeral-prompt path bypasses all of that:
+
+```
+pod agent (Teams) → notify(kind="auth_request", connectionId=X)
+  → ServerO365SessionGrpcImpl: kind=="auth_request" short-circuit
+    → EphemeralPromptRegistry.register(kind, clientId, connectionId)
+      → NotificationRpcImpl.emitUserTaskCreated(
+          taskId = prompt.id,
+          ephemeralPromptId = prompt.id,
+          ephemeralPromptKind = "auth_request",
+          isApproval = true,
+          ...)
+    → FCM / APNs push (data.type = "ephemeral_prompt")
+  → NotificationViewModel.handleUserTaskCreated
+    → UserTaskNotificationDialog → AuthRequestContent (Povolit / Odmítnout)
+  → user taps "Povolit"
+    → NotificationViewModel.approveTask(promptId)
+      → detects ephemeralPromptId → IUserTaskService.answerEphemeralPrompt
+        → UserTaskRpcImpl: EphemeralPromptRegistry.consume(promptId)
+          → kind=="auth_request" → ConnectionApprovalService.approveRelogin
+            → O365BrowserPoolGrpcClient.pushInstruction → pod resumes login
+          → NotificationRpcImpl.emitUserTaskCancelled (clears dialog on other devices)
+```
+
+Key differences vs. a regular USER_TASK (`urgent_message`,
+`meeting_invite`, `error`):
+
+| aspect | ephemeral prompt | TaskDocument-backed USER_TASK |
+|--------|------------------|-------------------------------|
+| persistence | in-memory only (15-min TTL) | MongoDB `taskDocuments` |
+| sidebar | never appears | shows up as "K vyřízení" card |
+| KB ingest | no | yes (indexing pipeline) |
+| qualifier | no | yes (needsQualification flag) |
+| history | none | ChatMessageDocument log |
+| answer RPC | `answerEphemeralPrompt` | `sendToAgent` |
+| survives server restart | no (pod re-asks) | yes |
+
+Scope (2026-04-22): only `auth_request` uses the ephemeral path. `mfa`
+already had a push-only short-circuit (pod self-heals on the phone, no
+server-side answer needed). `urgent_message`, `meeting_invite`, `error`
+keep the TaskDocument path because Jervis genuinely owns follow-up work
+(reply history, recording dispatch, retry/escalation). Future candidates
+(e.g. `meeting_alone_check`) can be added by extending the switch in
+`ServerO365SessionGrpcImpl.notify` and adding the corresponding branch in
+`UserTaskRpcImpl.answerEphemeralPrompt`.
+
 ### Cross-Platform Architecture
 
 ```
@@ -2079,10 +2144,12 @@ NotificationActionChannel (MutableSharedFlow)
 
 | File | Purpose |
 |------|---------|
-| `shared/common-dto/.../events/JervisEvent.kt` | Event model with approval metadata |
+| `shared/common-dto/.../events/JervisEvent.kt` | Event model with approval + ephemeral prompt metadata |
 | `shared/ui-common/.../notification/PlatformNotificationManager.kt` | expect class |
 | `shared/ui-common/.../notification/NotificationActionChannel.kt` | Cross-platform action callback |
-| `shared/ui-common/.../notification/ApprovalNotificationDialog.kt` | In-app approve/deny dialog |
+| `shared/ui-common/.../notification/ApprovalNotificationDialog.kt` | In-app approve/deny dialog (incl. `AuthRequestContent` for ephemeral prompts) |
+| `backend/server/.../infrastructure/notification/EphemeralPromptRegistry.kt` | In-memory store for pass-through Q&A prompts (15-min TTL) |
+| `backend/server/.../connection/ConnectionApprovalService.kt` | Shared approveRelogin dispatcher — used by both MCP gRPC impl and ephemeral-prompt answer path |
 | `backend/server/.../infrastructure/notification/FcmPushService.kt` | Firebase Cloud Messaging sender (Android) |
 | `backend/server/.../infrastructure/notification/ApnsPushService.kt` | APNs HTTP/2 push sender (iOS, Pushy) |
 | `backend/server/.../preferences/DeviceTokenDocument.kt` | Device token storage (platform: android/ios) |

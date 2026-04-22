@@ -77,6 +77,8 @@ class NotificationRpcImpl : INotificationService {
         connectionName: String? = null,
         mfaType: String? = null,
         mfaNumber: String? = null,
+        ephemeralPromptId: String? = null,
+        ephemeralPromptKind: String? = null,
     ) {
         emitEvent(clientId, JervisEvent.UserTaskCreated(
             clientId = clientId,
@@ -93,6 +95,8 @@ class NotificationRpcImpl : INotificationService {
             connectionName = connectionName,
             mfaType = mfaType,
             mfaNumber = mfaNumber,
+            ephemeralPromptId = ephemeralPromptId,
+            ephemeralPromptKind = ephemeralPromptKind,
         ))
     }
 

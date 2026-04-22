@@ -62,6 +62,12 @@ fun UserTaskNotificationDialog(
             onApprove = onApprove,
             onDismiss = onDismiss,
         )
+        event.interruptAction == "auth_request" -> AuthRequestContent(
+            event = event,
+            onApprove = onApprove,
+            onDeny = onDeny,
+            onDismiss = onDismiss,
+        )
         event.isError -> ErrorContent(
             event = event,
             onRetry = onRetry,
@@ -80,6 +86,61 @@ fun UserTaskNotificationDialog(
             onDismiss = onDismiss,
         )
     }
+}
+
+/**
+ * Ephemeral auth_request prompt — off-hours "shall I log this connection
+ * back in?" Q&A. Three buttons: Povolit, Odmítnout, Zavřít (dismiss
+ * without answering; prompt expires server-side after TTL).
+ *
+ * Not a TaskDocument — the answer is routed via
+ * [IUserTaskService.answerEphemeralPrompt]. See docs/architecture.md
+ * §ephemeral-prompts.
+ */
+@Composable
+private fun AuthRequestContent(
+    event: JervisEvent.UserTaskCreated,
+    onApprove: (taskId: String) -> Unit,
+    onDeny: (taskId: String, reason: String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val connectionName = event.connectionName ?: "Microsoft 365"
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = connectionName,
+                style = MaterialTheme.typography.headlineSmall,
+            )
+        },
+        text = {
+            Text(
+                text = event.interruptDescription
+                    ?: "Připojení potřebuje mimo pracovní dobu schválit přihlášení.",
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        },
+        confirmButton = {
+            Row(
+                horizontalArrangement = Arrangement.End,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                JSecondaryButton(
+                    onClick = { onDeny(event.taskId, "") },
+                ) {
+                    Text("Odmítnout", color = MaterialTheme.colorScheme.error)
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                JPrimaryButton(
+                    onClick = { onApprove(event.taskId) },
+                ) {
+                    Text("Povolit")
+                }
+            }
+        },
+        dismissButton = null,
+    )
 }
 
 /**

@@ -37,6 +37,8 @@ class UserTaskRpcImpl(
     private val meetingAttendApprovalService: com.jervis.meeting.MeetingAttendApprovalService,
     private val connectionService: com.jervis.connection.ConnectionService,
     private val o365BrowserPoolGrpc: com.jervis.infrastructure.grpc.O365BrowserPoolGrpcClient,
+    private val ephemeralPromptRegistry: com.jervis.infrastructure.notification.EphemeralPromptRegistry,
+    private val connectionApprovalService: com.jervis.connection.ConnectionApprovalService,
 ) : IUserTaskService {
     private val logger = KotlinLogging.logger {}
 
@@ -342,6 +344,51 @@ class UserTaskRpcImpl(
 
         // Notify client that task state changed
         notificationRpc.emitUserTaskCancelled(task.clientId.toString(), task.id.toString(), task.taskName)
+    }
+
+    override suspend fun answerEphemeralPrompt(
+        promptId: String,
+        approved: Boolean,
+        reply: String?,
+    ): Boolean {
+        val entry = ephemeralPromptRegistry.consume(promptId)
+        if (entry == null) {
+            logger.warn { "EPHEMERAL_PROMPT_ANSWER_EXPIRED | promptId=$promptId" }
+            return false
+        }
+
+        logger.info {
+            "EPHEMERAL_PROMPT_ANSWER | promptId=$promptId kind=${entry.kind} approved=$approved"
+        }
+
+        when (entry.kind) {
+            "auth_request" -> {
+                if (approved) {
+                    val connectionId = entry.connectionId
+                    if (connectionId.isNullOrBlank()) {
+                        logger.warn { "EPHEMERAL_PROMPT_AUTH_REQUEST_MISSING_CONNECTION | promptId=$promptId" }
+                    } else {
+                        try {
+                            connectionApprovalService.approveRelogin(connectionId)
+                        } catch (e: Exception) {
+                            logger.error(e) {
+                                "EPHEMERAL_PROMPT_APPROVE_RELOGIN_FAILED | promptId=$promptId connection=$connectionId"
+                            }
+                        }
+                    }
+                }
+                // Deny path: nothing to dispatch — the pod keeps idling
+                // until the next off-hours check, which is the desired
+                // behavior (user said no).
+            }
+            else -> {
+                logger.warn { "EPHEMERAL_PROMPT_UNKNOWN_KIND | promptId=$promptId kind=${entry.kind}" }
+            }
+        }
+
+        // Tell the UI to dismiss the dialog / cancel the notification.
+        notificationRpc.emitUserTaskCancelled(entry.clientId, entry.id, entry.kind)
+        return true
     }
 
     /**
