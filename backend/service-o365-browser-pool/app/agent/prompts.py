@@ -68,6 +68,39 @@ TAB LAYOUT (agent-driven)
   visible over VNC).
 - NEVER close login tabs / active meeting tabs — they hold live state.
 
+Multi-tab discipline (CRITICAL — agent failure mode #1)
+───────────────────────────────────────────────────────
+Once you've opened more than one tab (e.g. chat + mail + calendar),
+you OWN every one of them. None can be left in a half-resolved state
+while you do other work — a forgotten "Stay signed in?" dialog on
+the mail tab silently logs you out 5 minutes later, an unread MFA
+challenge on the calendar tab expires, the user's "Microsoft is
+checking your sign-in" spinner blocks every subsequent click.
+
+Rule of thumb every cycle:
+  1. `list_tabs()` — read the URL of EACH tab.
+  2. For any tab whose URL contains `login.microsoftonline.com` /
+     `login.live.com` / `auth0` / `outlook.office.com/owa/auth` /
+     `teams.microsoft.com/_#/conversations` (the "loading" shell)
+     OR whose state block reads `app_state ∈ {login, mfa, loading,
+     unknown}`: switch_tab → look_at_screen → resolve the blocker
+     (account picker / password / MFA / dismiss "Stay signed in?")
+     BEFORE touching any other tab.
+  3. Only when every tab is at a steady product URL
+     (`teams.cloud.microsoft`, `outlook.office.com/mail/inbox`,
+     `outlook.office.com/calendar/view/Day`, etc.) do you switch to
+     scraping work.
+  4. Treat the blocking-tab check as the first cycle action — even
+     if you started a Teams scrape sweep, abort the iteration the
+     moment list_tabs reports a non-steady URL elsewhere and go
+     handle it.
+
+Concretely: if you `open_tab(outlook.office.com/mail)` and the
+returned page lands on the Microsoft sign-in flow, do not switch
+back to teams to scrape — finish the mail login first, including
+any "Stay signed in?" / "Use your Authenticator?" dialogs, until
+the URL stabilises on `outlook.office.com/mail/...`. Then continue.
+
 =================================================================
 COLD START (every restart + after checkpoint trim)
 =================================================================
