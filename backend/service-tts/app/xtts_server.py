@@ -498,6 +498,11 @@ def _stream_inference_from_sentence_queue(
 
         spk_latent, spk_embedding = _get_speaker(speaker)
 
+        # Matches the [CS] / [EN] prefix the normalizer emits so we can
+        # switch XTTS to the right language per sentence. Unknown / missing
+        # tag falls back to the stream's default language.
+        lang_prefix_re = re.compile(r"^\s*\[(CS|EN|cs|en)\]\s*(.*)$", re.DOTALL)
+
         while True:
             item = sentence_queue.get()
             if item is None:
@@ -506,31 +511,39 @@ def _stream_inference_from_sentence_queue(
             if not sentence:
                 continue
 
+            # Peel off [CS] / [EN] prefix if present.
+            piece_lang = language
+            m = lang_prefix_re.match(sentence)
+            if m:
+                piece_lang = m.group(1).lower()
+                sentence = m.group(2).strip().rstrip('.!?…,;:"\'""„‟»«')
+                if not sentence:
+                    continue
+
             try:
-                # XTTS has a ~180 char ceiling per call; if the LLM handed
-                # us something longer, split on clauses/words to stay
-                # within the limit without losing prosody.
-                for piece in _split_long_text(sentence):
-                    piece = piece.strip().rstrip('.!?…,;:"\'""„‟»«')
-                    if not piece:
-                        continue
-                    if spk_latent is not None and spk_embedding is not None:
-                        try:
-                            total_emitted += _run_inference_stream_once(
-                                model, piece, language, spk_latent, spk_embedding,
-                                speed, chunk_queue,
-                            )
-                        except torch.cuda.OutOfMemoryError:
-                            total_emitted += _run_inference_stream_once(
-                                model, piece, language, spk_latent, spk_embedding,
-                                speed, chunk_queue,
-                            )
-                    else:
-                        wav_data = _synthesize_chunk(piece, speed, language, speaker)
-                        if wav_data:
-                            with wave.open(io.BytesIO(wav_data), "rb") as wf:
-                                chunk_queue.put(("pcm", wf.readframes(wf.getnframes())))
-                            total_emitted += 1
+                # Stream the sentence verbatim. The normalizer prompt tells
+                # the LLM to keep lines under XTTS's ~180 char ceiling —
+                # splitting here again would hide LLM mis-splits (silent
+                # degradation) and loses prosody. If an over-long line
+                # slips through, XTTS itself will emit an error and we log
+                # + move on to the next sentence.
+                if spk_latent is not None and spk_embedding is not None:
+                    try:
+                        total_emitted += _run_inference_stream_once(
+                            model, sentence, piece_lang, spk_latent, spk_embedding,
+                            speed, chunk_queue,
+                        )
+                    except torch.cuda.OutOfMemoryError:
+                        total_emitted += _run_inference_stream_once(
+                            model, sentence, piece_lang, spk_latent, spk_embedding,
+                            speed, chunk_queue,
+                        )
+                else:
+                    wav_data = _synthesize_chunk(sentence, speed, piece_lang, speaker)
+                    if wav_data:
+                        with wave.open(io.BytesIO(wav_data), "rb") as wf:
+                            chunk_queue.put(("pcm", wf.readframes(wf.getnframes())))
+                        total_emitted += 1
             except Exception as e:
                 err_msg = f"{type(e).__name__}: {e}"
                 chunk_errors.append(err_msg)
