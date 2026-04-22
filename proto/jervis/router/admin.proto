@@ -56,6 +56,19 @@ service RouterAdminService {
   // Whisper signals transcription is complete — router releases the
   // semaphore and the dispatcher fires waiting queue entries.
   rpc WhisperDone(WhisperDoneRequest) returns (WhisperDoneResponse);
+
+  // XTTS on VD signals it wants exclusive GPU for synthesis. Same active
+  // preemption flow as WhisperNotify: cancel Ollama LLM/VLM, unload
+  // their models, block until quiet. User contract:
+  //   "during whisper streaming AND during XTTS generation nothing else
+  //    runs on the GPU"
+  // Embeddings are also dropped here — the caller is a user-facing audio
+  // stream, every idle millisecond shows up as an audible gap.
+  rpc TtsNotify(TtsNotifyRequest) returns (TtsNotifyResponse);
+
+  // XTTS signals synthesis finished — router clears the semaphore and
+  // Ollama dispatcher resumes.
+  rpc TtsDone(TtsDoneRequest) returns (TtsDoneResponse);
 }
 
 // ── MaxContext ───────────────────────────────────────────────────────────
@@ -221,4 +234,26 @@ message WhisperDoneRequest {
 
 message WhisperDoneResponse {
   bool released = 1;  // Semaphore cleared, dispatcher resumed.
+}
+
+// ── TTS preemption ───────────────────────────────────────────────────────
+
+message TtsNotifyRequest {
+  jervis.common.RequestContext ctx = 1;
+  // Budget for the router to finish preempt+unload. Default 30s if zero.
+  int32 preempt_timeout_s = 2;
+}
+
+message TtsNotifyResponse {
+  bool granted = 1;
+  int32 preempted_count = 2;
+  int32 unloaded_models = 3;
+}
+
+message TtsDoneRequest {
+  jervis.common.RequestContext ctx = 1;
+}
+
+message TtsDoneResponse {
+  bool released = 1;
 }

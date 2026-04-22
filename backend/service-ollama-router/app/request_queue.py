@@ -403,7 +403,8 @@ class RequestQueue:
             if gpu.has_model(request.model):
                 return gpu
 
-            # Ensure VRAM coordination on the VLM GPU.
+            # Ensure VRAM coordination on the VLM GPU. Either whisper or
+            # XTTS being active keeps Ollama off the card — user policy.
             if gpu.name == VLM_GPU and request.model not in EMBEDDING_MODELS:
                 if self._router.check_whisper_busy():
                     logger.info(
@@ -411,6 +412,14 @@ class RequestQueue:
                         request.model,
                     )
                     await self._router.wait_for_whisper_done(
+                        timeout=settings.whisper_gpu_acquire_timeout_s,
+                    )
+                if self._router.check_tts_busy():
+                    logger.info(
+                        "VLM_WAIT_TTS: xtts active, waiting before loading %s",
+                        request.model,
+                    )
+                    await self._router.wait_for_tts_done(
                         timeout=settings.whisper_gpu_acquire_timeout_s,
                     )
                 await self._release_whisper_gpu()

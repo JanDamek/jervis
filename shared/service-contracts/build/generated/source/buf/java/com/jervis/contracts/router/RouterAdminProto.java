@@ -156,6 +156,26 @@ public final class RouterAdminProto extends com.google.protobuf.GeneratedFile {
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_jervis_router_WhisperDoneResponse_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_router_TtsNotifyRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_router_TtsNotifyRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_router_TtsNotifyResponse_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_router_TtsNotifyResponse_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_router_TtsDoneRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_router_TtsDoneRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_router_TtsDoneResponse_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_router_TtsDoneResponse_fieldAccessorTable;
 
   public static com.google.protobuf.Descriptors.FileDescriptor
       getDescriptor() {
@@ -239,35 +259,48 @@ public final class RouterAdminProto extends com.google.protobuf.GeneratedFile {
       "s\030\003 \001(\005R\016unloadedModels\"E\n\022WhisperDoneRe" +
       "quest\022/\n\003ctx\030\001 \001(\0132\035.jervis.common.Reque" +
       "stContextR\003ctx\"1\n\023WhisperDoneResponse\022\032\n" +
-      "\010released\030\001 \001(\010R\010released2\246\010\n\022RouterAdmi" +
-      "nService\022T\n\rGetMaxContext\022 .jervis.route" +
-      "r.MaxContextRequest\032!.jervis.router.MaxC" +
-      "ontextResponse\022c\n\020ReportModelError\022&.jer" +
-      "vis.router.ReportModelErrorRequest\032\'.jer" +
-      "vis.router.ReportModelErrorResponse\022i\n\022R" +
-      "eportModelSuccess\022(.jervis.router.Report" +
-      "ModelSuccessRequest\032).jervis.router.Repo" +
-      "rtModelSuccessResponse\022`\n\017ListModelError" +
-      "s\022%.jervis.router.ListModelErrorsRequest" +
-      "\032&.jervis.router.ListModelErrorsResponse" +
-      "\022]\n\016ListModelStats\022$.jervis.router.ListM" +
-      "odelStatsRequest\032%.jervis.router.ListMod" +
-      "elStatsResponse\022`\n\017ResetModelError\022%.jer" +
-      "vis.router.ResetModelErrorRequest\032&.jerv" +
-      "is.router.ResetModelErrorResponse\022N\n\tTes" +
-      "tModel\022\037.jervis.router.TestModelRequest\032" +
-      " .jervis.router.TestModelResponse\022T\n\rGet" +
-      "RateLimits\022 .jervis.router.RateLimitsReq" +
-      "uest\032!.jervis.router.RateLimitsResponse\022" +
-      "o\n\024InvalidateClientTier\022*.jervis.router." +
-      "InvalidateClientTierRequest\032+.jervis.rou" +
-      "ter.InvalidateClientTierResponse\022Z\n\rWhis" +
-      "perNotify\022#.jervis.router.WhisperNotifyR" +
-      "equest\032$.jervis.router.WhisperNotifyResp" +
-      "onse\022T\n\013WhisperDone\022!.jervis.router.Whis" +
-      "perDoneRequest\032\".jervis.router.WhisperDo" +
-      "neResponseB1\n\033com.jervis.contracts.route" +
-      "rB\020RouterAdminProtoP\001b\006proto3"
+      "\010released\030\001 \001(\010R\010released\"o\n\020TtsNotifyRe" +
+      "quest\022/\n\003ctx\030\001 \001(\0132\035.jervis.common.Reque" +
+      "stContextR\003ctx\022*\n\021preempt_timeout_s\030\002 \001(" +
+      "\005R\017preemptTimeoutS\"\177\n\021TtsNotifyResponse\022" +
+      "\030\n\007granted\030\001 \001(\010R\007granted\022\'\n\017preempted_c" +
+      "ount\030\002 \001(\005R\016preemptedCount\022\'\n\017unloaded_m" +
+      "odels\030\003 \001(\005R\016unloadedModels\"A\n\016TtsDoneRe" +
+      "quest\022/\n\003ctx\030\001 \001(\0132\035.jervis.common.Reque" +
+      "stContextR\003ctx\"-\n\017TtsDoneResponse\022\032\n\010rel" +
+      "eased\030\001 \001(\010R\010released2\300\t\n\022RouterAdminSer" +
+      "vice\022T\n\rGetMaxContext\022 .jervis.router.Ma" +
+      "xContextRequest\032!.jervis.router.MaxConte" +
+      "xtResponse\022c\n\020ReportModelError\022&.jervis." +
+      "router.ReportModelErrorRequest\032\'.jervis." +
+      "router.ReportModelErrorResponse\022i\n\022Repor" +
+      "tModelSuccess\022(.jervis.router.ReportMode" +
+      "lSuccessRequest\032).jervis.router.ReportMo" +
+      "delSuccessResponse\022`\n\017ListModelErrors\022%." +
+      "jervis.router.ListModelErrorsRequest\032&.j" +
+      "ervis.router.ListModelErrorsResponse\022]\n\016" +
+      "ListModelStats\022$.jervis.router.ListModel" +
+      "StatsRequest\032%.jervis.router.ListModelSt" +
+      "atsResponse\022`\n\017ResetModelError\022%.jervis." +
+      "router.ResetModelErrorRequest\032&.jervis.r" +
+      "outer.ResetModelErrorResponse\022N\n\tTestMod" +
+      "el\022\037.jervis.router.TestModelRequest\032 .je" +
+      "rvis.router.TestModelResponse\022T\n\rGetRate" +
+      "Limits\022 .jervis.router.RateLimitsRequest" +
+      "\032!.jervis.router.RateLimitsResponse\022o\n\024I" +
+      "nvalidateClientTier\022*.jervis.router.Inva" +
+      "lidateClientTierRequest\032+.jervis.router." +
+      "InvalidateClientTierResponse\022Z\n\rWhisperN" +
+      "otify\022#.jervis.router.WhisperNotifyReque" +
+      "st\032$.jervis.router.WhisperNotifyResponse" +
+      "\022T\n\013WhisperDone\022!.jervis.router.WhisperD" +
+      "oneRequest\032\".jervis.router.WhisperDoneRe" +
+      "sponse\022N\n\tTtsNotify\022\037.jervis.router.TtsN" +
+      "otifyRequest\032 .jervis.router.TtsNotifyRe" +
+      "sponse\022H\n\007TtsDone\022\035.jervis.router.TtsDon" +
+      "eRequest\032\036.jervis.router.TtsDoneResponse" +
+      "B1\n\033com.jervis.contracts.routerB\020RouterA" +
+      "dminProtoP\001b\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
@@ -430,6 +463,30 @@ public final class RouterAdminProto extends com.google.protobuf.GeneratedFile {
     internal_static_jervis_router_WhisperDoneResponse_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_router_WhisperDoneResponse_descriptor,
+        new java.lang.String[] { "Released", });
+    internal_static_jervis_router_TtsNotifyRequest_descriptor =
+      getDescriptor().getMessageType(26);
+    internal_static_jervis_router_TtsNotifyRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_router_TtsNotifyRequest_descriptor,
+        new java.lang.String[] { "Ctx", "PreemptTimeoutS", });
+    internal_static_jervis_router_TtsNotifyResponse_descriptor =
+      getDescriptor().getMessageType(27);
+    internal_static_jervis_router_TtsNotifyResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_router_TtsNotifyResponse_descriptor,
+        new java.lang.String[] { "Granted", "PreemptedCount", "UnloadedModels", });
+    internal_static_jervis_router_TtsDoneRequest_descriptor =
+      getDescriptor().getMessageType(28);
+    internal_static_jervis_router_TtsDoneRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_router_TtsDoneRequest_descriptor,
+        new java.lang.String[] { "Ctx", });
+    internal_static_jervis_router_TtsDoneResponse_descriptor =
+      getDescriptor().getMessageType(29);
+    internal_static_jervis_router_TtsDoneResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_router_TtsDoneResponse_descriptor,
         new java.lang.String[] { "Released", });
     descriptor.resolveAllFeaturesImmutable();
     com.jervis.contracts.common.TypesProto.getDescriptor();

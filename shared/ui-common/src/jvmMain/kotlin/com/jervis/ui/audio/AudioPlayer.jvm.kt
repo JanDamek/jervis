@@ -22,13 +22,16 @@ actual class AudioPlayer actual constructor() {
     private val prefillBuffer = ByteArrayOutputStream()
     private var streamStarted: Boolean = false
 
-    /** Prefill 2 s before starting playback so a brief GPU stall doesn't
-     *  starve the audio line mid-sentence. XTTS on P40 runs roughly at
-     *  0.6-0.75 real-time — close enough that any contention with Ollama
-     *  makes chunks arrive slower than playback. 2 s headroom absorbs the
-     *  jitter; the playback latency cost is acceptable because the user is
-     *  still waiting for the first sentence to land anyway. */
-    private val prefillMs: Int = 2_000
+    /** Prefill 10 s before starting playback. XTTS on P40 runs at RTF
+     *  ~0.7 when the GPU is idle but drops towards (or above) 1.0 whenever
+     *  Ollama is serving qwen3-coder-tool:30b on the same card — so the
+     *  buffer steadily drains on long replies. 10 s headroom covers a
+     *  ~6-8 % generation deficit over a full minute of audio, which is
+     *  what we measured for 1 500+ char utterances. The playback latency
+     *  cost is acceptable because the user is already waiting for the
+     *  router + first LLM sentence. Real fix = TTS GPU preemption
+     *  (mirror of WhisperNotify/Done) — separate task. */
+    private val prefillMs: Int = 10_000
 
     actual fun startStream(sampleRate: Int, sampleSizeInBits: Int, channels: Int) {
         stopStream()

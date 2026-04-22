@@ -76,7 +76,11 @@ spec:
       protocol: TCP
       port: 5501
       targetPort: 5501
-  type: ClusterIP
+      # Exposed as NodePort so services running outside the cluster (XTTS
+      # and whisper on the GPU VM) can dial the router over gRPC. Static
+      # port so env vars don't change across re-applies.
+      nodePort: 30501
+  type: NodePort
 ---
 # Ingress for local access from GPU VM (whisper → router coordination).
 # HTTP only — local domain, no TLS (Let's Encrypt won't sign .local).

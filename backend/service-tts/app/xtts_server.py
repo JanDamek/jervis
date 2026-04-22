@@ -372,7 +372,7 @@ def _run_inference_stream_once(model, text_chunk, language, spk_latent, spk_embe
             gpt_cond_latent=spk_latent,
             speaker_embedding=spk_embedding,
             speed=speed,
-            stream_chunk_size=30,
+            stream_chunk_size=20,
         )
         for audio_chunk in stream_gen:
             if isinstance(audio_chunk, torch.Tensor):
@@ -567,7 +567,7 @@ def _warmup_inference() -> None:
             gpt_cond_latent=_gpt_cond_latent,
             speaker_embedding=_speaker_embedding,
             speed=1.0,
-            stream_chunk_size=30,
+            stream_chunk_size=20,
         )
         for _ in stream_gen:
             pass  # discard audio — we only care about kernel compilation

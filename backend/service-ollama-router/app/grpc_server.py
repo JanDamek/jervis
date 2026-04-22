@@ -280,6 +280,29 @@ class RouterAdminServicer(admin_pb2_grpc.RouterAdminServiceServicer):
         self._router.notify_whisper_done()
         return admin_pb2.WhisperDoneResponse(released=True)
 
+    async def TtsNotify(
+        self, request: admin_pb2.TtsNotifyRequest, context: grpc.aio.ServicerContext
+    ) -> admin_pb2.TtsNotifyResponse:
+        """XTTS wants exclusive GPU — same active preempt flow as whisper.
+        Ollama queue is held until TtsDone fires."""
+        timeout = request.preempt_timeout_s if request.preempt_timeout_s > 0 else 30
+        granted, preempted, unloaded = await self._router.notify_tts_wants_gpu(
+            preempt_timeout_s=timeout,
+        )
+        return admin_pb2.TtsNotifyResponse(
+            granted=granted,
+            preempted_count=preempted,
+            unloaded_models=unloaded,
+        )
+
+    async def TtsDone(
+        self, request: admin_pb2.TtsDoneRequest, context: grpc.aio.ServicerContext
+    ) -> admin_pb2.TtsDoneResponse:
+        """XTTS finished synthesis — dispatcher resumes (unless whisper
+        is still active)."""
+        self._router.notify_tts_done()
+        return admin_pb2.TtsDoneResponse(released=True)
+
 
 class RouterInferenceServicer(inference_pb2_grpc.RouterInferenceServiceServicer):
     """gRPC inference surface for every internal module.

@@ -94,6 +94,16 @@ class RouterAdminServiceStub(object):
                 request_serializer=jervis_dot_router_dot_admin__pb2.WhisperDoneRequest.SerializeToString,
                 response_deserializer=jervis_dot_router_dot_admin__pb2.WhisperDoneResponse.FromString,
                 _registered_method=True)
+        self.TtsNotify = channel.unary_unary(
+                '/jervis.router.RouterAdminService/TtsNotify',
+                request_serializer=jervis_dot_router_dot_admin__pb2.TtsNotifyRequest.SerializeToString,
+                response_deserializer=jervis_dot_router_dot_admin__pb2.TtsNotifyResponse.FromString,
+                _registered_method=True)
+        self.TtsDone = channel.unary_unary(
+                '/jervis.router.RouterAdminService/TtsDone',
+                request_serializer=jervis_dot_router_dot_admin__pb2.TtsDoneRequest.SerializeToString,
+                response_deserializer=jervis_dot_router_dot_admin__pb2.TtsDoneResponse.FromString,
+                _registered_method=True)
 
 
 class RouterAdminServiceServicer(object):
@@ -190,6 +200,27 @@ class RouterAdminServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def TtsNotify(self, request, context):
+        """XTTS on VD signals it wants exclusive GPU for synthesis. Same active
+        preemption flow as WhisperNotify: cancel Ollama LLM/VLM, unload
+        their models, block until quiet. User contract:
+        "during whisper streaming AND during XTTS generation nothing else
+        runs on the GPU"
+        Embeddings are also dropped here — the caller is a user-facing audio
+        stream, every idle millisecond shows up as an audible gap.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def TtsDone(self, request, context):
+        """XTTS signals synthesis finished — router clears the semaphore and
+        Ollama dispatcher resumes.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_RouterAdminServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -247,6 +278,16 @@ def add_RouterAdminServiceServicer_to_server(servicer, server):
                     servicer.WhisperDone,
                     request_deserializer=jervis_dot_router_dot_admin__pb2.WhisperDoneRequest.FromString,
                     response_serializer=jervis_dot_router_dot_admin__pb2.WhisperDoneResponse.SerializeToString,
+            ),
+            'TtsNotify': grpc.unary_unary_rpc_method_handler(
+                    servicer.TtsNotify,
+                    request_deserializer=jervis_dot_router_dot_admin__pb2.TtsNotifyRequest.FromString,
+                    response_serializer=jervis_dot_router_dot_admin__pb2.TtsNotifyResponse.SerializeToString,
+            ),
+            'TtsDone': grpc.unary_unary_rpc_method_handler(
+                    servicer.TtsDone,
+                    request_deserializer=jervis_dot_router_dot_admin__pb2.TtsDoneRequest.FromString,
+                    response_serializer=jervis_dot_router_dot_admin__pb2.TtsDoneResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -551,6 +592,60 @@ class RouterAdminService(object):
             '/jervis.router.RouterAdminService/WhisperDone',
             jervis_dot_router_dot_admin__pb2.WhisperDoneRequest.SerializeToString,
             jervis_dot_router_dot_admin__pb2.WhisperDoneResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def TtsNotify(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.router.RouterAdminService/TtsNotify',
+            jervis_dot_router_dot_admin__pb2.TtsNotifyRequest.SerializeToString,
+            jervis_dot_router_dot_admin__pb2.TtsNotifyResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def TtsDone(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.router.RouterAdminService/TtsDone',
+            jervis_dot_router_dot_admin__pb2.TtsDoneRequest.SerializeToString,
+            jervis_dot_router_dot_admin__pb2.TtsDoneResponse.FromString,
             options,
             channel_credentials,
             insecure,

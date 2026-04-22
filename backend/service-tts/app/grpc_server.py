@@ -77,6 +77,7 @@ class TtsServicer(speak_pb2_grpc.TtsServiceServicer):
     ):
         from app import xtts_server
         from app import router_normalize
+        from app import router_preempt
 
         text = (request.text or "").strip()
         if not text:
@@ -95,6 +96,12 @@ class TtsServicer(speak_pb2_grpc.TtsServiceServicer):
         voice = request.voice or None
         client_id = request.ctx.scope.client_id if request.HasField("ctx") else ""
         project_id = request.ctx.scope.project_id if request.HasField("ctx") else ""
+
+        # Tell the router to clear the GPU before we start pulling sentences
+        # — user policy: "during whisper streaming AND during XTTS
+        # generation nothing else runs on the GPU". Best-effort: if the
+        # router is unreachable we still synthesize, just contended.
+        await router_preempt.tts_notify(preempt_timeout_s=20)
 
         # Two queues bridging three coroutines / threads:
         #   [normalize task] --sentence_q--> [inference thread] --chunk_q--> [gRPC yield]
@@ -161,6 +168,9 @@ class TtsServicer(speak_pb2_grpc.TtsServiceServicer):
             # sentinel on sentence_q.
             if not pump_task.done():
                 pump_task.cancel()
+            # Always release the GPU semaphore, even on cancel — otherwise
+            # Ollama stays blocked waiting for a TtsDone that never comes.
+            await router_preempt.tts_done()
 
 
 async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:

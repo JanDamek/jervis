@@ -134,11 +134,15 @@ Environment=TTS_GRPC_PORT=5501
 Environment=CUDA_VISIBLE_DEVICES=0
 Environment=PYTHONPATH=$INSTALL_DIR
 # Router address for TTS text normalization (jervis.router.RouterInferenceService).
-# Uses the external LAN ingress because XTTS runs on the GPU VM outside the K8s
-# cluster — in-cluster DNS (jervis-ollama-router.jervis.svc.cluster.local) is not
-# resolvable here. Same pattern as whisper (deploy_whisper_gpu.sh).
-Environment=ROUTER_GRPC_HOST=jervis-router.lan.mazlusek.com
-Environment=ROUTER_GRPC_PORT=5501
+# The Jervis router lives in K8s; XTTS runs on the GPU VM outside the cluster,
+# so in-cluster DNS (*.svc.cluster.local) isn't resolvable and the ingress only
+# fronts the REST port. We expose gRPC :5501 via a static NodePort (:30501 on
+# every cluster node — see app_ollama_router.yaml Service) and dial the worker
+# node directly. IP is hard-coded because the LAN DNS doesn't have a separate
+# entry for the K8s worker; if the cluster topology changes, update here + in
+# deploy_whisper_gpu.sh together.
+Environment=ROUTER_GRPC_HOST=192.168.101.37
+Environment=ROUTER_GRPC_PORT=30501
 
 [Install]
 WantedBy=multi-user.target
