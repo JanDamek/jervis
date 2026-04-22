@@ -848,13 +848,36 @@ async def notify_user(
         mfa_code=mfa_code or "",
         meeting_id=meeting_id or "",
     )
-    try:
-        resp = await server_o365_session_stub().Notify(request, timeout=10.0)
-        if kind == "urgent_message" and chat_id:
-            await ctx.storage.ledger_mark_urgent_sent(ctx.connection_id, chat_id)
-        return {"ok": True, "status": resp.status, "priority": resp.priority}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+    # Notify must survive a transient gRPC connection refused (server
+    # rolling restart, brief endpoint flap). Without retry the agent
+    # silently swallows the failure and waits as if the push went out
+    # — the user never sees the MFA number. Retry up to 4× with
+    # exponential backoff against UNAVAILABLE / DEADLINE_EXCEEDED;
+    # other gRPC statuses (e.g. INVALID_ARGUMENT) fail fast.
+    import asyncio as _asyncio
+    import grpc as _grpc
+    transient = {
+        _grpc.StatusCode.UNAVAILABLE,
+        _grpc.StatusCode.DEADLINE_EXCEEDED,
+        _grpc.StatusCode.INTERNAL,
+    }
+    last_err: Exception | None = None
+    for attempt in range(4):
+        try:
+            resp = await server_o365_session_stub().Notify(request, timeout=10.0)
+            if kind == "urgent_message" and chat_id:
+                await ctx.storage.ledger_mark_urgent_sent(ctx.connection_id, chat_id)
+            return {"ok": True, "status": resp.status, "priority": resp.priority}
+        except _grpc.aio.AioRpcError as e:
+            last_err = e
+            if e.code() not in transient:
+                return {"ok": False, "error": str(e)}
+            backoff = min(2 ** attempt, 8)
+            await _asyncio.sleep(backoff)
+            continue
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+    return {"ok": False, "error": f"notify_user gave up after 4 retries: {last_err}"}
 
 
 # ---- Work hours / activity ---------------------------------------------
