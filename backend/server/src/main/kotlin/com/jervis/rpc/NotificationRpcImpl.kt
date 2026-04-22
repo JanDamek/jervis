@@ -129,6 +129,18 @@ class NotificationRpcImpl : INotificationService {
         }
     }
 
+    // Meeting state / transcription / correction progress used to fan out
+    // to every connected UI client over the global event stream. That made
+    // sense back when MeetingScreen was the default landing page; now the
+    // global stream is reserved for cross-cutting events (UserTaskCreated,
+    // OrchestratorTaskProgress, ApprovalRequired, …) and the meeting UI
+    // pulls fresh state via `loadMeeting(id)` / `loadTimeline()` on open.
+    // Spamming idle clients with N MeetingStateChanged events per meeting
+    // tick clutters logs (`Received global event: MeetingStateChanged …`)
+    // for zero benefit. Keep the methods as no-ops so existing call sites
+    // compile; restore per-meeting subscription if/when live progress is
+    // actually wanted somewhere.
+    @Suppress("UNUSED_PARAMETER")
     suspend fun emitMeetingStateChanged(
         meetingId: String,
         clientId: String,
@@ -136,19 +148,10 @@ class NotificationRpcImpl : INotificationService {
         title: String? = null,
         errorMessage: String? = null,
     ) {
-        val event = JervisEvent.MeetingStateChanged(
-            meetingId = meetingId,
-            clientId = clientId,
-            newState = newState,
-            title = title,
-            errorMessage = errorMessage,
-            timestamp = Instant.now().toString(),
-        )
-        eventStreams.keys().asSequence().forEach { id ->
-            emitEvent(id, event)
-        }
+        // intentionally dropped — see comment above
     }
 
+    @Suppress("UNUSED_PARAMETER")
     suspend fun emitMeetingTranscriptionProgress(
         meetingId: String,
         clientId: String,
@@ -157,20 +160,10 @@ class NotificationRpcImpl : INotificationService {
         elapsedSeconds: Double,
         lastSegmentText: String? = null,
     ) {
-        val event = JervisEvent.MeetingTranscriptionProgress(
-            meetingId = meetingId,
-            clientId = clientId,
-            percent = percent,
-            segmentsDone = segmentsDone,
-            elapsedSeconds = elapsedSeconds,
-            lastSegmentText = lastSegmentText,
-            timestamp = Instant.now().toString(),
-        )
-        eventStreams.keys().asSequence().forEach { id ->
-            emitEvent(id, event)
-        }
+        // intentionally dropped — see comment above
     }
 
+    @Suppress("UNUSED_PARAMETER")
     suspend fun emitMeetingCorrectionProgress(
         meetingId: String,
         clientId: String,
@@ -180,19 +173,7 @@ class NotificationRpcImpl : INotificationService {
         message: String? = null,
         tokensGenerated: Int = 0,
     ) {
-        val event = JervisEvent.MeetingCorrectionProgress(
-            meetingId = meetingId,
-            clientId = clientId,
-            percent = percent,
-            chunksDone = chunksDone,
-            totalChunks = totalChunks,
-            message = message,
-            tokensGenerated = tokensGenerated,
-            timestamp = Instant.now().toString(),
-        )
-        eventStreams.keys().asSequence().forEach { id ->
-            emitEvent(id, event)
-        }
+        // intentionally dropped — see comment above
     }
 
     suspend fun emitQualificationProgress(

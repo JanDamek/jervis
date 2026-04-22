@@ -351,21 +351,18 @@ class MeetingViewModel(
         }
     }
 
+    /**
+     * No-op kept for source compatibility with `MeetingsScreen` until the
+     * call site is updated. Meeting events are no longer fanned out on
+     * the global stream — `loadMeeting(id)` / `loadTimeline()` fetch a
+     * fresh snapshot when the screen opens, and the active recording
+     * path uses its own per-meeting subscription. Subscribing here would
+     * just duplicate `MainViewModel.subscribeToEventStream`.
+     */
+    @Suppress("UNUSED_PARAMETER")
     fun subscribeToEvents(clientId: String) {
         eventSubscriptionJob?.cancel()
-        eventSubscriptionJob = scope.launch {
-            connectionManager.resilientFlow { services ->
-                services.notificationService.subscribeToEvents(clientId)
-            }.collect { event ->
-                when (event) {
-                    is JervisEvent.MeetingStateChanged -> handleMeetingStateChanged(event)
-                    is JervisEvent.MeetingTranscriptionProgress -> handleTranscriptionProgress(event)
-                    is JervisEvent.MeetingCorrectionProgress -> handleCorrectionProgress(event)
-                    is JervisEvent.MeetingHelperMessage -> handleHelperMessage(event)
-                    else -> {}
-                }
-            }
-        }
+        eventSubscriptionJob = null
     }
 
     private fun handleMeetingStateChanged(event: JervisEvent.MeetingStateChanged) {

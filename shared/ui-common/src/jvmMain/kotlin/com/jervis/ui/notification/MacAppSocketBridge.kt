@@ -55,14 +55,30 @@ internal object MacAppSocketBridge {
 
     private suspend fun runLoop(socketPath: String) {
         val path = Path.of(socketPath)
+        var lastErrorLogged: String? = null
         while (scope.isActive) {
             if (!path.exists()) {
-                delay(500L)
+                // No helper running. Stay silent — many users run Compose
+                // Desktop without the macApp helper at all (Win/Linux,
+                // Mac users who haven't enabled APNs). Poll lazily.
+                delay(30_000L)
                 continue
             }
-            runCatching { openAndRead(path) }
-                .onFailure { e -> println("macApp socket error: ${e.message}") }
-            delay(1_000L) // backoff before reconnecting if Swift host restarts
+            val outcome = runCatching { openAndRead(path) }
+            outcome.onFailure { e ->
+                val msg = e.message ?: e::class.simpleName ?: "unknown"
+                // Log each distinct error once, then stay silent until the
+                // condition changes — avoids "Connection refused" spam every
+                // second while the Swift host is being rebuilt.
+                if (msg != lastErrorLogged) {
+                    println("macApp socket error: $msg")
+                    lastErrorLogged = msg
+                }
+            }
+            // Reset the dedup once a connect succeeds so the next genuine
+            // error gets surfaced.
+            if (outcome.isSuccess) lastErrorLogged = null
+            delay(5_000L)
         }
     }
 

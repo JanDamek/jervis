@@ -274,7 +274,6 @@ class MainViewModel(
     }
 
     private fun handleGlobalEvent(event: JervisEvent) {
-        println("Received global event: ${event::class.simpleName}")
         when (event) {
             is JervisEvent.UserTaskCreated -> notification.handleUserTaskCreated(event)
             is JervisEvent.UserTaskCancelled -> {
@@ -282,9 +281,12 @@ class MainViewModel(
                 _userTaskCancelled.tryEmit(event.taskId)
             }
             is JervisEvent.ErrorNotification -> _errorMessage.value = "Server error: ${event.message}"
-            is JervisEvent.MeetingStateChanged -> { /* Handled by MeetingViewModel */ }
-            is JervisEvent.MeetingTranscriptionProgress -> { /* Handled by MeetingViewModel */ }
-            is JervisEvent.MeetingCorrectionProgress -> { /* Handled by MeetingViewModel */ }
+            is JervisEvent.MeetingStateChanged,
+            is JervisEvent.MeetingTranscriptionProgress,
+            is JervisEvent.MeetingCorrectionProgress -> {
+                // Server no longer fans these out (see NotificationRpcImpl).
+                // Defensive no-op in case a stale build still emits them.
+            }
             is JervisEvent.OrchestratorTaskProgress -> queue.handleOrchestratorProgress(event)
             is JervisEvent.OrchestratorTaskStatusChange -> queue.handleOrchestratorStatusChange(event)
             is JervisEvent.QualificationProgress -> queue.handleQualificationProgress(event)
