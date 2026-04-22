@@ -52,6 +52,7 @@ import kotlinx.rpc.krpc.ktor.client.rpc
 import kotlinx.rpc.krpc.serialization.cbor.cbor
 import kotlinx.rpc.withService
 import kotlinx.serialization.ExperimentalSerializationApi
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -80,16 +81,23 @@ object NetworkModule {
             }
 
             install(HttpTimeout) {
-                requestTimeoutMillis = 120_000
+                // Only the initial handshake has a bounded timeout; the
+                // WebSocket session itself must live as long as the server
+                // keeps streaming (TTS audio or meeting transcripts can
+                // easily run past 2 minutes). requestTimeoutMillis acts on
+                // the whole upgraded HTTP request so any finite value kills
+                // legitimate long streams mid-way.
+                requestTimeoutMillis = Long.MAX_VALUE
                 connectTimeoutMillis = 20_000
-                socketTimeoutMillis = 120_000
+                socketTimeoutMillis = Long.MAX_VALUE
             }
 
             install(WebSockets) {
-                // Aligned with server pingPeriodMillis=10_000 (KtorRpcServer.kt).
-                // Both ends ping every 10s so transport-layer death is detected
-                // within ~15s even if the heartbeat RPC itself is wedged.
-                pingInterval = 10.seconds
+                // No application-layer ping — matches the server (which also
+                // has ping disabled). TCP RST / OS keepalive detects dead
+                // peers; aggressive pings only racedwith legitimate long
+                // streams whose audio thread was briefly busy.
+                pingInterval = Duration.ZERO
                 maxFrameSize = Long.MAX_VALUE
             }
 
