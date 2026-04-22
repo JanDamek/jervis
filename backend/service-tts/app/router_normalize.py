@@ -129,13 +129,16 @@ def _fallback_sentences(text: str) -> list[str]:
 
 def _build_ctx(client_id: str, project_id: str) -> types_pb2.RequestContext:
     scope = types_pb2.Scope(client_id=client_id or "", project_id=project_id or "")
-    # Tight deadline so the router treats this as urgent — user is waiting
-    # for audio, this request must jump ahead of background kb-extract /
-    # qualifier jobs that also target the chat queue.
+    # Tight deadline + CRITICAL priority: the user is already waiting for
+    # audio, this request MUST jump ahead of background kb-extract jobs.
+    # Router `_resolve_priority` currently reads only explicit priority
+    # (deadline_iso → priority routing is on the roadmap), so we set
+    # priority explicitly; deadline stays informational for downstream.
     deadline_iso = (datetime.datetime.utcnow() + datetime.timedelta(seconds=15)).isoformat() + "Z"
     return types_pb2.RequestContext(
         scope=scope,
         capability=enums_pb2.CAPABILITY_CHAT,
+        priority=enums_pb2.PRIORITY_CRITICAL,
         intent="tts_normalize",
         deadline_iso=deadline_iso,
         request_id=str(uuid.uuid4()),
