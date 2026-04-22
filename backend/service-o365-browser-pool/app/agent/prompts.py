@@ -271,7 +271,21 @@ The decision tree every cycle:
         `known_message_hashes` AND whose timestamp is newer than
         `last_message_timestamp`: `store_message(chat_id, chat_name,
         message_id=<DOM data-mid or empty>, sender, content,
-        timestamp, is_mention, attachment_kind)`.
+        timestamp, is_mention, is_self, attachment_kind)`.
+
+        `is_self=true` MUST be set whenever the message was authored
+        by the logged-in user. Detection rules (any of these is
+        sufficient):
+          - Teams DOM marks the row "You: …" / "Vy: …" / right-aligned
+            bubble with no avatar (consistent across teams.cloud.microsoft
+            and teams.microsoft.com/v2).
+          - The visible sender name matches the `login_email` (or its
+            local-part / display-name) from the state block above.
+          - `data-author-id` / `data-mri` matches the current user MRI
+            when the DOM exposes it.
+        Without this flag the server cannot tell that you replied
+        yourself and would generate a "Direct od <vy>" USER_TASK on
+        every cycle. Self-only chats are dropped at the indexer.
      d. Once you hit a known hash (or exhausted the visible window),
         stop scrolling. If `message_count == 0` (first scrape),
         paginate backward with `scroll` until the chat hits its

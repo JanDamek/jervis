@@ -927,6 +927,7 @@ async def store_message(
     content: str,
     timestamp: str = "",
     is_mention: bool = False,
+    is_self: bool = False,
     attachment_kind: str = "",
 ) -> dict:
     """Insert one observed message into o365_scrape_messages (state=NEW).
@@ -942,6 +943,12 @@ async def store_message(
         content: Message text.
         timestamp: ISO or UI-visible timestamp string.
         is_mention: True when the logged-in user was @mentioned.
+        is_self: True when this message was authored by the logged-in
+            user (Teams DOM marker "You:" / "Vy:" / sender matches the
+            account `login_email` from the state block). Drives whether
+            the indexer treats the chat as needing a reply — a chat
+            whose last message is `is_self=true` does not need
+            qualification (the user already answered).
         attachment_kind: 'image', 'file', 'video', 'audio', 'link', or ''.
     """
     ctx = get_pod_context()
@@ -955,6 +962,7 @@ async def store_message(
         content=content,
         timestamp=timestamp or None,
         is_mention=bool(is_mention),
+        is_self=bool(is_self),
         attachment_kind=attachment_kind or None,
     )
     return {"ok": True, "inserted": inserted}

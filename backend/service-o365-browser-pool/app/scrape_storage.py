@@ -232,6 +232,7 @@ class ScrapeStorage:
         content: str,
         timestamp: str | None,
         is_mention: bool,
+        is_self: bool = False,
         attachment_kind: str | None,
     ) -> bool:
         """Upsert a single observed message (agent-composed scraping).
@@ -261,6 +262,7 @@ class ScrapeStorage:
                         "content": content,
                         "timestamp": timestamp,
                         "isMention": is_mention,
+                        "isSelf": is_self,
                         "attachmentKind": attachment_kind,
                         "messageType": "chat",
                         "state": "NEW",

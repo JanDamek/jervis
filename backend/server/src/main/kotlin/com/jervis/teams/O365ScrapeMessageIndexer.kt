@@ -105,6 +105,22 @@ class O365ScrapeMessageIndexer(
         val connectionId = first.connectionId
         val clientId = first.clientId
 
+        // Self-tail short-circuit: if every newly observed message in this
+        // batch is authored by the logged-in user (the agent flagged
+        // isSelf=true on each), the chat does NOT need a follow-up
+        // qualification — the user has already replied. Mark the rows
+        // PROCESSED so they don't loop, but skip TaskDocument creation
+        // entirely. KB ingest still happens via the existing meeting/
+        // chat indexers; we just don't escalate to a USER_TASK.
+        val sortedNewest = messages.sortedByDescending { it.timestamp }
+        if (sortedNewest.all { it.isSelf }) {
+            messages.forEach { markAsState(it, "PROCESSED") }
+            logger.info {
+                "Skipped task creation for chat=$chatName (${messages.size} self-only messages, no reply needed)"
+            }
+            return
+        }
+
         val content = buildString {
             appendLine("# Teams Chat: $chatName")
             appendLine()
@@ -112,7 +128,8 @@ class O365ScrapeMessageIndexer(
                 val sender = msg.sender ?: "?"
                 val time = msg.timestamp ?: ""
                 val text = msg.content ?: ""
-                appendLine("**$sender** ($time):")
+                val selfTag = if (msg.isSelf) " [you]" else ""
+                appendLine("**$sender**$selfTag ($time):")
                 appendLine(text)
                 appendLine()
             }

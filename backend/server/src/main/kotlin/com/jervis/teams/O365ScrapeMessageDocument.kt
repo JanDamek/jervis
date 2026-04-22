@@ -31,4 +31,14 @@ data class O365ScrapeMessageDocument(
     val messageType: String? = null, // "chat", "email", "calendar"
     val state: String = "NEW",
     val createdAt: Instant? = null,
+    /**
+     * True when the message was authored by the logged-in user
+     * (Teams DOM "You:" / "Vy:" marker, or sender matches the
+     * connection's `login_email`). The indexer uses this to decide
+     * whether the chat needs qualification — a chat whose newest
+     * message is from the user does not need a follow-up reply task.
+     */
+    val isSelf: Boolean = false,
+    val isMention: Boolean = false,
+    val attachmentKind: String? = null,
 )
