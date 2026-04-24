@@ -30,8 +30,9 @@ logger = logging.getLogger(__name__)
 
 COMPANION_IMAGE = f"{settings.container_registry}/jervis-claude:latest"
 COMPANION_ENTRYPOINT = "/opt/jervis/entrypoint-companion.sh"
-COMPANION_SESSION_TIMEOUT = 8 * 3600  # 8h hard safety cap
-COMPANION_ADHOC_TIMEOUT = 30 * 60
+# No hard time caps — Jervis runs overnight on 2-3 clients, hard cut-off
+# would kill productive work mid-session. Reclamation is event-driven:
+# the runner's done-callback + K8s watch detect real completion.
 
 
 @dataclass
@@ -89,7 +90,6 @@ class CompanionRunner:
             client_id=client_id,
             project_id=project_id or "",
             workspace_path=str(workspace),
-            timeout=COMPANION_ADHOC_TIMEOUT,
         )
 
         logger.info("Dispatching companion (adhoc): %s (task=%s)", job_name, task_id)
@@ -158,7 +158,6 @@ class CompanionRunner:
             client_id=client_id,
             project_id=project_id or "",
             workspace_path=str(workspace),
-            timeout=COMPANION_SESSION_TIMEOUT,
         )
 
         logger.info("Starting companion session: %s (id=%s)", job_name, sid)
@@ -380,7 +379,6 @@ class CompanionRunner:
         client_id: str,
         project_id: str,
         workspace_path: str,
-        timeout: int,
     ) -> client.V1Job:
         env_vars = [
             client.V1EnvVar(name="TASK_ID", value=task_id),
@@ -435,7 +433,6 @@ class CompanionRunner:
             spec=client.V1JobSpec(
                 ttl_seconds_after_finished=settings.job_ttl_seconds,
                 backoff_limit=0,
-                active_deadline_seconds=timeout,
                 template=client.V1PodTemplateSpec(
                     metadata=client.V1ObjectMeta(labels=labels),
                     spec=client.V1PodSpec(

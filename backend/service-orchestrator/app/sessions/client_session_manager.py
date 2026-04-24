@@ -215,12 +215,23 @@ class ClientSessionManager:
             name=f"claude-session-{session_id}",
         )
         # Wait for the SDK context to enter and emit the ready sentinel.
-        try:
-            await asyncio.wait_for(session.ready_event.wait(), timeout=30.0)
-        except asyncio.TimeoutError:
-            logger.error("session task failed to become ready | session=%s", session_id)
-            await self._teardown(session)
-            raise RuntimeError("claude session failed to initialize within 30s")
+        # No hard timeout — if the SDK subprocess is slow to boot (cold
+        # container, big system prompt, MCP server discovery), we wait.
+        # If it truly fails, the session task itself will exit and we
+        # detect it via task.done().
+        while not session.ready_event.is_set():
+            if session.task.done():
+                exc = session.task.exception()
+                logger.error(
+                    "session task died before ready | session=%s exc=%s",
+                    session_id, exc,
+                )
+                await self._teardown(session)
+                raise RuntimeError(f"claude session task exited before ready: {exc}")
+            try:
+                await asyncio.wait_for(session.ready_event.wait(), timeout=5.0)
+            except asyncio.TimeoutError:
+                continue
 
         # Kick off the periodic-compact loop so a mid-session SIGKILL
         # still leaves a fairly fresh narrative on disk (reduces delta
@@ -450,14 +461,20 @@ class ClientSessionManager:
                 logger.warning("compact dispatch failed | session=%s: %s", session.session_id, e)
                 return None
 
+            # No hard cap — compact turn runs as long as Claude needs
+            # (project rule: no timeouts). Loop exits on _TURN_DONE,
+            # __error__, or the session task dying.
             collected: list[str] = []
-            deadline = time.monotonic() + COMPACT_TIMEOUT
-            while time.monotonic() < deadline:
-                try:
-                    item = await asyncio.wait_for(session.out_queue.get(),
-                                                  timeout=deadline - time.monotonic())
-                except asyncio.TimeoutError:
+            while True:
+                if session.stop_flag.is_set() or (session.task and session.task.done()):
                     break
+                try:
+                    item = await asyncio.wait_for(
+                        session.out_queue.get(),
+                        timeout=IDLE_KEEPALIVE_SECONDS,
+                    )
+                except asyncio.TimeoutError:
+                    continue
                 if item is _TURN_DONE:
                     break
                 if isinstance(item, tuple) and item and item[0] == "__error__":
