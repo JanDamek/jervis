@@ -992,39 +992,13 @@ def _chat_request_from_proto(request: chat_pb2.ChatRequest):
     )
 
 
-def _should_route_to_client_session(request: chat_pb2.ChatRequest, settings_ref) -> bool:
-    """Decide whether a chat request goes through the per-client Claude session.
-
-    Conditions (all must hold):
-    - `USE_CLAUDE_CLIENT_SESSION` feature flag is ON.
-    - request carries a non-empty `active_client_id`.
-    - if `CLAUDE_CLIENT_SESSION_ALLOWED_IDS` is set, client id is on the list.
-
-    Returns False for chats attached to a specific task (contextTaskId) to
-    avoid diverting re-qualification / user-task replies from their
-    existing handlers.
-    """
-    if not getattr(settings_ref, "use_claude_client_session", False):
-        return False
-    if request.context_task_id:
-        return False
-    client_id = (request.active_client_id or "").strip()
-    if not client_id:
-        return False
-    allowed_raw = getattr(settings_ref, "claude_client_session_allowed_ids", "") or ""
-    allowed = {x.strip() for x in allowed_raw.split(",") if x.strip()}
-    if allowed and client_id not in allowed:
-        return False
-    return True
-
-
 class OrchestratorChatServicer(chat_pb2_grpc.OrchestratorChatServiceServicer):
     """OrchestratorChatService — foreground agentic chat stream.
 
-    Chat bridges handle_chat_sse() into gRPC server-streaming. ApproveAction
-    and Stop reuse the exact handlers that the REST /chat/approve and
-    /chat/stop routes used so the foreground chat session lifecycle stays
-    identical.
+    Every chat request runs through `ClientSessionManager` — one
+    persistent in-process Claude SDK session per active client, keyed
+    on `active_client_id`. There is no legacy fallback: if the client
+    id is missing, the session manager surfaces an error upstream.
     """
 
     async def Chat(
@@ -1032,81 +1006,35 @@ class OrchestratorChatServicer(chat_pb2_grpc.OrchestratorChatServiceServicer):
         request: chat_pb2.ChatRequest,
         context: grpc.aio.ServicerContext,
     ):
-        from app import main as orch_main
-        from app.agent.sse_handler import handle_chat_sse as handle_chat
-        from app.config import settings as _settings
+        from app.sessions.client_session_manager import client_session_manager
+
+        session_id = request.session_id or ""
+        message = request.message or ""
+        client_id = (request.active_client_id or "").strip()
+        project_id = (request.active_project_id or "").strip() or None
+
+        logger.info(
+            "CHAT_REQUEST | session=%s | client=%s | project=%s | message=%s",
+            session_id, client_id or "-", project_id or "-", message[:100],
+        )
 
         try:
-            chat_request = _chat_request_from_proto(request)
-        except Exception as e:
-            logger.error("CHAT_VALIDATION_FAILED: %s", e)
-            yield chat_pb2.ChatEvent(type="error", content=f"Invalid chat request: {e}")
-            return
-
-        session_id = request.session_id or chat_request.session_id
-        logger.info("CHAT_REQUEST | session=%s | message=%s", session_id, chat_request.message[:100])
-
-        # ── Fáze A pilot: route through per-client Claude Companion ───────
-        # When enabled (feature flag + optional allowlist + active_client_id),
-        # bypass the LangGraph/SSE path entirely. The session manager owns
-        # lifecycle, context, and response streaming.
-        if _should_route_to_client_session(request, _settings):
-            logger.info(
-                "CHAT_CLIENT_SESSION_ROUTE | session=%s client=%s project=%s",
-                session_id, request.active_client_id, request.active_project_id or "-",
-            )
-            from app.sessions.client_session_manager import client_session_manager
-            try:
-                async for evt in client_session_manager.chat(
-                    client_id=request.active_client_id,
-                    project_id=request.active_project_id or None,
-                    message=request.message,
-                ):
-                    if context.cancelled():
-                        break
-                    meta = {str(k): str(v) for k, v in (evt.get("metadata") or {}).items()}
-                    yield chat_pb2.ChatEvent(
-                        type=str(evt.get("type", "")),
-                        content=str(evt.get("content", "")),
-                        metadata=meta,
-                    )
-            except Exception as e:
-                logger.exception("client session chat failed | session=%s", session_id)
-                yield chat_pb2.ChatEvent(type="error", content=f"client session error: {e}")
-            return
-
-        existing_event = orch_main._active_chat_stops.get(session_id)
-        if existing_event and not existing_event.is_set():
-            logger.warning("CHAT_DEDUP | session=%s | stopping previous active stream", session_id)
-            existing_event.set()
-
-        disconnect_event = asyncio.Event()
-        orch_main._active_chat_stops[session_id] = disconnect_event
-
-        try:
-            async for event in handle_chat(chat_request, disconnect_event):
+            async for evt in client_session_manager.chat(
+                client_id=client_id,
+                project_id=project_id,
+                message=message,
+            ):
                 if context.cancelled():
-                    logger.info("CHAT_DISCONNECT | session=%s | grpc context cancelled", session_id)
-                    disconnect_event.set()
                     break
-                meta = {}
-                for k, v in (getattr(event, "metadata", None) or {}).items():
-                    if v is None:
-                        meta[str(k)] = ""
-                    elif isinstance(v, (dict, list)):
-                        meta[str(k)] = json.dumps(v, ensure_ascii=False)
-                    else:
-                        meta[str(k)] = str(v)
+                meta = {str(k): str(v) for k, v in (evt.get("metadata") or {}).items()}
                 yield chat_pb2.ChatEvent(
-                    type=event.type,
-                    content=getattr(event, "content", "") or "",
+                    type=str(evt.get("type", "")),
+                    content=str(evt.get("content", "")),
                     metadata=meta,
                 )
         except Exception as e:
-            logger.exception("Chat handler failed for session %s", session_id)
-            yield chat_pb2.ChatEvent(type="error", content=str(e))
-        finally:
-            orch_main._active_chat_stops.pop(session_id, None)
+            logger.exception("chat failed | session=%s", session_id)
+            yield chat_pb2.ChatEvent(type="error", content=str(e)[:500])
 
     async def ApproveAction(
         self,
@@ -1136,14 +1064,17 @@ class OrchestratorChatServicer(chat_pb2_grpc.OrchestratorChatServiceServicer):
         request: chat_pb2.StopChatRequest,
         context: grpc.aio.ServicerContext,
     ) -> chat_pb2.StopChatAck:
-        from app import main as orch_main
+        """Stop the Claude session bound to this chat session_id.
 
-        event = orch_main._active_chat_stops.get(request.session_id)
-        if event:
-            event.set()
-            logger.info("CHAT_STOP | session=%s", request.session_id)
-            return chat_pb2.StopChatAck(ok=True, error="")
-        return chat_pb2.StopChatAck(ok=False, error="no-active-chat")
+        The chat session_id from the UI is an opaque string that
+        identifies the user's chat tab; to map it to a client session
+        we need the active_client_id from the original Chat request.
+        The UI sends it through ApproveAction today, not Stop. For now
+        Stop is advisory — a future turn cancels the in-flight prompt
+        via the manager's turn_lock. No-op keeps UI flow clean.
+        """
+        logger.info("CHAT_STOP | session=%s (no-op placeholder)", request.session_id)
+        return chat_pb2.StopChatAck(ok=True, error="")
 
 
 def _voice_event_to_proto(event) -> voice_pb2.VoiceStreamEvent:

@@ -113,16 +113,36 @@ class ClientSessionManager:
         message: str,
     ) -> AsyncIterator[dict]:
         if not client_id:
-            yield {"type": "error", "content": "client session requires active_client_id"}
+            yield {
+                "type": "error",
+                "content": "client session requires active_client_id",
+                "metadata": {"clientId": "", "projectId": ""},
+            }
             return
 
         session = await self._get_or_create(client_id, project_id)
+        scope_meta = {
+            "clientId": client_id,
+            "projectId": project_id or "",
+            "sessionId": session.session_id,
+        }
+
+        def _tag(evt: dict) -> dict:
+            """Stamp the scope on every emitted event so the UI can filter
+            responses that belong to a client the user is not currently
+            looking at. Without this tag the shared chat event stream
+            mixes concurrent sessions in the same UI view."""
+            meta = dict(evt.get("metadata") or {})
+            for k, v in scope_meta.items():
+                meta.setdefault(k, v)
+            evt["metadata"] = meta
+            return evt
 
         async with session.turn_lock:
             session.last_activity_monotonic = time.monotonic()
             try:
                 async for evt in self._one_turn(session, message):
-                    yield evt
+                    yield _tag(evt)
                     if evt.get("type") in ("done", "error"):
                         session.last_activity_monotonic = time.monotonic()
                         return
@@ -132,7 +152,7 @@ class ClientSessionManager:
                 async with self._registry_lock:
                     if self._sessions.get(client_id) is session:
                         self._sessions.pop(client_id, None)
-                yield {"type": "error", "content": f"claude session error: {e}"}
+                yield _tag({"type": "error", "content": f"claude session error: {e}"})
 
     async def stop_session(self, client_id: str) -> bool:
         return await self._stop_session_internal(client_id, reason="manual stop")

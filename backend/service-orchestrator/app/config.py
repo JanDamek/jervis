@@ -108,15 +108,6 @@ class Settings(BaseSettings):
     # Claude companion (parallel deep-analysis agent)
     companion_max_concurrent_sessions: int = int(os.getenv("COMPANION_MAX_CONCURRENT_SESSIONS", "3"))
     companion_max_adhoc_per_hour: int = int(os.getenv("COMPANION_MAX_ADHOC_PER_HOUR", "10"))
-
-    # Fáze A pilot — route chat-with-clientId through a lazy per-client
-    # Claude Companion session instead of the LangGraph chat handler.
-    # Feature flag; default OFF. When ON, a chat message that carries
-    # active_client_id is dispatched to ClientSessionManager.
-    use_claude_client_session: bool = os.getenv("USE_CLAUDE_CLIENT_SESSION", "false").lower() in {"1", "true", "yes"}
-    # Optional allowlist of client IDs enabled for the pilot. Empty = all
-    # clients eligible (when the flag above is ON). Comma-separated.
-    claude_client_session_allowed_ids: str = os.getenv("CLAUDE_CLIENT_SESSION_ALLOWED_IDS", "")
     # Inbox tail sleep inside the Job runner between file reads. Small on purpose.
     companion_inbox_poll_interval: float = float(os.getenv("COMPANION_INBOX_POLL_INTERVAL", "0.2"))
     # Assistant hints are "into the ear" — anything older than this is stale.

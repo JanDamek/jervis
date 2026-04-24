@@ -241,20 +241,16 @@ async def lifespan(app: FastAPI):
     grpc_server = await start_grpc_server(port=grpc_port)
     app.state.grpc_server = grpc_server
 
-    # Fáze A pilot — per-client Claude Companion session registry.
+    # Per-client Claude SDK session registry — the sole chat handler.
     # Sessions stay alive until pod shutdown or an explicit stop call;
-    # nightly maintenance (Fáze B) will batch-compact them. Flag can flip
-    # at runtime; the manager no-ops for unrouted chats either way.
+    # nightly maintenance (qualifier layer) will batch-compact them.
     from app.sessions.compact_store import ensure_indexes as _compact_indexes
     from app.sessions.client_session_manager import client_session_manager  # noqa: F401
     try:
         await _compact_indexes()
     except Exception:
         logger.exception("compact_snapshots index init failed — continuing")
-    if settings.use_claude_client_session:
-        logger.info("Claude client-session manager active (USE_CLAUDE_CLIENT_SESSION=true)")
-    else:
-        logger.info("Claude client-session manager dormant (flag OFF)")
+    logger.info("Claude client-session manager ready")
 
     yield
 

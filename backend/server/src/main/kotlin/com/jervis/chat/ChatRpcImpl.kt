@@ -110,8 +110,19 @@ class ChatRpcImpl(
             ),
         )
 
-        // Stream live events only
+        // Stream live events only. Filter out events whose `clientId`
+        // metadata does not match the subscriber's current scope so that
+        // parallel Claude sessions (one per client) do not bleed into
+        // each other's chat view. Events without a `clientId` tag pass
+        // through — they're global (HISTORY_LOADED, scope_change, K reakci).
         chatEventStream.collect { event ->
+            val eventClientId = event.metadata["clientId"]?.takeIf { it.isNotBlank() }
+            if (eventClientId != null) {
+                val currentScope = chatService.getOrCreateActiveSession().lastClientId ?: ""
+                if (currentScope.isNotBlank() && currentScope != eventClientId) {
+                    return@collect
+                }
+            }
             emit(event)
         }
     }
@@ -1032,7 +1043,11 @@ class ChatRpcImpl(
         ))
     }
 
-    override fun streamTts(text: String): Flow<com.jervis.dto.chat.TtsChunkEvent> = flow {
+    override fun streamTts(
+        text: String,
+        activeClientId: String?,
+        activeProjectId: String?,
+    ): Flow<com.jervis.dto.chat.TtsChunkEvent> = flow {
         if (text.isBlank()) {
             emit(com.jervis.dto.chat.TtsChunkEvent(
                 type = com.jervis.dto.chat.TtsChunkEventType.ERROR,
@@ -1060,9 +1075,8 @@ class ChatRpcImpl(
                 text = text,
                 speed = ttsProperties.speed.toDouble(),
                 language = "cs",
-                clientId = ttsProperties.normalizeClientId,
-                projectId = ttsProperties.normalizeProjectId,
-                maxTier = ttsProperties.normalizeMaxTier,
+                clientId = activeClientId.orEmpty(),
+                projectId = activeProjectId.orEmpty(),
             ).collect { chunk ->
                 val bytes = chunk.data.toByteArray()
                 if (bytes.isNotEmpty()) {
