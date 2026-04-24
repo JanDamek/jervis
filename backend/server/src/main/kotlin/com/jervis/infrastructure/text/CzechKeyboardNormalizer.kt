@@ -11,7 +11,10 @@ import jakarta.annotation.PostConstruct
  *
  * 1. **CZ-digit sequences**: Detects sequences of CZ-layout digit characters
  *    (ě=2, š=3, č=4, ř=5, ž=6, ý=7, á=8, í=9, é=0) and converts them to digits.
- *    Only applies when the sequence looks numeric (3+ consecutive CZ-digit chars).
+ *    Conversion requires (a) length ≥3, (b) standalone — not embedded in a word
+ *    (no letter directly before/after), (c) the literal sequence is not a known
+ *    Czech word. Without these guards, real words like "běží" would become "b269"
+ *    and "šíří" would become "3959".
  *
  * 2. **Y↔Z word correction**: Per-word check using Czech dictionary (cs_CZ Hunspell).
  *    If a word is not in dictionary but the Y↔Z swapped version IS → correct it.
@@ -104,15 +107,15 @@ class CzechKeyboardNormalizer {
     }
 
     private fun convertCzDigitsInLine(line: String): String {
-        // Look for segments after common label patterns: "Částka:", "VS:", "Protiúčet:" etc.
-        // Or standalone sequences of CZ-digit chars
         val result = StringBuilder()
         var i = 0
         while (i < line.length) {
-            // Try to match a CZ-digit sequence starting here
             val seqEnd = findCzDigitSequenceEnd(line, i)
-            if (seqEnd > i && seqEnd - i >= 3) {
-                // Convert the sequence
+            val shouldConvert = seqEnd > i &&
+                seqEnd - i >= 3 &&
+                isStandaloneSequence(line, i, seqEnd) &&
+                !isCzechWord(line, i, seqEnd)
+            if (shouldConvert) {
                 for (j in i until seqEnd) {
                     val ch = line[j]
                     result.append(czDigitMap[ch] ?: ch)
@@ -124,6 +127,26 @@ class CzechKeyboardNormalizer {
             }
         }
         return result.toString()
+    }
+
+    /**
+     * Sequence must not be embedded inside a word — prevents breaking words like
+     * "běží" (b + ěží diacritic run) into "b269".
+     */
+    private fun isStandaloneSequence(s: String, start: Int, end: Int): Boolean {
+        val beforeOk = start == 0 || !s[start - 1].isLetter()
+        val afterOk = end >= s.length || !s[end].isLetter()
+        return beforeOk && afterOk
+    }
+
+    /**
+     * Dictionary guard — if the literal sequence is a known Czech word, keep it.
+     * Prevents breaking standalone words like "šíří", "šéf" that happen to consist
+     * entirely of CZ-digit diacritics.
+     */
+    private fun isCzechWord(s: String, start: Int, end: Int): Boolean {
+        if (czechWords.isEmpty()) return false
+        return s.substring(start, end).lowercase() in czechWords
     }
 
     /**

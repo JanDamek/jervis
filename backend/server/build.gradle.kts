@@ -1,3 +1,9 @@
+import java.io.BufferedWriter
+import java.io.OutputStreamWriter
+import java.net.HttpURLConnection
+import java.net.URI
+import java.util.zip.GZIPOutputStream
+
 plugins {
     alias(libs.plugins.spring.boot)
     alias(libs.plugins.spring.dependency.management)
@@ -170,4 +176,82 @@ tasks.register("printJoernVersion") {
     doLast {
         println(joernVersion)
     }
+}
+
+/**
+ * Refresh Czech wordlist from hermitdave/FrequencyWords if upstream has a newer commit.
+ * Runs before processResources — network failures are logged but do not fail the build
+ * (existing local wordlist is kept).
+ */
+tasks.register("updateCzechWordlist") {
+    val resourceDir = layout.projectDirectory.dir("src/main/resources")
+    val wordlistFile = resourceDir.file("cs_words.txt.gz").asFile
+    val versionFile = resourceDir.file("cs_words.version").asFile
+    val path = "content/2018/cs/cs_full.txt"
+    val apiUrl = "https://api.github.com/repos/hermitdave/FrequencyWords/commits?path=$path&per_page=1"
+    val rawUrl = "https://raw.githubusercontent.com/hermitdave/FrequencyWords/master/$path"
+
+    outputs.file(wordlistFile)
+    outputs.file(versionFile)
+    outputs.upToDateWhen { false } // Always check upstream version
+
+    doLast {
+        try {
+            val api = URI(apiUrl).toURL().openConnection() as HttpURLConnection
+            api.requestMethod = "GET"
+            api.connectTimeout = 10_000
+            api.readTimeout = 15_000
+            api.setRequestProperty("User-Agent", "jervis-build")
+            val json = api.inputStream.bufferedReader().use { it.readText() }
+            val shaRegex = Regex("""^\s*\[\s*\{\s*"sha"\s*:\s*"([0-9a-f]{40})"""")
+            val latestSha = shaRegex.find(json)?.groupValues?.get(1)
+                ?: error("Could not parse commit SHA from GitHub API response")
+
+            val localSha = if (versionFile.exists()) versionFile.readText().trim() else ""
+            if (localSha == latestSha && wordlistFile.exists()) {
+                logger.lifecycle("Czech wordlist up-to-date (sha=${latestSha.take(8)})")
+                return@doLast
+            }
+
+            logger.lifecycle("Czech wordlist: ${localSha.take(8).ifEmpty { "none" }} → ${latestSha.take(8)}, downloading...")
+            val raw = URI(rawUrl).toURL().openConnection() as HttpURLConnection
+            raw.connectTimeout = 30_000
+            raw.readTimeout = 120_000
+            raw.setRequestProperty("User-Agent", "jervis-build")
+            val allowed = Regex("""^[a-záäčďéěíľĺňóôöőřšťúůűüýž]+$""")
+            val words = sortedSetOf<String>()
+            raw.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
+                reader.lineSequence().forEach { line ->
+                    val parts = line.trim().split(' ')
+                    if (parts.size != 2) return@forEach
+                    val freq = parts[1].toIntOrNull() ?: return@forEach
+                    if (freq < 2) return@forEach
+                    val w = parts[0].lowercase()
+                    if (w.length !in 1..30) return@forEach
+                    if (!allowed.matches(w)) return@forEach
+                    words.add(w)
+                }
+            }
+            wordlistFile.parentFile.mkdirs()
+            GZIPOutputStream(wordlistFile.outputStream()).use { gz ->
+                BufferedWriter(OutputStreamWriter(gz, Charsets.UTF_8)).use { out ->
+                    words.forEach { word ->
+                        out.write(word)
+                        out.newLine()
+                    }
+                }
+            }
+            versionFile.writeText(latestSha)
+            logger.lifecycle("Czech wordlist: ${words.size} words written (${wordlistFile.length() / 1024} KB)")
+        } catch (e: Exception) {
+            logger.warn("Czech wordlist update failed (using existing local copy): ${e.message}")
+            if (!wordlistFile.exists()) {
+                throw GradleException("No local Czech wordlist and update failed: ${e.message}", e)
+            }
+        }
+    }
+}
+
+tasks.named("processResources") {
+    dependsOn("updateCzechWordlist")
 }
