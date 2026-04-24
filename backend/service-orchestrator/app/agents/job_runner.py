@@ -337,69 +337,6 @@ class JobRunner:
 
         return None
 
-    async def dispatch_coding_agent(
-        self,
-        task_id: str,
-        agent_type: str,
-        client_id: str,
-        project_id: str | None,
-        workspace_path: str,
-        instructions_override: str | None = None,
-        gpg_key_id: str | None = None,
-        git_user_name: str | None = None,
-        git_user_email: str | None = None,
-        claude_token: str | None = None,
-        kube_namespaces: list[str] | None = None,
-    ) -> dict:
-        """Dispatch a coding agent as a K8s Job and return immediately (non-blocking).
-
-        Returns:
-            Dict with job_name and metadata — does NOT wait for completion.
-        """
-        # Check concurrent limit
-        running = self.count_running_jobs(agent_type)
-        max_concurrent = MAX_CONCURRENT.get(agent_type, 1)
-        if running >= max_concurrent:
-            raise RuntimeError(
-                f"Agent {agent_type} has {running}/{max_concurrent} running jobs. "
-                f"Wait or increase limit."
-            )
-
-        # Write override instructions if provided
-        if instructions_override:
-            jervis_dir = Path(workspace_path) / ".jervis"
-            jervis_dir.mkdir(exist_ok=True)
-            (jervis_dir / "instructions.md").write_text(instructions_override)
-
-        # Fetch GPG key for commit signing (if configured)
-        gpg_key = await self._fetch_gpg_key(client_id, gpg_key_id)
-
-        # Build and create Job
-        job_name = f"jervis-{agent_type}-{task_id}"
-        job = self._build_job_manifest(
-            job_name=job_name,
-            agent_type=agent_type,
-            task_id=task_id,
-            client_id=client_id,
-            project_id=project_id or "",
-            workspace_path=workspace_path,
-            gpg_key=gpg_key,
-            git_user_name=git_user_name,
-            git_user_email=git_user_email,
-            claude_token=claude_token,
-            kube_namespaces=kube_namespaces,
-        )
-
-        logger.info("Dispatching K8s Job (async): %s (agent=%s, task=%s, gpg=%s)", job_name, agent_type, task_id, gpg_key is not None)
-        self.batch_v1.create_namespaced_job(namespace=settings.k8s_namespace, body=job)
-
-        return {
-            "job_name": job_name,
-            "agent_type": agent_type,
-            "task_id": task_id,
-            "workspace_path": workspace_path,
-        }
-
     def get_job_status(self, job_name: str) -> dict:
         """Check K8s Job status (non-blocking, single poll).
 

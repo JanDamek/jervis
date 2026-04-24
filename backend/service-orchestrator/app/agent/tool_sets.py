@@ -133,7 +133,7 @@ def get_default_tools(vertex_type: VertexType) -> list[dict]:
     """
     # Late imports — tools depend on heavy modules
     # Git metadata tools (branch list, recent commits) = OK for orientation.
-    # Deep code investigation / git history analysis → dispatch_coding_agent.
+    # Deep code investigation / git history analysis → Kotlin AgentJobDispatcher.
     from app.tools.definitions import (
         TOOL_KB_SEARCH,
         TOOL_WEB_SEARCH,
@@ -353,7 +353,7 @@ def get_tools_by_category(category: str) -> list[dict]:
         "kb": [TOOL_KB_SEARCH, TOOL_KB_DELETE, TOOL_GET_KB_STATS,
                TOOL_GET_INDEXED_ITEMS, TOOL_STORE_KNOWLEDGE],
         "web": [TOOL_WEB_SEARCH],
-        # git = metadata (branches, commits) + dispatch_coding_agent for deep analysis
+        # git = metadata (branches, commits) + Kotlin AgentJobDispatcher for deep analysis
         "git": [TOOL_GIT_BRANCH_LIST, TOOL_GET_RECENT_COMMITS, TOOL_DISPATCH_CODING_AGENT],
         "code": [TOOL_LIST_PROJECT_FILES, TOOL_GET_REPOSITORY_INFO,
                  TOOL_GET_REPOSITORY_STRUCTURE, TOOL_GET_TECHNOLOGY_STACK,
@@ -401,7 +401,6 @@ def _build_request_tools_definition() -> dict:
                 "current tools are insufficient. Categories (name → 1-line):\n"
                 "- kb: knowledge base search/read/write\n"
                 "- web: web search\n"
-                "- code: repo info + dispatch_coding_agent\n"
                 "- memory: episodic memory recall/store\n"
                 "- scheduling: create recurring tasks\n"
                 "- interactive: ask_user (clarification dialog)\n"
@@ -416,7 +415,6 @@ def _build_request_tools_definition() -> dict:
                 "- o365_mail / o365_teams / o365_calendar / o365_files: "
                 "specific O365 subsets\n"
                 "- all: load every tool (last resort)\n"
-                "Use dispatch_coding_agent for any deep code work."
             ),
             "parameters": {
                 "type": "object",

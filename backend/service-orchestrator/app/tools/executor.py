@@ -53,10 +53,9 @@ class ApprovalRequiredInterrupt(Exception):
         super().__init__(f"Approval required for {action}: {preview}")
 
 
-# EPIC 4/5: Write tools that require approval gate evaluation
+# Write tools that require approval gate evaluation.
 # POLICY: store_knowledge is AUTO-APPROVED — user rule "VŠE okamžitě do KB" (no friction).
 # kb_delete stays under the gate — "NIKDY mazat bez potvrzení".
-# dispatch_coding_agent does NOT require approval — user gave the task, agent executes.
 _WRITE_TOOLS_TO_APPROVAL_ACTION: dict[str, str] = {
     "kb_delete": "KB_DELETE",
 }
@@ -616,15 +615,6 @@ async def execute_tool(
                 note=arguments.get("note"),
             )
             result = json.dumps(result) if isinstance(result, dict) else str(result)
-        # --- Coding agent dispatch (graph agent + chat) ---
-        elif tool_name == "dispatch_coding_agent":
-            result = await _execute_dispatch_coding_agent(
-                task_description=arguments.get("task_description", ""),
-                client_id=arguments.get("client_id") or client_id,
-                project_id=arguments.get("project_id") or project_id,
-                agent_preference=arguments.get("agent_preference", "auto"),
-                parent_task_id=task_id,
-            )
         # --- O365 tools (Teams, Mail, Calendar, OneDrive) ---
         elif tool_name == "o365_teams_list_chats":
             result = await _execute_o365_teams_list_chats(
@@ -746,6 +736,53 @@ async def execute_tool(
             result = await _execute_get_user_presence(
                 user_id=arguments.get("user_id", ""),
                 platform=arguments.get("platform", ""),
+            )
+        elif tool_name == "tts_rule_add_acronym":
+            result = await _execute_tts_rule_add_acronym(
+                acronym=arguments.get("acronym", ""),
+                pronunciation=arguments.get("pronunciation", ""),
+                language=arguments.get("language", "cs"),
+                aliases=arguments.get("aliases", []),
+                scope_type=arguments.get("scope_type", "global"),
+                rule_client_id=arguments.get("client_id"),
+                rule_project_id=arguments.get("project_id"),
+                active_client_id=client_id,
+                active_project_id=project_id,
+            )
+        elif tool_name == "tts_rule_add_strip":
+            result = await _execute_tts_rule_add_strip(
+                pattern=arguments.get("pattern", ""),
+                description=arguments.get("description", ""),
+                language=arguments.get("language", "any"),
+                strip_wrapping_parens=arguments.get("strip_wrapping_parens", False),
+                scope_type=arguments.get("scope_type", "global"),
+                rule_client_id=arguments.get("client_id"),
+                rule_project_id=arguments.get("project_id"),
+                active_client_id=client_id,
+                active_project_id=project_id,
+            )
+        elif tool_name == "tts_rule_add_replace":
+            result = await _execute_tts_rule_add_replace(
+                pattern=arguments.get("pattern", ""),
+                replacement=arguments.get("replacement", ""),
+                description=arguments.get("description", ""),
+                language=arguments.get("language", "any"),
+                scope_type=arguments.get("scope_type", "global"),
+                rule_client_id=arguments.get("client_id"),
+                rule_project_id=arguments.get("project_id"),
+                active_client_id=client_id,
+                active_project_id=project_id,
+            )
+        elif tool_name == "tts_rule_list":
+            result = await _execute_tts_rule_list()
+        elif tool_name == "tts_rule_delete":
+            result = await _execute_tts_rule_delete(id=arguments.get("id", ""))
+        elif tool_name == "tts_rule_test":
+            result = await _execute_tts_rule_test(
+                text=arguments.get("text", ""),
+                language=arguments.get("language", "any"),
+                client_id=arguments.get("client_id") or client_id,
+                project_id=arguments.get("project_id") or project_id,
             )
         else:
             result = f"Error: Unknown tool '{tool_name}'."
@@ -3633,55 +3670,6 @@ async def _execute_list_unclassified_meetings() -> str:
 # ---------------------------------------------------------------------------
 
 
-async def _execute_dispatch_coding_agent(
-    task_description: str,
-    client_id: str,
-    project_id: str | None,
-    agent_preference: str = "auto",
-    parent_task_id: str | None = None,
-) -> str:
-    """Dispatch a coding agent for a task."""
-    from app.tools.kotlin_client import kotlin_client
-
-    if not client_id or not project_id:
-        return "Error: client_id and project_id are required for dispatch_coding_agent."
-    result = await kotlin_client.dispatch_coding_agent(
-        task_description=task_description,
-        client_id=client_id,
-        project_id=project_id,
-        agent_preference=agent_preference,
-    )
-
-    # Register parent→child relationship for master graph nesting
-    if parent_task_id and result and not str(result).startswith("Error"):
-        try:
-            import re
-            child_id = None
-            result_str = str(result)
-            # Try to extract task ID (24-char hex ObjectId)
-            match = re.search(r"[0-9a-f]{24}", result_str)
-            if match:
-                child_id = match.group(0)
-            if child_id:
-                from app.agent.persistence import agent_store
-                agent_store.register_task_parent(child_id, parent_task_id)
-        except Exception as e:
-            logger.debug("Failed to register task parent: %s", e)
-
-    return f"Coding agent dispatched: {result}"
-
-
-# ---------------------------------------------------------------------------
-# MongoDB self-management tools
-# ---------------------------------------------------------------------------
-
-# Collections that have Kotlin in-memory cache — must invalidate after writes
-_CACHED_COLLECTIONS = {
-    "clients", "projects", "project_groups", "cloud_model_policies",
-    "openrouter_settings", "polling_intervals", "whisper_settings", "guidelines",
-}
-
-
 async def _execute_mongo_list_collections() -> str:
     """List all MongoDB collections in the Jervis database."""
     from app.config import settings
@@ -4517,3 +4505,275 @@ async def _execute_get_user_presence(user_id: str, platform: str) -> str:
         )
     except Exception as e:
         return f"Error reading presence: {e}"
+
+
+# ============================================================
+# TTS normalization dictionary — user-editable acronym / strip / replace
+# rules that XTTS applies pre-synthesis. Backing service:
+# ServerTtsRulesService in the Kotlin server. SSOT: docs/tts-normalization.md.
+# ============================================================
+
+
+def _tts_scope_enum(scope_type: str):
+    from jervis.server import tts_rules_pb2
+
+    return {
+        "global": tts_rules_pb2.GLOBAL,
+        "client": tts_rules_pb2.CLIENT,
+        "project": tts_rules_pb2.PROJECT,
+    }.get((scope_type or "global").lower(), tts_rules_pb2.GLOBAL)
+
+
+def _tts_build_scope(scope_type: str, rule_client_id, rule_project_id, active_client_id, active_project_id):
+    from jervis.server import tts_rules_pb2
+
+    st = (scope_type or "global").lower()
+    effective_client = (rule_client_id or active_client_id or "") if st == "client" else ""
+    effective_project = (rule_project_id or active_project_id or "") if st == "project" else ""
+    if st == "client" and not effective_client:
+        raise ValueError("scope_type='client' requires client_id (active scope or explicit).")
+    if st == "project" and not effective_project:
+        raise ValueError("scope_type='project' requires project_id (active scope or explicit).")
+    return tts_rules_pb2.TtsRuleScope(
+        type=_tts_scope_enum(st),
+        client_id=effective_client,
+        project_id=effective_project,
+    )
+
+
+def _tts_rule_to_dict(rule) -> dict:
+    from jervis.server import tts_rules_pb2
+
+    type_name = {
+        tts_rules_pb2.ACRONYM: "ACRONYM",
+        tts_rules_pb2.STRIP: "STRIP",
+        tts_rules_pb2.REPLACE: "REPLACE",
+    }.get(rule.type, "UNSPECIFIED")
+    scope_type_name = {
+        tts_rules_pb2.GLOBAL: "GLOBAL",
+        tts_rules_pb2.CLIENT: "CLIENT",
+        tts_rules_pb2.PROJECT: "PROJECT",
+    }.get(rule.scope.type, "UNSPECIFIED")
+    out: dict = {
+        "id": rule.id,
+        "type": type_name,
+        "language": rule.language,
+        "scope": {
+            "type": scope_type_name,
+            "clientId": rule.scope.client_id or None,
+            "projectId": rule.scope.project_id or None,
+        },
+    }
+    if rule.type == tts_rules_pb2.ACRONYM:
+        out["acronym"] = rule.acronym
+        out["pronunciation"] = rule.pronunciation
+        if rule.aliases:
+            out["aliases"] = list(rule.aliases)
+    elif rule.type == tts_rules_pb2.STRIP:
+        out["pattern"] = rule.pattern
+        out["description"] = rule.description
+        out["stripWrappingParens"] = rule.strip_wrapping_parens
+    elif rule.type == tts_rules_pb2.REPLACE:
+        out["pattern"] = rule.pattern
+        out["replacement"] = rule.replacement
+        out["description"] = rule.description
+    return out
+
+
+async def _execute_tts_rule_add_acronym(
+    *,
+    acronym: str,
+    pronunciation: str,
+    language: str,
+    aliases: list[str],
+    scope_type: str,
+    rule_client_id,
+    rule_project_id,
+    active_client_id,
+    active_project_id,
+) -> str:
+    import json as _json
+
+    from app.grpc_server_client import server_tts_rules_stub
+    from jervis.server import tts_rules_pb2
+
+    if not acronym.strip() or not pronunciation.strip():
+        return "Error: acronym and pronunciation are required."
+    try:
+        scope = _tts_build_scope(scope_type, rule_client_id, rule_project_id,
+                                 active_client_id, active_project_id)
+        req = tts_rules_pb2.TtsRule(
+            type=tts_rules_pb2.ACRONYM,
+            language=language or "cs",
+            scope=scope,
+            acronym=acronym,
+            pronunciation=pronunciation,
+            aliases=list(aliases or []),
+        )
+        saved = await server_tts_rules_stub().Add(req, timeout=10.0)
+        return _json.dumps({"ok": True, "rule": _tts_rule_to_dict(saved)}, ensure_ascii=False)
+    except Exception as e:
+        return f"Error adding acronym rule: {e}"
+
+
+async def _execute_tts_rule_add_strip(
+    *,
+    pattern: str,
+    description: str,
+    language: str,
+    strip_wrapping_parens: bool,
+    scope_type: str,
+    rule_client_id,
+    rule_project_id,
+    active_client_id,
+    active_project_id,
+) -> str:
+    import json as _json
+
+    from app.grpc_server_client import server_tts_rules_stub
+    from jervis.server import tts_rules_pb2
+
+    if not pattern or not description:
+        return "Error: pattern and description are required."
+    try:
+        scope = _tts_build_scope(scope_type, rule_client_id, rule_project_id,
+                                 active_client_id, active_project_id)
+        req = tts_rules_pb2.TtsRule(
+            type=tts_rules_pb2.STRIP,
+            language=language or "any",
+            scope=scope,
+            pattern=pattern,
+            description=description,
+            strip_wrapping_parens=bool(strip_wrapping_parens),
+        )
+        saved = await server_tts_rules_stub().Add(req, timeout=10.0)
+        return _json.dumps({"ok": True, "rule": _tts_rule_to_dict(saved)}, ensure_ascii=False)
+    except Exception as e:
+        return f"Error adding strip rule: {e}"
+
+
+async def _execute_tts_rule_add_replace(
+    *,
+    pattern: str,
+    replacement: str,
+    description: str,
+    language: str,
+    scope_type: str,
+    rule_client_id,
+    rule_project_id,
+    active_client_id,
+    active_project_id,
+) -> str:
+    import json as _json
+
+    from app.grpc_server_client import server_tts_rules_stub
+    from jervis.server import tts_rules_pb2
+
+    if not pattern or replacement is None or not description:
+        return "Error: pattern, replacement, and description are required."
+    try:
+        scope = _tts_build_scope(scope_type, rule_client_id, rule_project_id,
+                                 active_client_id, active_project_id)
+        req = tts_rules_pb2.TtsRule(
+            type=tts_rules_pb2.REPLACE,
+            language=language or "any",
+            scope=scope,
+            pattern=pattern,
+            replacement=replacement,
+            description=description,
+        )
+        saved = await server_tts_rules_stub().Add(req, timeout=10.0)
+        return _json.dumps({"ok": True, "rule": _tts_rule_to_dict(saved)}, ensure_ascii=False)
+    except Exception as e:
+        return f"Error adding replace rule: {e}"
+
+
+async def _execute_tts_rule_list() -> str:
+    import json as _json
+
+    from app.grpc_server_client import server_tts_rules_stub
+    from jervis.common import types_pb2
+    from jervis.server import tts_rules_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_tts_rules_stub().List(
+            tts_rules_pb2.ListTtsRulesRequest(ctx=ctx), timeout=10.0,
+        )
+        return _json.dumps(
+            {"rules": [_tts_rule_to_dict(r) for r in resp.rules]},
+            ensure_ascii=False,
+        )
+    except Exception as e:
+        return f"Error listing TTS rules: {e}"
+
+
+async def _execute_tts_rule_delete(*, id: str) -> str:
+    import json as _json
+
+    from app.grpc_server_client import server_tts_rules_stub
+    from jervis.common import types_pb2
+    from jervis.server import tts_rules_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    if not id:
+        return "Error: id is required."
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_tts_rules_stub().Delete(
+            tts_rules_pb2.DeleteTtsRuleRequest(ctx=ctx, id=id), timeout=10.0,
+        )
+        return _json.dumps({"ok": bool(resp.ok)}, ensure_ascii=False)
+    except Exception as e:
+        return f"Error deleting TTS rule: {e}"
+
+
+async def _execute_tts_rule_test(
+    *, text: str, language: str, client_id, project_id,
+) -> str:
+    import json as _json
+
+    from app.grpc_server_client import server_tts_rules_stub
+    from jervis.common import types_pb2
+    from jervis.server import tts_rules_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    if not text:
+        return "Error: text is required."
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_tts_rules_stub().Preview(
+            tts_rules_pb2.PreviewRequest(
+                ctx=ctx,
+                text=text,
+                language=language or "any",
+                client_id=(client_id or ""),
+                project_id=(project_id or ""),
+            ),
+            timeout=10.0,
+        )
+        type_name = {
+            tts_rules_pb2.ACRONYM: "ACRONYM",
+            tts_rules_pb2.STRIP: "STRIP",
+            tts_rules_pb2.REPLACE: "REPLACE",
+        }
+        return _json.dumps(
+            {
+                "output": resp.output,
+                "hits": [
+                    {
+                        "ruleId": h.rule_id,
+                        "type": type_name.get(h.type, "UNSPECIFIED"),
+                        "charsRemoved": h.chars_removed,
+                    }
+                    for h in resp.hits
+                ],
+            },
+            ensure_ascii=False,
+        )
+    except Exception as e:
+        return f"Error previewing TTS rules: {e}"

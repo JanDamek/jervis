@@ -67,9 +67,7 @@ from app.graph.nodes import (
     git_operations,
     finalize,
     # Coding pipeline nodes
-    decompose,
-    select_goal,
-    plan_steps,
+    # coding.py removed — select_goal / plan_steps / decompose are stubs below.
     # Phase 3: EPIC + GENERATIVE
     plan_epic,
     execute_wave,
@@ -86,6 +84,28 @@ from app.graph.nodes import (
 from app.models import ChatHistoryPayload, CodingTask, OrchestrateRequest, ProjectRules
 
 logger = logging.getLogger(__name__)
+
+
+# ── Stubs replacing the removed coding pipeline ─────────────────────────
+# The dedicated coding path (coding.py) was deleted in the agent-job
+# migration — coding work dispatches via the Kotlin AgentJobDispatcher
+# now. The EPIC + GENERATIVE LangGraph paths below still reference
+# select_goal / plan_steps edges, so we keep no-op stubs here to avoid
+# having to rewrite the graph topology in a single commit. The stubs
+# fall through to execute_step which handles the non-coding flows.
+async def select_goal(state: dict) -> dict:
+    """No-op stub — coding goal iteration removed."""
+    return state
+
+
+async def plan_steps(state: dict) -> dict:
+    """No-op stub — coding step planning removed."""
+    return state
+
+
+async def decompose(state: dict) -> dict:
+    """No-op stub — coding decomposition removed."""
+    return state
 
 
 class OrchestratorState(TypedDict, total=False):

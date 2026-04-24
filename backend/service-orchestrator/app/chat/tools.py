@@ -105,42 +105,6 @@ TOOL_CREATE_BACKGROUND_TASK: dict = {
     },
 }
 
-TOOL_DISPATCH_CODING_AGENT: dict = {
-    "type": "function",
-    "function": {
-        "name": "dispatch_coding_agent",
-        "description": (
-            "Pošli coding úkol na coding agenta. Default: background (asynchronně). "
-            "Agent poběží asynchronně, výsledek přijde jako notifikace. "
-            "Coding agent: Claude CLI (default), Kilo (alternativa). "
-            "Auto = Claude pro vše."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "task_description": {
-                    "type": "string",
-                    "description": "Co má agent udělat.",
-                },
-                "client_id": {
-                    "type": "string",
-                    "description": "Client ID (povinný pro coding).",
-                },
-                "project_id": {
-                    "type": "string",
-                    "description": "Project ID (povinný pro coding).",
-                },
-                "agent_preference": {
-                    "type": "string",
-                    "enum": ["auto", "claude", "kilo"],
-                    "description": "Preferred coding agent. 'auto' = Claude CLI (default). 'kilo' = Kilo Code.",
-                },
-            },
-            "required": ["task_description", "client_id", "project_id"],
-        },
-    },
-}
-
 TOOL_SEARCH_TASKS: dict = {
     "type": "function",
     "function": {
@@ -1159,7 +1123,6 @@ CHAT_SPECIFIC_TOOLS: list[dict] = [
     TOOL_REMOVE_GRAPH_VERTEX,
     TOOL_DISPATCH_THINKING_GRAPH,
     TOOL_RUN_GRAPH_VERTEX,
-    TOOL_DISPATCH_CODING_AGENT,
     TOOL_SEARCH_TASKS,
     TOOL_GET_TASK_STATUS,
     TOOL_LIST_RECENT_TASKS,
@@ -1186,7 +1149,7 @@ CHAT_SPECIFIC_TOOLS: list[dict] = [
 
 # All tools available in foreground chat = base research + memory + chat-specific
 # Note: code_search, git workspace, and filesystem tools removed —
-# those are delegated to coding agents via dispatch_coding_agent.
+# those are now handled by the Kotlin AgentJobDispatcher (MCP dispatch_agent_job).
 CHAT_TOOLS: list[dict] = [
     TOOL_KB_SEARCH,
     TOOL_KB_DELETE,
@@ -1231,7 +1194,7 @@ TOOL_REQUEST_TOOLS: dict = {
         "name": "request_tools",
         "description": (
             "Request additional tool sets. You already have core tools "
-            "(kb_search, web_search, web_fetch, store_knowledge, dispatch_coding_agent, "
+            "(kb_search, web_search, web_fetch, store_knowledge, "
             "create_background_task, respond_to_user_task). For advanced operations "
             "call this tool with one of these categories:\n"
             "- code: READ-ONLY repository inspection — git_status, git_log, git_show, "
@@ -1239,7 +1202,7 @@ TOOL_REQUEST_TOOLS: dict = {
             "get_repository_structure, get_technology_stack, list_project_files, list_files, "
             "read_file, find_files, grep_files, file_info, code_search. USE THIS when the user "
             "asks about a commit, branch, file content, code structure, or 'last commit'. "
-            "These are LIGHTWEIGHT direct calls — do NOT dispatch_coding_agent for read-only "
+            "These are LIGHTWEIGHT direct calls for read-only "
             "questions, request 'code' tools instead.\n"
             "- data: READ-ONLY MongoDB inspection — mongo_list_collections, mongo_get_document. "
             "USE THIS when the user asks about DB state, document content, collection contents.\n"
@@ -1276,7 +1239,6 @@ CHAT_INITIAL_TOOLS: list[dict] = [
     TOOL_WEB_SEARCH,
     TOOL_WEB_FETCH,
     TOOL_STORE_KNOWLEDGE,
-    TOOL_DISPATCH_CODING_AGENT,
     TOOL_CREATE_BACKGROUND_TASK,
     TOOL_RESPOND_TO_USER_TASK,
     TOOL_CHECK_TASK_GRAPH,
@@ -1388,7 +1350,6 @@ TOOL_DOMAINS: dict[str, str] = {
     "create_thinking_graph": "task", "add_graph_vertex": "task",
     "update_graph_vertex": "task", "remove_graph_vertex": "task",
     "dispatch_thinking_graph": "task", "run_graph_vertex": "task",
-    "dispatch_coding_agent": "task",
     "search_tasks": "task", "get_task_status": "task",
     "list_recent_tasks": "task", "respond_to_user_task": "task",
     "retry_failed_task": "task",

@@ -218,20 +218,17 @@ async def _execute_code_step(
         guidelines_text=guidelines_text,
     )
 
-    # Dispatch coding agent (returns immediately)
-    workspace_path = f"{settings.data_root}/{task.workspace_path}"
-    dispatch_info = await job_runner.dispatch_coding_agent(
-        task_id=f"{task.id}-step-{step.index}",
-        agent_type=step.agent_type.value,
-        client_id=task.client_id,
-        project_id=task.project_id,
-        workspace_path=workspace_path,
+    # Coding dispatch removed from orchestrator — AgentJobDispatcher (Kotlin)
+    # owns all coding Jobs now. This LangGraph execute node is only reached
+    # by legacy task paths; fail loudly so upstream callers get migrated.
+    raise RuntimeError(
+        "execute_step reached a coding branch, but coding dispatch moved to "
+        "Kotlin AgentJobDispatcher. Upstream pipeline needs to stop routing "
+        "coding tasks through the LangGraph executor."
     )
 
-    logger.info(
-        "Agent dispatched (async): job=%s task=%s — interrupting for watcher",
-        dispatch_info["job_name"], task.id,
-    )
+    workspace_path = f"{settings.data_root}/{task.workspace_path}"
+    dispatch_info = {"job_name": "", "agent_type": step.agent_type.value}
 
     # Notify Kotlin server — sets task state to CODING
     await kotlin_client.notify_agent_dispatched(task.id, dispatch_info["job_name"])

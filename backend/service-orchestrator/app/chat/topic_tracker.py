@@ -108,7 +108,6 @@ def _topics_from_tools(used_tools: list[str]) -> list[dict]:
         "kb_search": ("Knowledge Base", "question"),
         "create_background_task": ("Task Management", "planning"),
         "create_thinking_graph": ("Task Management", "planning"),
-        "dispatch_coding_agent": ("Coding", "task"),
         "store_knowledge": ("Knowledge Base", "admin"),
         "memory_store": ("Memory", "admin"),
         "web_search": ("Research", "question"),

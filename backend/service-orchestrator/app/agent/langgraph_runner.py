@@ -992,7 +992,6 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
         "Keep output concise — downstream vertices only see a brief summary.\n\n"
         "Store important findings via store_knowledge for persistence. "
         "Use `extend_thinking_graph` sparingly when you discover genuinely separate sub-topics.\n\n"
-        "For code-level work (reading files, analyzing code, git history), use `dispatch_coding_agent` "
         "(async — returns immediately). For multiple code tasks, create separate vertices instead."
         + _DECOMPOSE_HINT + _LANGUAGE_HINT
     ),
@@ -1003,7 +1002,6 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
         "Use `ask_user` only when critical information is truly missing. "
         "Use `store_knowledge` to persist important findings.\n\n"
         "Use `extend_thinking_graph` sparingly when your task reveals genuinely separate work.\n\n"
-        "For code-level work (reading/writing files, running tests), use `dispatch_coding_agent` "
         "(async — returns immediately). For multiple code tasks, create separate vertices instead.\n\n"
         "SCHEDULED TASKS: `create_scheduled_task` is ONLY for time-bound deadlines (due dates, "
         "specific calendar triggers). NEVER use it to defer work you can do NOW. Regular work "
@@ -1017,7 +1015,6 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
         "Use `ask_user` only when critical information is truly missing. "
         "Use `store_knowledge` to persist important findings.\n\n"
         "Use `extend_thinking_graph` sparingly when your task reveals genuinely separate work.\n\n"
-        "For code-level work (reading/writing files, running tests), use `dispatch_coding_agent` "
         "(async — returns immediately). For multiple code tasks, create separate vertices instead.\n\n"
         "SCHEDULED TASKS: `create_scheduled_task` is ONLY for time-bound deadlines (due dates, "
         "specific calendar triggers). NEVER use it to defer work you can do NOW. Regular work "
@@ -1028,14 +1025,12 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
         "You are the Validator. Verify upstream results for correctness and completeness. "
         "Use tools to check claims and artifacts. "
         "Conclude with: PASS (all good) or FAIL (with specific issues).\n\n"
-        "For code verification, use `dispatch_coding_agent`."
         + _DECOMPOSE_HINT + _LANGUAGE_HINT
     ),
     VertexType.REVIEWER: (
         "You are the Reviewer. Review upstream work for quality and potential improvements. "
         "Use tools to verify claims. Provide constructive feedback. "
         "Conclude with: APPROVED, NEEDS_CHANGES, or REJECTED.\n\n"
-        "For code review, use `dispatch_coding_agent`."
         + _DECOMPOSE_HINT + _LANGUAGE_HINT
     ),
     VertexType.SYNTHESIS: (
@@ -1055,7 +1050,6 @@ _SYSTEM_PROMPTS: dict[VertexType, str] = {
         "You are the Setup Agent. Handle infrastructure, scaffolding, and environment provisioning. "
         "Search KB for any accumulated requirements and specifications first. "
         "Confirm key decisions with the user via `ask_user` before creating infrastructure. "
-        "Use `dispatch_coding_agent` for code generation (not inline code). "
         "Use environment tools for provisioning."
         + _DECOMPOSE_HINT
     ),

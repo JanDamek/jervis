@@ -1,8 +1,11 @@
-"""Background handler — delegates to Graph Agent or K8s coding agent.
+"""Background handler — routes background tasks through the Graph Agent.
 
-Regular background tasks run through the Graph Agent (vertex/edge DAG with decomposition).
-Coding tasks (source_urn="chat:coding-agent") are dispatched as K8s Jobs directly,
-bypassing the graph agent — the K8s Job runs Claude CLI / Kilo Code in a container.
+Coding work no longer flows through this handler — agent-job migration
+moved all coding dispatch to the Kotlin AgentJobDispatcher (gRPC
+ServerAgentJobService.DispatchAgentJob, MCP tool `dispatch_agent_job`).
+Anything arriving here with a coding `source_urn` is a legacy event from
+an upstream caller that hasn't been updated yet; we reject it cleanly
+so the Kotlin side re-routes.
 """
 
 from __future__ import annotations
@@ -168,239 +171,36 @@ def _estimate_tokens_total(messages: list[dict], tools: list[dict]) -> int:
     return message_tokens + tools_tokens + settings.default_output_tokens
 
 
-async def _run_coding_agent_background(
-    request: OrchestrateRequest,
-    thread_id: str | None = None,
-) -> dict:
-    """Dispatch a coding agent K8s Job for chat-initiated coding tasks.
-
-    Prepares workspace with instructions, KB context, and environment,
-    then creates a K8s Job (Claude CLI / Kilo Code). Returns immediately —
-    AgentTaskWatcher monitors the job and marks task DONE on completion.
-
-    Args:
-        request: OrchestrateRequest with source_urn="chat:coding-agent".
-        thread_id: Thread ID (stored on task for watcher).
-
-    Returns:
-        dict with coding_dispatched=True and job metadata.
-    """
-    from app.agents.job_runner import job_runner
-    from app.agents.workspace_manager import workspace_manager
-    from app.agent.persistence import agent_store
-    from app.tools.kotlin_client import kotlin_client
-
-    agent_type = request.agent_preference if request.agent_preference != "auto" else "claude"
-    is_review = request.source_urn.startswith("code-review:")
-    logger.info(
-        "CODING_AGENT_BACKGROUND | task_id=%s | agent=%s | workspace=%s | review=%s",
-        request.task_id, agent_type, request.workspace_path, is_review,
-    )
-
-    # 1. Fetch merged guidelines (global → client → project)
-    guidelines_text = None
-    try:
-        from app.context.guidelines_resolver import resolve_guidelines, format_guidelines_for_coding_agent
-        guidelines = await resolve_guidelines(request.client_id, request.project_id)
-        if guidelines:
-            guidelines_text = format_guidelines_for_coding_agent(guidelines)
-    except Exception as e:
-        logger.debug("Guidelines fetch failed (non-fatal): %s", e)
-
-    # 2. Prefetch KB context (optional — best effort; review tasks do their own prefetch)
-    kb_context = None
-    if request.project_id and not is_review:
-        try:
-            from app.tools.executor import execute_tool
-            kb_result = await execute_tool(
-                tool_name="kb_search",
-                arguments={"query": request.query[:200], "max_results": 5},
-                client_id=request.client_id,
-                project_id=request.project_id,
-            )
-            if kb_result and not str(kb_result).startswith("Error"):
-                kb_context = str(kb_result)[:4000]
-        except Exception as e:
-            logger.debug("KB prefetch failed (non-fatal): %s", e)
-
-    # 3. Build git config from rules (skip for review — read-only agent)
-    git_config = None
-    if request.rules and not is_review:
-        msg_format = request.rules.git_message_pattern or request.rules.commit_prefix
-        git_config = {
-            "git_author_name": request.rules.git_author_name,
-            "git_author_email": request.rules.git_author_email,
-            "git_committer_name": request.rules.git_committer_name,
-            "git_committer_email": request.rules.git_committer_email,
-            "git_gpg_sign": request.rules.git_gpg_sign,
-            "git_gpg_key_id": request.rules.git_gpg_key_id,
-            "git_message_format": msg_format,
-        }
-
-    # 4. Resolve review language for review tasks
-    review_language = None
-    if is_review:
-        try:
-            review_language = await kotlin_client.get_review_language(request.client_id, request.project_id)
-        except Exception:
-            pass  # Default English
-
-    # 5. Prepare workspace (instructions, KB, environment, git config, guidelines, CLAUDE.md)
-    workspace_path = await workspace_manager.prepare_workspace(
-        task_id=request.task_id,
-        client_id=request.client_id,
-        project_id=request.project_id,
-        project_path=request.workspace_path,
-        instructions=request.query,
-        files=[],
-        agent_type=agent_type,
-        kb_context=kb_context,
-        environment_context=request.environment,
-        git_config=git_config,
-        guidelines_text=guidelines_text,
-        review_mode=is_review,
-        review_language=review_language,
-    )
-
-    # Write sourceUrn to task.json so claude_sdk_runner can detect review mode
-    if is_review:
-        import json as _json
-        task_json_path = workspace_path / ".jervis" / "task.json"
-        if task_json_path.exists():
-            try:
-                task_meta = _json.loads(task_json_path.read_text())
-                task_meta["sourceUrn"] = request.source_urn
-                task_json_path.write_text(_json.dumps(task_meta, indent=2))
-            except Exception:
-                pass
-
-    # 5b. Resolve K8s namespace(s) from environment context for kubectl access
-    kube_namespaces: list[str] | None = None
-    if request.environment and request.environment.get("namespace"):
-        kube_namespaces = [request.environment["namespace"]]
-
-    # 6. Dispatch K8s Job (returns immediately)
-    try:
-        dispatch_info = await job_runner.dispatch_coding_agent(
-            task_id=request.task_id,
-            agent_type=agent_type,
-            client_id=request.client_id,
-            project_id=request.project_id,
-            workspace_path=str(workspace_path),
-            gpg_key_id=request.rules.git_gpg_key_id if request.rules and not is_review else None,
-            git_user_name=request.rules.git_author_name if request.rules and not is_review else None,
-            git_user_email=request.rules.git_author_email if request.rules and not is_review else None,
-            kube_namespaces=kube_namespaces,
-        )
-    except RuntimeError as e:
-        if "running jobs" in str(e):
-            # Job limit reached — requeue task instead of failing
-            logger.warning("JOB_LIMIT_REACHED | task=%s | agent=%s | %s — requeueing", request.task_id, agent_type, e)
-            try:
-                from app.config import settings as _s
-                from motor.motor_asyncio import AsyncIOMotorClient
-                from urllib.parse import urlparse
-                from bson import ObjectId as BsonObjectId
-                _parsed = urlparse(_s.mongodb_url)
-                _db_name = _parsed.path.lstrip("/").split("?")[0] or "jervis"
-                _client = AsyncIOMotorClient(_s.mongodb_url)
-                _db = _client[_db_name]
-                await _db.tasks.update_one(
-                    {"_id": BsonObjectId(request.task_id)},
-                    {"$set": {"state": "QUEUED", "claimedAt": None}},
-                )
-                _client.close()
-                logger.info("REQUEUED | task=%s — will retry when job slot frees up", request.task_id)
-            except Exception as db_err:
-                logger.error("Failed to requeue task %s: %s", request.task_id, db_err)
-            return {"coding_dispatched": False, "requeue": True, "summary": ""}
-        raise  # Re-raise non-job-limit RuntimeErrors
-    job_name = dispatch_info["job_name"]
-
-    # 7. Notify Kotlin — task state → CODING
-    try:
-        await kotlin_client.notify_agent_dispatched(
-            task_id=request.task_id,
-            job_name=job_name,
-            workspace_path=str(workspace_path),
-            agent_type=agent_type,
-        )
-    except Exception as e:
-        # Critical: if notification fails, task stays PROCESSING and blocks execution loop.
-        # Fall back to direct MongoDB update to ensure CODING state.
-        logger.warning("Failed to notify Kotlin about agent dispatch (task %s): %s — setting CODING via DB", request.task_id, e)
-        try:
-            from app.config import settings as _s
-            from motor.motor_asyncio import AsyncIOMotorClient
-            from urllib.parse import urlparse
-            from bson import ObjectId as BsonObjectId
-            _parsed = urlparse(_s.mongodb_url)
-            _db_name = _parsed.path.lstrip("/").split("?")[0] or "jervis"
-            _client = AsyncIOMotorClient(_s.mongodb_url)
-            _db = _client[_db_name]
-            await _db.tasks.update_one(
-                {"_id": BsonObjectId(request.task_id)},
-                {"$set": {
-                    "state": "CODING",
-                    "agentJobName": job_name,
-                    "agentJobAgentType": agent_type,
-                    "agentJobWorkspacePath": str(workspace_path),
-                }},
-            )
-            _client.close()
-            logger.info("Set task %s to CODING via direct DB update", request.task_id)
-        except Exception as db_err:
-            logger.error("Failed to set CODING state via DB for task %s: %s", request.task_id, db_err)
-
-    # 6. Link to master graph (not completed yet — watcher will update)
-    try:
-        await agent_store.link_thinking_graph(
-            task_id=request.task_id,
-            sub_graph_id="",
-            title=request.task_name or request.query[:80] or f"Coding {request.task_id}",
-            completed=False,
-            result_summary="",
-            client_id=request.client_id,
-            client_name=request.client_name or "",
-            group_id=request.group_id,
-            group_name=request.group_name or "",
-            project_id=request.project_id,
-            project_name=request.project_name or "",
-            agent_type="coding",
-        )
-    except Exception as e:
-        logger.warning("Failed to link coding task to master graph: %s", e)
-
-    logger.info(
-        "CODING_DISPATCHED | task_id=%s | job=%s | agent=%s",
-        request.task_id, job_name, agent_type,
-    )
-
-    return {
-        "coding_dispatched": True,
-        "job_name": job_name,
-        "agent_type": agent_type,
-        "workspace_path": str(workspace_path),
-    }
-
 
 async def handle_background(
     request: OrchestrateRequest,
     thread_id: str | None = None,
 ) -> dict:
-    """Handle a background task — routing between graph agent and coding agent.
+    """Handle a background task — Graph Agent path only.
 
-    Coding tasks (source_urn="chat:coding-agent") are dispatched as K8s Jobs.
-    All other tasks run through the graph agent (vertex/edge DAG).
-
-    Args:
-        request: OrchestrateRequest from Kotlin BackgroundEngine.
-        thread_id: Thread ID for LangGraph checkpointing.
-
-    Returns:
-        dict with {success, summary, ...} or {coding_dispatched: True, ...}
+    Coding dispatch moved to Kotlin AgentJobDispatcher (MCP
+    `dispatch_agent_job` / gRPC `ServerAgentJobService.DispatchAgentJob`).
+    Anything still arriving here with a coding `source_urn` is a legacy
+    event from an upstream caller not yet migrated — reject with a
+    structured error so the Kotlin side routes it correctly.
     """
-    if request.source_urn == "chat:coding-agent" or request.source_urn.startswith("code-review:") or request.source_urn.startswith("code-review-fix:"):
-        return await _run_coding_agent_background(request, thread_id=thread_id)
+    urn = request.source_urn or ""
+    if (
+        urn == "chat:coding-agent"
+        or urn.startswith("code-review:")
+        or urn.startswith("code-review-fix:")
+    ):
+        logger.warning(
+            "Legacy coding source_urn '%s' routed to orchestrator — "
+            "coding dispatch now owned by Kotlin AgentJobDispatcher.",
+            urn,
+        )
+        return {
+            "success": False,
+            "summary": (
+                "Coding dispatch moved to Kotlin AgentJobDispatcher "
+                "(MCP dispatch_agent_job). Update the caller to use that path."
+            ),
+        }
     return await _run_graph_agent_background(request, thread_id=thread_id)
 

@@ -370,7 +370,7 @@ async def handle_chat_sse(
                     if _live_vertex_id:
                         event.metadata["memory_graph_vertex_id"] = _live_vertex_id
                     # Signal to UI: only show inline map if background tasks were dispatched
-                    _bg_tools_check = {"create_background_task", "dispatch_coding_agent"}
+                    _bg_tools_check = {"create_background_task"}
                     if any(any(t in p for t in _bg_tools_check) for p in _trace_parts if p.startswith("[tool]")):
                         event.metadata["dispatched_tasks"] = "true"
                     # Post-response Thought Map update (fire-and-forget) — reinforcement only.
@@ -422,7 +422,7 @@ async def handle_chat_sse(
                     ("Error:" in p or "Chyba:" in p or "error:" in p)
                     for p in _trace_parts if p.startswith("[result:")
                 )
-                _bg_tools = {"create_background_task", "dispatch_coding_agent"}
+                _bg_tools = {"create_background_task"}
                 _has_bg_dispatch = any(
                     any(t in p for t in _bg_tools)
                     for p in _trace_parts if p.startswith("[tool]")

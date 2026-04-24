@@ -548,61 +548,6 @@ class KotlinServerClient:
             logger.warning("Failed to create work plan: %s", e)
             return f"Error: {e}"
 
-    async def dispatch_coding_agent(
-        self,
-        task_description: str,
-        client_id: str,
-        project_id: str,
-        plan: dict | None = None,
-        guidelines_text: str | None = None,
-        review_checklist: list[str] | None = None,
-        agent_preference: str = "auto",
-    ) -> str:
-        """Dispatch coding agent via Kotlin internal API.
-
-        EPIC 2-S5: Enhanced with guidelines, plan, and review checklist injection.
-        These are appended to the task description so the coding agent sees them
-        in its workspace instructions.
-
-        agent_preference: "auto" (= Claude CLI), "claude", "kilo"
-        """
-        try:
-            # Build enhanced workspace instructions
-            workspace_instructions = task_description
-            if guidelines_text:
-                workspace_instructions += f"\n\n{guidelines_text}"
-            if plan:
-                from app.background.handler import _format_plan_for_context
-                plan_text = _format_plan_for_context(plan)
-                workspace_instructions += f"\n\n## Plan\n{plan_text}"
-            if review_checklist:
-                workspace_instructions += "\n\n## Review Checklist\n"
-                workspace_instructions += "\n".join(f"- [ ] {item}" for item in review_checklist)
-
-            from app.grpc_server_client import server_task_api_stub
-            from jervis.common import types_pb2
-            from jervis.server import task_api_pb2
-            from jervis_contracts.interceptors import prepare_context
-
-            ctx = types_pb2.RequestContext()
-            prepare_context(ctx)
-            resp = await server_task_api_stub().DispatchCodingAgent(
-                task_api_pb2.DispatchCodingAgentRequest(
-                    ctx=ctx,
-                    task_description=workspace_instructions,
-                    client_id=client_id,
-                    project_id=project_id,
-                    agent_preference=agent_preference or "auto",
-                ),
-                timeout=30.0,
-            )
-            if not resp.dispatched:
-                return f"Error: {resp.error or 'dispatch failed'}"
-            return json.dumps({"taskId": resp.task_id, "dispatched": True})
-        except Exception as e:
-            logger.warning("Failed to dispatch coding agent: %s", e)
-            return f"Error: {e}"
-
     async def search_user_tasks(
         self,
         query: str,

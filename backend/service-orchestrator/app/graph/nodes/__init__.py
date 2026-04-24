@@ -2,12 +2,15 @@
 
 Re-exports all node functions for use by orchestrator.py graph definition.
 
-Legacy graph nodes (14-node):
+Legacy graph nodes (post-coding-wipe):
     intake, evidence_pack, respond, plan, execute_step, evaluate, git_ops, finalize,
-    coding (decompose, select_goal, plan_steps), epic, design
+    epic, design
 
-Delegation graph nodes (7-node, new multi-agent system):
+Delegation graph nodes (multi-agent system):
     intake, evidence_pack, plan_delegations, execute_delegation, synthesize, finalize
+
+Coding path (decompose / select_goal / plan_steps) was removed — coding work
+now dispatches via Kotlin `AgentJobDispatcher`, see agent-job migration.
 """
 
 from app.graph.nodes.intake import intake
@@ -18,11 +21,6 @@ from app.graph.nodes.execute import execute_step
 from app.graph.nodes.evaluate import evaluate, next_step, advance_step, advance_goal
 from app.graph.nodes.git_ops import git_operations
 from app.graph.nodes.finalize import finalize
-from app.graph.nodes.coding import (
-    decompose,
-    select_goal,
-    plan_steps,
-)
 from app.graph.nodes.epic import plan_epic, execute_wave, verify_wave
 from app.graph.nodes.design import design
 
@@ -36,7 +34,6 @@ from app.graph.nodes.memory_load import memory_load
 from app.graph.nodes.memory_flush import memory_flush
 
 __all__ = [
-    # Legacy graph nodes
     "intake",
     "evidence_pack",
     "respond",
@@ -49,9 +46,6 @@ __all__ = [
     "advance_goal",
     "git_operations",
     "finalize",
-    "decompose",
-    "select_goal",
-    "plan_steps",
     "plan_epic",
     "execute_wave",
     "verify_wave",

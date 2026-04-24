@@ -4,7 +4,6 @@ Background tasks have access to a subset of tools:
 - KB tools (search, store, stats, indexed items)
 - Web search
 - KB-based repository info tools (list_project_files, get_repository_info, etc.)
-- dispatch_coding_agent (K8s Job)
 - Scheduled task creation
 
 Background tasks do NOT have:
@@ -44,7 +43,6 @@ from app.tools.definitions import (
 )
 
 from app.chat.tools import (
-    TOOL_DISPATCH_CODING_AGENT,
     TOOL_GET_MEETING_TRANSCRIPT,
     TOOL_LIST_MEETINGS,
     TOOL_CLASSIFY_MEETING,
@@ -76,8 +74,6 @@ ALL_BACKGROUND_TOOLS: list[dict] = [
     # Memory
     TOOL_MEMORY_STORE,
     TOOL_MEMORY_RECALL,
-    # Coding agent dispatch
-    TOOL_DISPATCH_CODING_AGENT,
     # Meeting tools
     TOOL_GET_MEETING_TRANSCRIPT,
     TOOL_LIST_MEETINGS,

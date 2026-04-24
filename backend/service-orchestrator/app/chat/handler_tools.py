@@ -44,7 +44,6 @@ _TOOL_DESCRIPTIONS = {
     "remove_graph_vertex": lambda a: f"Odebírám krok: {a.get('vertex_id', '')}",
     "dispatch_thinking_graph": lambda _: "Spouštím realizaci grafu na pozadí",
     "run_graph_vertex": lambda a: f"Spouštím krok na pozadí: {a.get('vertex_id', '')}",
-    "dispatch_coding_agent": lambda _: "Odesílám coding task na agenta",
     "search_user_tasks": lambda a: f"Hledám úkoly: {a.get('query', '')}",
     "search_tasks": lambda a: f"Hledám úkoly: {a.get('query', '')}",
     "respond_to_user_task": lambda a: f"Odpovídám na úkol: {a.get('task_id', '')}",
@@ -108,7 +107,6 @@ _CHAT_SPECIFIC_TOOLS = {
     "remove_graph_vertex",
     "dispatch_thinking_graph",
     "run_graph_vertex",
-    "dispatch_coding_agent",
     "search_user_tasks",
     "search_tasks",
     "get_task_status",
@@ -326,48 +324,6 @@ async def _handle_run_graph_vertex(args, client_id, project_id, kotlin_client):
         return f"Step '{args['vertex_id']}' dispatched to background. Task ID: {task_id}. Results will flow back to graph."
     except ValueError as e:
         return f"Error: {e}"
-
-
-async def _handle_dispatch_coding_agent(args, client_id, project_id, kotlin_client):
-    # Context IDs have priority over LLM-provided args (LLM often sends names instead of ObjectIds)
-    effective_client_id = client_id or args.get("client_id")
-    effective_project_id = project_id or args.get("project_id")
-    # dispatch_coding_agent needs project_id (for git workspace)
-    if not effective_project_id:
-        return "Error: project_id is required for dispatch coding agent. Select a project via UI."
-    # Validate ObjectId format if provided
-    import re
-    _OID_RE = re.compile(r"^[0-9a-fA-F]{24}$")
-    if effective_client_id and not _OID_RE.match(effective_client_id):
-        return f"Error: client_id '{effective_client_id}' is not a valid ObjectId. Select a client via UI."
-    if not _OID_RE.match(effective_project_id):
-        return f"Error: project_id '{effective_project_id}' is not a valid ObjectId. Select a project via UI."
-    result = await kotlin_client.dispatch_coding_agent(
-        task_description=args["task_description"],
-        client_id=effective_client_id,
-        project_id=effective_project_id,
-        agent_preference=args.get("agent_preference", "auto"),
-    )
-
-    # Link to memory graph immediately so the task appears in UI right away
-    # (orchestrator also links when it picks up the task, but there can be a delay)
-    try:
-        if isinstance(result, dict) and result.get("taskId"):
-            from app.agent.persistence import agent_store
-            await agent_store.link_thinking_graph(
-                task_id=result["taskId"],
-                sub_graph_id="",
-                title=args.get("task_description", "")[:80] or "Coding task",
-                completed=False,
-                failed=False,
-                result_summary="",
-                client_id=effective_client_id or "",
-                project_id=effective_project_id,
-            )
-    except Exception as e:
-        logger.warning("Failed to link dispatched coding task to memory graph: %s", e)
-
-    return f"Coding agent dispatched: {result}"
 
 
 async def _handle_search_tasks(args, _client_id, _project_id, kotlin_client):
@@ -820,7 +776,6 @@ _TOOL_HANDLER_MAP = {
     "remove_graph_vertex": _handle_remove_graph_vertex,
     "dispatch_thinking_graph": _handle_dispatch_thinking_graph,
     "run_graph_vertex": _handle_run_graph_vertex,
-    "dispatch_coding_agent": _handle_dispatch_coding_agent,
     "search_user_tasks": _handle_search_tasks,
     "search_tasks": _handle_search_tasks,
     "get_task_status": _handle_get_task_status,

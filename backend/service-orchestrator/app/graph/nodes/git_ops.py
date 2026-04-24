@@ -102,17 +102,12 @@ async def git_operations(state: dict) -> dict:
     ])
     commit_instructions = "\n".join(commit_lines)
 
-    dispatch_info = await job_runner.dispatch_coding_agent(
-        task_id=f"{task.id}-git-commit",
-        agent_type=AgentType.CLAUDE.value,
-        client_id=task.client_id,
-        project_id=task.project_id,
-        workspace_path=workspace_path,
-        instructions_override=commit_instructions,
-        gpg_key_id=rules.git_gpg_key_id,
-        git_user_name=rules.git_author_name,
-        git_user_email=rules.git_author_email,
+    raise RuntimeError(
+        "git_operations reached a commit branch, but coding dispatch moved to "
+        "Kotlin AgentJobDispatcher. Upstream pipeline should stop routing "
+        "git/commit work through the LangGraph orchestrator."
     )
+    dispatch_info = {"job_name": "", "agent_type": AgentType.CLAUDE.value}
 
     # Notify Kotlin server — sets task state to CODING
     await kotlin_client.notify_agent_dispatched(task.id, dispatch_info["job_name"])
@@ -147,16 +142,20 @@ async def git_operations(state: dict) -> dict:
         push_instructions = (
             f"Push branch '{branch}' to origin. Do NOT force push."
         )
-        push_dispatch = await job_runner.dispatch_coding_agent(
-            task_id=f"{task.id}-git-push",
-            agent_type=AgentType.CLAUDE.value,
-            client_id=task.client_id,
-            project_id=task.project_id,
-            workspace_path=workspace_path,
-            instructions_override=push_instructions,
-            gpg_key_id=rules.git_gpg_key_id,
-            git_user_name=rules.git_author_name,
-            git_user_email=rules.git_author_email,
+        raise RuntimeError(
+            "git_operations reached a push branch, but coding dispatch moved to "
+            "Kotlin AgentJobDispatcher. Upstream pipeline should stop routing "
+            "git/push work through the LangGraph orchestrator."
+        )
+        push_dispatch = {"job_name": "", "agent_type": AgentType.CLAUDE.value}
+        _unused = (
+            task.client_id,
+            task.project_id,
+            workspace_path,
+            push_instructions,
+            rules.git_gpg_key_id,
+            rules.git_author_name,
+            rules.git_author_email,
         )
 
         # Notify Kotlin server — sets task state to CODING

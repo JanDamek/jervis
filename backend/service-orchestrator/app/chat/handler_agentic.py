@@ -723,7 +723,7 @@ async def run_agentic_loop(
 
             # Tool result cache — return cached result for duplicate read-only calls
             cache_key = f"{tool_name}:{tool_call.function.arguments}"
-            _WRITE_TOOLS = {"create_background_task", "dispatch_thinking_graph", "respond_to_user_task", "dispatch_coding_agent", "store_knowledge", "switch_context", "mark_task_done", "reopen_task", "send_push_notification", *_GRAPH_TOOLS}
+            _WRITE_TOOLS = {"create_background_task", "dispatch_thinking_graph", "respond_to_user_task", "store_knowledge", "switch_context", "mark_task_done", "reopen_task", "send_push_notification", *_GRAPH_TOOLS}
             cached_result = tool_result_cache.get(cache_key) if tool_name not in _WRITE_TOOLS else None
             if cached_result is not None:
                 logger.info("Chat: cache hit for %s (skipping execution)", tool_name)
@@ -806,7 +806,7 @@ async def run_agentic_loop(
                         "content": (
                             f"Scope se změnil na: {resolved.get('client_name', '')} / {resolved.get('project_name', '')}. "
                             "Všechna dříve udělená oprávnění pro write akce "
-                            "(create_background_task, dispatch_thinking_graph, dispatch_coding_agent, store_knowledge) "
+                            "(create_background_task, dispatch_thinking_graph, store_knowledge) "
                             "jsou RESETOVÁNA. Při dalším použití write akce se znovu zeptej na souhlas. "
                             "DŮLEŽITÉ: Informace z předchozího projektu NEPOUŽÍVEJ pro aktuální projekt."
                         ),
@@ -929,12 +929,6 @@ async def run_agentic_loop(
 
                 if tool_name in ("create_background_task", "dispatch_thinking_graph"):
                     created_tasks.append(arguments)
-                if tool_name == "dispatch_coding_agent" and "taskId" in result:
-                    # Extract taskId from result string for inline log streaming
-                    import re as _re
-                    _task_id_match = _re.search(r"'taskId':\s*'([0-9a-fA-F]{24})'", result)
-                    if _task_id_match:
-                        created_tasks.append({"coding_agent_task_id": _task_id_match.group(1)})
                 if tool_name == "respond_to_user_task":
                     responded_tasks.append(arguments.get("task_id", ""))
 

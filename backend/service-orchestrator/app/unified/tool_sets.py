@@ -34,7 +34,6 @@ _CORE_TOOL_NAMES: set[str] = {
 }
 
 _EXTENDED_ONLY_NAMES: set[str] = {
-    "dispatch_coding_agent",
     "create_background_task",
     "search_tasks",
     "respond_to_user_task",
