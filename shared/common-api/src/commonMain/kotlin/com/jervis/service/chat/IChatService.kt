@@ -78,8 +78,21 @@ interface IChatService {
      * already maintains its own thread). Used by the chat sidebar when the
      * user clicks on an active task and wants to continue the dialogue with
      * Jervis inside that task's thread instead of the main chat.
+     *
+     * Legacy path — left in place for the LangGraph-era pipeline. The Claude
+     * CLI manager uses [getSessionConversationHistory] instead.
      */
     suspend fun getTaskConversationHistory(taskId: String, limit: Int = 200): ChatHistoryDto
+
+    /**
+     * Load the message history of a single chat session — the path the
+     * Claude CLI manager uses. A ChatSessionDocument owns its thread via
+     * `conversationId = session.id`, independent of any TaskDocument.
+     *
+     * Equivalent in shape to [getTaskConversationHistory] but keyed on the
+     * session id. Returns empty history for unknown session ids.
+     */
+    suspend fun getSessionConversationHistory(sessionId: String, limit: Int = 200): ChatHistoryDto
 
     /**
      * Phase 5 draft persistence: save unsent text for a conversation.
@@ -143,8 +156,16 @@ interface IChatService {
      * Server bridges this kRPC stream to the TTS gRPC service. Emits one
      * HEADER event with the PCM sampleRate, followed by PCM events with
      * base64-encoded raw audio, terminating in DONE (or ERROR on failure).
+     *
+     * [activeClientId] / [activeProjectId] scope the normalization rule
+     * lookup on the XTTS pod — project-scoped acronyms win over client,
+     * client over global. Pass the currently active chat scope.
      */
-    fun streamTts(text: String): Flow<TtsChunkEvent>
+    fun streamTts(
+        text: String,
+        activeClientId: String? = null,
+        activeProjectId: String? = null,
+    ): Flow<TtsChunkEvent>
 
     /**
      * One-shot text query from Siri / Google Assistant / Wear quick action.

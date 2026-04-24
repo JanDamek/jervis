@@ -623,14 +623,28 @@ class ChatRpcImpl(
         )
     }
 
-    override suspend fun getTaskConversationHistory(taskId: String, limit: Int): ChatHistoryDto {
-        // Phase 5 chat-as-primary: load message history scoped to a single
-        // task's conversation. The conversationId stored on each
-        // ChatMessageDocument equals task.id.value, so we can fetch directly.
-        val taskObjectId = try {
-            ObjectId(taskId)
+    override suspend fun getTaskConversationHistory(taskId: String, limit: Int): ChatHistoryDto =
+        loadConversationHistory("TASK_CONV_HISTORY", taskId, limit)
+
+    override suspend fun getSessionConversationHistory(sessionId: String, limit: Int): ChatHistoryDto =
+        loadConversationHistory("SESSION_CONV_HISTORY", sessionId, limit)
+
+    /**
+     * Shared loader for both task-scoped and session-scoped history.
+     * `ChatMessageDocument.conversationId` is a single ObjectId column —
+     * the dispatcher is free to equal it to `TaskDocument._id` (legacy
+     * pipeline) or `ChatSessionDocument._id` (Claude CLI manager).
+     * Both reads look identical at the storage level.
+     */
+    private suspend fun loadConversationHistory(
+        logTag: String,
+        rawId: String,
+        limit: Int,
+    ): ChatHistoryDto {
+        val conversationObjectId = try {
+            ObjectId(rawId)
         } catch (e: Exception) {
-            logger.warn { "TASK_CONV_HISTORY: invalid taskId=$taskId — ${e.message}" }
+            logger.warn { "$logTag: invalid id=$rawId — ${e.message}" }
             return ChatHistoryDto(
                 messages = emptyList(),
                 hasMore = false,
@@ -639,7 +653,7 @@ class ChatRpcImpl(
                 backgroundMessageCount = 0,
             )
         }
-        val docs = chatMessageService.getAllMessages(taskObjectId)
+        val docs = chatMessageService.getAllMessages(conversationObjectId)
             .takeLast(limit)
         val messages = docs.map { it.toChatMessageDto(taskGraphExistsService) }
         return ChatHistoryDto(
