@@ -46,10 +46,8 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlin.time.Clock
 
@@ -311,7 +309,6 @@ class ChatViewModel(
     val activeThinkingGraph: StateFlow<TaskGraphDto?> = _activeThinkingGraph.asStateFlow()
 
     /** Debounce job for memory graph refresh — prevents rapid repeated requests. */
-    private var memoryGraphLoadJob: Job? = null
 
     /** Detail sub-graph shown when user clicks on TASK_REF → thinking graph link. */
     private val _detailThinkingGraph = MutableStateFlow<TaskGraphDto?>(null)
@@ -349,7 +346,6 @@ class ChatViewModel(
         val newVisible = !_thinkingGraphPanelVisible.value
         _thinkingGraphPanelVisible.value = newVisible
         if (newVisible && _activeThinkingGraph.value == null) {
-            loadMemoryGraph()
         }
     }
 
@@ -547,7 +543,6 @@ class ChatViewModel(
                         "hasMore=${history.hasMore}, chat=${_showChat.value}, tasks=${_showTasks.value}, " +
                         "reaction=${_showNeedReaction.value}")
                     // Load master graph on connection ready
-                    loadMemoryGraph()
                 } catch (ce: CancellationException) {
                     throw ce
                 } catch (e: Exception) {
@@ -1006,28 +1001,8 @@ class ChatViewModel(
         }
     }
 
-    /**
-     * Load or refresh the Paměťový graf (memory graph) from orchestrator.
-     * Called on connection ready, after FINAL/BACKGROUND_RESULT, and on toggle.
-     */
-    internal fun loadMemoryGraph() {
-        memoryGraphLoadJob?.cancel()
-        memoryGraphLoadJob = scope.launch {
-            delay(500)
-            try {
-                val clientId = selectedClientId.value
-                val graph = repository.taskGraphs.getGraph("master", clientId)
-                if (graph != null && graph.vertices.isNotEmpty()) {
-                    println("ChatViewModel: memory graph refreshed — ${graph.vertices.size} vertices (client=$clientId)")
-                    _activeThinkingGraph.value = graph
-                } else {
-                    println("ChatViewModel: memory graph not found or empty")
-                }
-            } catch (e: Exception) {
-                println("ChatViewModel: memory graph refresh failed: ${e.message}")
-            }
-        }
-    }
+    // Memory Graph removed — no replacement on the client side. Claude
+    // CLI owns session narrative via compact_store (server-only).
 
     /** Toggle chat messages visibility. */
     /** Toggle "Chat" filter — independent, triggers server reload. */
@@ -1618,7 +1593,6 @@ class ChatViewModel(
                     ),
                 )
                 // Refresh master graph after chat completion
-                loadMemoryGraph()
             }
 
             ChatMessage.MessageType.ERROR -> {
@@ -1654,7 +1628,6 @@ class ChatViewModel(
                 // Reload from DB — server applies correct filter (showChat/showTasks/showNeedReaction).
                 // Return early so the final _chatMessages.value = messages at the end doesn't overwrite reload results.
                 reloadForCurrentFilter()
-                loadMemoryGraph()
                 return
             }
 
@@ -1689,8 +1662,6 @@ class ChatViewModel(
                 if (!graphId.isNullOrBlank() && _thinkingGraphPanelVisible.value) {
                     openSubGraph(graphId)
                 }
-                loadMemoryGraph()
-
                 // Reload task graph for inline display on completion
                 if (status in listOf("completed", "failed") && taskId != null) {
                     loadTaskGraph(taskId)
@@ -1990,51 +1961,51 @@ class ChatViewModel(
                 // kick off an infinite re-subscribe loop — the exact pathology
                 // seen in the UI log (HEADER → DONE → re-subscribe, repeated).
                 val services = connectionManager.awaitConnected()
-                // 90s total budget covers warmed-up XTTS for ~600 char replies.
-                // If generation is slower than that something is wrong (GPU
-                // contention, stuck backend) — give up so the speaker icon
-                // returns and the user can retry instead of waiting on a
-                // silent stream.
-                withTimeout(90_000L) {
-                    services.chatService.streamTts(text).collect { event ->
-                        when (event.type) {
-                            com.jervis.dto.chat.TtsChunkEventType.HEADER -> {
-                                val sampleRate = if (event.sampleRate > 0) event.sampleRate else 24000
-                                println("TTS: opening audio stream, sampleRate=$sampleRate")
+                // No hard timeout — TTS is a push stream with absolute
+                // priority on the router; if it's taking a while it's
+                // because the router is preempting background work for
+                // us, not because something is broken. The user can
+                // cancel manually by tapping the speaker button again.
+                services.chatService.streamTts(
+                    text = text,
+                    activeClientId = currentFilterClientId,
+                    activeProjectId = currentFilterProjectId,
+                ).collect { event ->
+                    when (event.type) {
+                        com.jervis.dto.chat.TtsChunkEventType.HEADER -> {
+                            val sampleRate = if (event.sampleRate > 0) event.sampleRate else 24000
+                            println("TTS: opening audio stream, sampleRate=$sampleRate")
+                            withContext(Dispatchers.Default) {
+                                ttsPlayer.startStream(sampleRate)
+                            }
+                        }
+                        com.jervis.dto.chat.TtsChunkEventType.PCM -> {
+                            val audioB64 = event.audioData
+                            if (audioB64.isNotBlank()) {
+                                val pcmBytes = Base64.decode(audioB64)
                                 withContext(Dispatchers.Default) {
-                                    ttsPlayer.startStream(sampleRate)
+                                    ttsPlayer.streamPcm(pcmBytes)
                                 }
                             }
-                            com.jervis.dto.chat.TtsChunkEventType.PCM -> {
-                                val audioB64 = event.audioData
-                                if (audioB64.isNotBlank()) {
-                                    val pcmBytes = Base64.decode(audioB64)
-                                    withContext(Dispatchers.Default) {
-                                        ttsPlayer.streamPcm(pcmBytes)
-                                    }
-                                }
+                        }
+                        com.jervis.dto.chat.TtsChunkEventType.DONE -> {
+                            println("TTS: stream done, draining audio")
+                            withContext(Dispatchers.Default) {
+                                ttsPlayer.finishStream()
                             }
-                            com.jervis.dto.chat.TtsChunkEventType.DONE -> {
-                                println("TTS: stream done, draining audio")
-                                withContext(Dispatchers.Default) {
-                                    ttsPlayer.finishStream()
-                                }
-                                return@collect
+                            return@collect
+                        }
+                        com.jervis.dto.chat.TtsChunkEventType.ERROR -> {
+                            println("TTS stream error: ${event.errorMessage}")
+                            withContext(Dispatchers.Default) {
+                                ttsPlayer.stopStream()
                             }
-                            com.jervis.dto.chat.TtsChunkEventType.ERROR -> {
-                                println("TTS stream error: ${event.errorMessage}")
-                                withContext(Dispatchers.Default) {
-                                    ttsPlayer.stopStream()
-                                }
-                                return@collect
-                            }
+                            return@collect
                         }
                     }
                 }
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: TimeoutCancellationException) {
-                println("TTS timeout: no completion within 90s, resetting")
             } catch (e: Exception) {
                 println("TTS play error: ${e::class.simpleName}: ${e.message}")
             } finally {

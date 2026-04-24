@@ -154,15 +154,6 @@ sealed class JervisEvent {
     ) : JervisEvent()
 
     /**
-     * Memory graph changed — triggers UI refresh of the Paměťový graf panel.
-     * Emitted when vertex status changes during background task execution.
-     */
-    @Serializable
-    data class MemoryGraphChanged(
-        override val timestamp: String,
-    ) : JervisEvent()
-
-    /**
      * Connection state changed — emitted when connection discovery completes
      * or connection state changes significantly. Shown as snackbar in UI.
      */

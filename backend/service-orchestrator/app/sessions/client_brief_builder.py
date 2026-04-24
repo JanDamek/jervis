@@ -111,7 +111,7 @@ async def build_brief(
         f"    scratchpad_query(scope=\"client:{client_id}\", limit=30)"
     )
     brief_parts.append(
-        f"    memory_graph_load_snapshot(scope=\"client:{client_id}\")"
+        f"    session_compact_load(scope=\"client:{client_id}\")"
     )
     brief_parts.append(
         f"    thought_search(query=<user's request>, client_id=\"{client_id}\""
@@ -154,7 +154,7 @@ async def build_brief(
     brief_parts.append("- `o365_mail_list(...)` — recent mails for this client")
     brief_parts.append("- `get_meeting(meeting_id)` + `get_meeting_transcript(meeting_id)`")
     brief_parts.append("- `list_meetings(...)` — past meetings for context")
-    brief_parts.append("- `memory_graph_save_snapshot(scope, content)` — see shutdown protocol below")
+    brief_parts.append("- `session_compact_save(scope, content)` — see shutdown protocol below")
     brief_parts.append("")
     brief_parts.append("**Your scratchpad (structured notebook, MongoDB-backed):**")
     brief_parts.append(
@@ -258,7 +258,7 @@ async def build_brief(
         "answer, recall prior state by calling these tools in this order:"
     )
     brief_parts.append("")
-    brief_parts.append(f"1. `memory_graph_load_snapshot(scope=\"client:{client_id}\")` — "
+    brief_parts.append(f"1. `session_compact_load(scope=\"client:{client_id}\")` — "
                        "narrative from the last session (or empty on cold start)")
     brief_parts.append(f"2. `scratchpad_query(scope=\"client:{client_id}\", limit=30)` — "
                        "structured pending work (todos, pending_reply, decisions, follow-ups)")
@@ -286,7 +286,7 @@ async def build_brief(
         brief_parts.append("")
         brief_parts.append(
             "The compact above is the narrative of the last session. It is "
-            "already in your context — do NOT re-call `memory_graph_load_snapshot` "
+            "already in your context — do NOT re-call `session_compact_load` "
             "unless the user explicitly asks for an older snapshot. Use it as "
             "prior context, but cross-check against scratchpad / KB when the "
             "user's question depends on specifics."
@@ -313,7 +313,7 @@ async def build_brief(
     brief_parts.append("- **Key facts**: durable knowledge worth carrying over")
     brief_parts.append("")
     brief_parts.append(
-        "Also call `memory_graph_save_snapshot(scope=\"client:"
+        "Also call `session_compact_save(scope=\"client:"
         + client_id
         + "\", content=<the same markdown>)` so the snapshot is persisted "
         "to MongoDB before you exit. After that one final emit, stop."

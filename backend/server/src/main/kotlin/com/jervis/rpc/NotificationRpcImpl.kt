@@ -255,15 +255,6 @@ class NotificationRpcImpl : INotificationService {
         }
     }
 
-    suspend fun emitMemoryGraphChanged() {
-        val event = JervisEvent.MemoryGraphChanged(
-            timestamp = Instant.now().toString(),
-        )
-        eventStreams.keys().asSequence().forEach { id ->
-            emitEvent(id, event)
-        }
-    }
-
     suspend fun emitConnectionStateChanged(
         clientId: String,
         connectionId: String,

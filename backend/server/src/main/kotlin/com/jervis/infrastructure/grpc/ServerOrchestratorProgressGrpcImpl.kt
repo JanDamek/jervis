@@ -228,13 +228,9 @@ class ServerOrchestratorProgressGrpcImpl(
     }
 
     override suspend fun memoryGraphChanged(request: MemoryGraphChangedRequest): AckResponse {
-        return try {
-            backgroundScope.launch { notificationRpc.emitMemoryGraphChanged() }
-            AckResponse.newBuilder().setOk(true).build()
-        } catch (e: Exception) {
-            logger.debug(e) { "Failed to process memory-graph-changed" }
-            AckResponse.newBuilder().setOk(false).build()
-        }
+        // Memory Graph removed — accept the RPC for backward compatibility
+        // with in-flight Python callers, but do not broadcast anything.
+        return AckResponse.newBuilder().setOk(true).build()
     }
 
     override suspend fun thinkingGraphUpdate(request: ThinkingGraphUpdateRequest): AckResponse {

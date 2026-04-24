@@ -306,27 +306,14 @@ class KotlinServerClient:
             return False
 
     # ------------------------------------------------------------------
-    # Memory graph change notification
+    # notify_memory_graph_changed removed — Memory Graph is gone. Callers
+    # that still invoke it land on the kept stub below which returns True
+    # without contacting the server so their control flow stays identical.
     # ------------------------------------------------------------------
 
-    async def notify_memory_graph_changed(self) -> bool:
-        """Notify Kotlin server that the memory graph changed — triggers UI refresh."""
-        try:
-            from app.grpc_server_client import server_orchestrator_progress_stub
-            from jervis.common import types_pb2
-            from jervis.server import orchestrator_progress_pb2
-            from jervis_contracts.interceptors import prepare_context
-
-            ctx = types_pb2.RequestContext()
-            prepare_context(ctx)
-            await server_orchestrator_progress_stub().MemoryGraphChanged(
-                orchestrator_progress_pb2.MemoryGraphChangedRequest(ctx=ctx),
-                timeout=5.0,
-            )
-            return True
-        except Exception as e:
-            logger.debug("Failed to notify memory graph changed: %s", e)
-            return False
+    async def notify_memory_graph_changed(self) -> bool:  # noqa: D401
+        """No-op — Memory Graph removed in agent-job migration."""
+        return True
 
     # ------------------------------------------------------------------
     # Chat foreground preemption

@@ -637,14 +637,14 @@ async def kb_delete_by_source(
     )
 
 
-# ── Memory Graph Snapshot Tools (Claude session compact/resume) ─────────
+# ── Session Compact Snapshots (Claude session compact/resume) ───────────
 #
-# These power the COMPACT_AND_EXIT protocol described in the per-client
-# brief template. The Claude session calls `memory_graph_save_snapshot`
-# on shutdown; the next session boot reads the latest snapshot via the
-# brief builder in the orchestrator (which ultimately reads the same
-# MongoDB collection — `load` below is exposed for agents that want to
-# peek at prior narrative during a live session).
+# Claude-CLI-as-manager session narrative. These back the
+# COMPACT_AND_EXIT + PERIODIC_COMPACT protocols described in the
+# per-client brief template. Previously exposed under the
+# `memory_graph_save_snapshot` / `memory_graph_load_snapshot` names; the
+# "memory graph" framing is gone (strategic memory moved to Thought Map,
+# narrative compact snapshots live here as plain markdown + scope).
 #
 # Scope conventions (string keys, opaque to the tool):
 #   "client:<clientId>" — per-client daily session
@@ -653,7 +653,7 @@ async def kb_delete_by_source(
 
 
 @mcp.tool
-async def memory_graph_save_snapshot(
+async def session_compact_save(
     scope: str,
     content: str,
     session_id: str = "",
@@ -662,10 +662,10 @@ async def memory_graph_save_snapshot(
 ) -> str:
     """Persist a narrative compact snapshot for a session scope.
 
-    Call this once at the end of a session (triggered by the
-    COMPACT_AND_EXIT protocol in the brief). The snapshot is a free-form
-    markdown summary of where the session left off — state, pending
-    threads, next steps, key facts.
+    Called at the end of a session (COMPACT_AND_EXIT protocol) and by the
+    periodic-compact background loop (PERIODIC_COMPACT, every ~7 min).
+    The snapshot is a free-form markdown summary of where the session
+    left off — state, pending threads, next steps, key facts.
 
     Args:
         scope: Opaque scope key. Use "client:<clientId>" for per-client
@@ -698,7 +698,7 @@ async def memory_graph_save_snapshot(
 
 
 @mcp.tool
-async def memory_graph_load_snapshot(scope: str) -> str:
+async def session_compact_load(scope: str) -> str:
     """Load the most recent compact snapshot for a scope.
 
     Returns the raw markdown body (or an empty-state message if nothing
