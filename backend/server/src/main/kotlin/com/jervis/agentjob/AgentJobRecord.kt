@@ -78,14 +78,19 @@ data class AgentJobRecord(
     /** K8s Job name once dispatched. Null while QUEUED. */
     @Indexed
     val kubernetesJobName: String? = null,
-    /** Workspace path on the shared PVC. For CODING flavor this is the
-     * per-project checkout managed by `ProjectWorkspaceManager` — NOT
-     * a per-job temporary dir. Null for flavors that don't need a
-     * workspace. */
+    /** Which `ProjectResource` (repository) the Job operates on — matches
+     * `ProjectDocument.resources[].id`. Required for CODING flavor when
+     * a project owns more than one repo, so the dispatcher knows which
+     * checkout to materialise. Null for non-coding flavors. */
+    val resourceId: String? = null,
+    /** Per-agent-job worktree path on the shared PVC.
+     * `clients/<cid>/projects/<pid>/agent-jobs/<agentJobId>/` — created by
+     * `AgentWorkspaceService.prepareWorktreeForJob`. Null while QUEUED
+     * or for flavors that don't need code access. */
     val workspacePath: String? = null,
-    /** Git branch the Job operates on (already checked out by the server
-     * before Job start). The Job verifies but never switches. CODING
-     * flavor only. */
+    /** Git branch the Job operates on (created + checked out by the
+     * server before Job start). The Job verifies but never switches.
+     * CODING flavor only. */
     val gitBranch: String? = null,
     /** Commit SHA pushed by the Job. Populated on DONE for CODING
      * flavor; null otherwise. */
@@ -127,6 +132,7 @@ data class AgentJobRecord(
             dispatchedBy: String,
             state: AgentJobState?,
             kubernetesJobName: String?,
+            resourceId: String?,
             workspacePath: String?,
             gitBranch: String?,
             gitCommitSha: String?,
@@ -147,6 +153,7 @@ data class AgentJobRecord(
             dispatchedBy = dispatchedBy,
             state = state ?: AgentJobState.QUEUED,
             kubernetesJobName = kubernetesJobName,
+            resourceId = resourceId,
             workspacePath = workspacePath,
             gitBranch = gitBranch,
             gitCommitSha = gitCommitSha,
