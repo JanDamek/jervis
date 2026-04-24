@@ -15,6 +15,14 @@ spec:
         app: jervis-orchestrator
     spec:
       serviceAccountName: jervis-orchestrator
+      # Per-client Claude SDK sessions must compact + save narrative
+      # snapshots to MongoDB before the pod exits. Each compact asks
+      # the Claude subprocess to produce a markdown summary (up to
+      # ~120 s per session), and shutdown iterates through every
+      # active session sequentially. 300 s covers a realistic load
+      # of 3-5 concurrent clients; otherwise K8s SIGKILLs before
+      # compacts land and the next pod boots without prior context.
+      terminationGracePeriodSeconds: 300
       securityContext:
         runAsUser: 1000
         runAsGroup: 1000

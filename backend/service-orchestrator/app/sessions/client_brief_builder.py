@@ -95,6 +95,38 @@ async def build_brief(
     brief_parts.append(f"**Today:** {today}")
     brief_parts.append("")
 
+    # Put the bootstrap protocol first so Claude cannot miss it while
+    # skimming a long system prompt. Without this the cold-start session
+    # tends to hallucinate prior work out of thin air instead of reading
+    # scratchpad / compact snapshot.
+    brief_parts.append("## ⚠️ FIRST ACTION — read prior state before answering")
+    brief_parts.append("")
+    brief_parts.append(
+        "Regardless of how short or casual the user's very first message is "
+        "in this session, your FIRST step is ALWAYS these two tool calls, "
+        "in this order, before you write a single word of reply:"
+    )
+    brief_parts.append("")
+    brief_parts.append(
+        f"    scratchpad_query(scope=\"client:{client_id}\", limit=30)"
+    )
+    brief_parts.append(
+        f"    memory_graph_load_snapshot(scope=\"client:{client_id}\")"
+    )
+    brief_parts.append("")
+    brief_parts.append(
+        "If either returns content, your reply MUST open by summarising "
+        "what's there — concrete keys, task ids, statuses. If both come "
+        "back empty, say \"žádný záznam\" and do not invent prior work."
+    )
+    brief_parts.append("")
+    brief_parts.append(
+        "Do this on EVERY first message of EVERY session. No exceptions "
+        "for greetings, \"Ahoj\", \"Kde jsme skončili?\" — especially not "
+        "for those, because that is exactly when state recall matters."
+    )
+    brief_parts.append("")
+
     brief_parts.append("## Role")
     brief_parts.append(
         "You are Jervis — Jan Damek's assistant — operating with a daily overview "
@@ -144,23 +176,53 @@ async def build_brief(
                        + ")")
     brief_parts.append("")
 
+    brief_parts.append("## Session bootstrap protocol — MANDATORY")
+    brief_parts.append(
+        "**On the very first user message of every session**, before you "
+        "answer, recall prior state by calling these tools in this order:"
+    )
+    brief_parts.append("")
+    brief_parts.append(f"1. `memory_graph_load_snapshot(scope=\"client:{client_id}\")` — "
+                       "narrative from the last session (or empty on cold start)")
+    brief_parts.append(f"2. `scratchpad_query(scope=\"client:{client_id}\", limit=30)` — "
+                       "structured pending work (todos, pending_reply, decisions, follow-ups)")
+    brief_parts.append("")
+    brief_parts.append(
+        "If either returns meaningful content, **open your reply by summarising "
+        "what the scratchpad says**, with concrete keys, task ids, and statuses. "
+        "Never claim to \"remember\" anything you didn't just read from those "
+        "tools — if both came back empty, say so, don't fabricate prior work."
+    )
+    brief_parts.append("")
+    brief_parts.append(
+        "After the recall, keep updating the scratchpad as work progresses "
+        "(namespaces: `todo`, `pending_reply`, `followup`, `decision`, `fact`)."
+    )
+    brief_parts.append("")
+
     if last_compact:
         age = datetime.datetime.now(datetime.timezone.utc) - last_compact.created_at
         age_str = f"{int(age.total_seconds() // 60)} min ago" if age.total_seconds() < 86400 \
             else f"{age.days} days ago"
-        brief_parts.append(f"## Previous compact ({age_str})")
+        brief_parts.append(f"## Previous compact ({age_str}) — loaded eagerly")
         brief_parts.append("")
         brief_parts.append(last_compact.content.strip())
         brief_parts.append("")
         brief_parts.append(
-            "The compact above is the narrative of the last session. Use it as "
-            "prior context; you do not need to re-verify everything, but "
-            "cross-check against KB when the user's question depends on specifics."
+            "The compact above is the narrative of the last session. It is "
+            "already in your context — do NOT re-call `memory_graph_load_snapshot` "
+            "unless the user explicitly asks for an older snapshot. Use it as "
+            "prior context, but cross-check against scratchpad / KB when the "
+            "user's question depends on specifics."
         )
         brief_parts.append("")
     else:
         brief_parts.append("## Previous compact")
-        brief_parts.append("*No prior session recorded for this client — this is a cold start.*")
+        brief_parts.append(
+            "*No compact snapshot on file for this client.* On the first user "
+            "message still run the bootstrap protocol above — the scratchpad "
+            "may carry state from an earlier orchestrator instance."
+        )
         brief_parts.append("")
 
     brief_parts.append("## Shutdown protocol (important)")

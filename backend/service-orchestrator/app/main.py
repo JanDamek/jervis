@@ -137,10 +137,17 @@ atexit.register(_crash_cleanup)
 
 
 def _sigterm_handler(signum, frame):
-    """Handle SIGTERM (K8s pod termination) — report active tasks before exit."""
+    """Handle SIGTERM (K8s pod termination) — log + best-effort crash
+    callback for active LangGraph-era tasks.
+
+    Does NOT call `raise SystemExit(0)`. Uvicorn listens to SIGTERM on
+    its own and runs the FastAPI lifespan finalisers on graceful shutdown
+    — that finaliser is where `client_session_manager.shutdown()`
+    compacts every running Claude session into MongoDB. Exiting here
+    would skip the lifespan and lose the compact snapshot.
+    """
     logger.warning("SIGTERM received — cleaning up %d active tasks", len(_active_tasks))
     _crash_cleanup()
-    raise SystemExit(0)
 
 
 signal.signal(signal.SIGTERM, _sigterm_handler)

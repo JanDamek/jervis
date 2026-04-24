@@ -964,7 +964,7 @@ async def _execute_kb_search(
     if not query.strip():
         return "Error: Empty KB search query."
 
-    logger.info("kb_search: query=%r clientId=%s projectId=%s groupId=%s kinds=%s maxResults=%d",
+    logger.info("kb_search: query=%r clientId=%s projectId=%s groupId=%s kinds=%s maxResults=%s",
                 query[:120], client_id, project_id, group_id, kinds, max_results)
 
     headers = foreground_headers(processing_mode)
