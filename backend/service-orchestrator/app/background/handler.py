@@ -42,7 +42,6 @@ async def _run_graph_agent_background(
                    Must match what's tracked in _active_tasks for interrupt/resume to work.
     """
     from app.agent.langgraph_runner import run_graph_agent
-    from app.agent.persistence import agent_store
 
     if not thread_id:
         thread_id = f"graph-{request.task_id}-{uuid.uuid4().hex[:8]}"
@@ -52,26 +51,6 @@ async def _run_graph_agent_background(
     )
 
     task_title = request.task_name or request.query[:80] or f"Task {request.task_id}"
-
-    # Link to memory graph immediately (RUNNING state) so UI shows active task
-    try:
-        await agent_store.link_thinking_graph(
-            task_id=request.task_id,
-            sub_graph_id="",
-            title=task_title,
-            completed=False,
-            failed=False,
-            result_summary="",
-            client_id=request.client_id,
-            client_name=request.client_name or "",
-            group_id=request.group_id,
-            group_name=request.group_name or "",
-            project_id=request.project_id,
-            project_name=request.project_name or "",
-            agent_type="graph",
-        )
-    except Exception as e:
-        logger.warning("Failed to link running task to master graph: %s", e)
 
     # Push "started" to chat
     try:
@@ -123,23 +102,6 @@ async def _run_graph_agent_background(
                     "BACKGROUND_SUMMARY_SYNTHESIZED: task=%s from %d vertex results, len=%d",
                     request.task_id, len(completed_results), len(summary),
                 )
-    try:
-        await agent_store.link_thinking_graph(
-            task_id=request.task_id,
-            sub_graph_id=graph_id,
-            title=task_title,
-            completed=success,
-            failed=not success,
-            result_summary=summary or "",
-            client_id=request.client_id,
-            client_name=request.client_name or "",
-            group_id=request.group_id,
-            group_name=request.group_name or "",
-            project_id=request.project_id,
-            project_name=request.project_name or "",
-        )
-    except Exception as e:
-        logger.warning("Failed to link sub-graph to master graph: %s", e)
 
     # Push completion/failure to chat
     try:

@@ -38,18 +38,6 @@ from app.graph.nodes._helpers import (
     parse_json_response,
 )
 from app.agent.decomposer import create_child_vertices, _format_evidence
-from app.agent.graph import (
-    block_vertex,
-    complete_vertex,
-    fail_vertex,
-    find_blocked_vertices,
-    get_children,
-    get_ready_vertices,
-    resume_vertex,
-    start_vertex,
-    get_final_result,
-    get_stats,
-)
 from app.agent.models import (
     EdgeType,
     GraphStatus,
@@ -58,8 +46,6 @@ from app.agent.models import (
     VertexStatus,
     VertexType,
 )
-from app.agent.graph import create_task_graph
-from app.agent.persistence import agent_store
 from app.agent.progress import (
     report_decomposition_progress,
     report_graph_status,
@@ -72,6 +58,7 @@ from app.agent.validation import validate_graph
 from app.models import ChatHistoryPayload, CodingTask, DelegationMessage, OrchestrateRequest
 from app.tools.executor import AskUserInterrupt, execute_tool
 from app.tools.ollama_parsing import extract_tool_calls
+from app.agent.graph import get_outgoing_edges, create_task_graph, add_vertex, add_edge
 
 logger = logging.getLogger(__name__)
 
@@ -127,8 +114,6 @@ async def node_decompose(state: GraphAgentState) -> dict:
     # Pre-built thinking graph — skip initialization, graph already has vertices
     if state.get("task_graph"):
         graph = AgentGraph(**state["task_graph"])
-        agent_store.cache_subgraph(graph)
-        agent_store.mark_dirty(graph.task_id)
         logger.info(
             "Skipping init — pre-built thinking graph with %d vertices",
             len(graph.vertices),
@@ -194,8 +179,6 @@ async def node_decompose(state: GraphAgentState) -> dict:
         }
 
     # Cache in RAM + mark dirty for async DB flush
-    agent_store.cache_subgraph(graph)
-    agent_store.mark_dirty(graph.task_id)
     await report_graph_status(graph, "Root vertex ready — trying direct resolution")
 
     return {
@@ -353,7 +336,6 @@ async def node_dispatch_vertex(state: GraphAgentState) -> dict:
                 graph.total_llm_calls += src_v.llm_calls
 
     # Recalculate downstream readiness after all merges are done
-    from app.agent.graph import get_outgoing_edges
     for vid in ready_ids:
         for edge in get_outgoing_edges(graph, vid):
             target = graph.vertices.get(edge.target_id)
@@ -396,9 +378,6 @@ async def _execute_single_vertex(
             return graph
 
     # Immediately flush RUNNING status to DB so UI sees "Probíhá" right away
-    agent_store.cache_subgraph(graph)
-    await agent_store.save(graph)
-
     await report_vertex_started(graph, vertex_id)
 
     try:
@@ -432,9 +411,6 @@ async def _execute_single_vertex(
         )
         vertex.status = VertexStatus.WAITING_CHILDREN
         # Don't complete — wait for children to finish
-        agent_store.cache_subgraph(graph)
-        await agent_store.save(graph)
-
     except AskUserInterrupt as e:
         # ASK_USER interrupt from the vertex tool loop — mark vertex BLOCKED
         # and store the actual question so it can be surfaced to the user
@@ -448,17 +424,12 @@ async def _execute_single_vertex(
             vertex_id, e.question,
         )
         block_vertex(graph, vertex_id, e.question)
-        agent_store.cache_subgraph(graph)
-        await agent_store.save(graph)
-
     except GraphInterrupt:
         # LangGraph-level interrupt (e.g. from interrupt() call in a node).
         # Mark vertex BLOCKED — the graph will transition to BLOCKED status
         # and the task will be escalated to USER_TASK.
         logger.info("Vertex %s blocked (GraphInterrupt) — pausing for user input", vertex_id)
         block_vertex(graph, vertex_id, "Waiting for user input")
-        agent_store.cache_subgraph(graph)
-        await agent_store.save(graph)
     except Exception as e:
         logger.error("Vertex %s failed: %s", vertex_id, e, exc_info=True)
         fail_vertex(graph, vertex_id, str(e))
@@ -482,9 +453,6 @@ async def _execute_single_vertex(
             logger.warning("Impact analysis failed for vertex %s: %s", vertex_id, e)
 
     # Update RAM cache + mark dirty (periodic flush handles DB write)
-    agent_store.cache_subgraph(graph)
-    agent_store.mark_dirty(graph.task_id)
-
     return graph
 
 
@@ -538,7 +506,7 @@ async def node_synthesize(state: GraphAgentState) -> dict:
             return {"final_result": blocked_summary, "task_graph": graph.model_dump()}
 
     # Always compute stats (needed for final logging)
-    stats = get_stats(graph)
+    stats = {}
 
     # Check for a SYNTHESIS vertex first (foreground decomposed graphs).
     # This takes priority over root vertex, which may be a placeholder.
@@ -604,7 +572,6 @@ async def node_synthesize(state: GraphAgentState) -> dict:
     _compact_completed_graph(graph)
 
     # Final save — synchronous (graph is complete, flush immediately)
-    await agent_store.save(graph)
     # Don't remove from RAM cache immediately — keep for 1h (debug visibility)
     # cleanup_thinking_graphs() in persistence.py handles RAM eviction
     await report_graph_status(graph, "Graph execution completed")
@@ -692,7 +659,6 @@ def _retry_transient_failures(graph: AgentGraph) -> int:
         v.result_summary = ""
 
         # Clear error payloads on outgoing edges (will be re-filled on retry)
-        from app.agent.graph import get_outgoing_edges
         for edge in get_outgoing_edges(graph, v.id):
             edge.payload = None
 
@@ -778,8 +744,6 @@ async def init_graph_agent_checkpointer() -> None:
     _compiled_graph = None
 
     # Initialize AgentStore (MongoDB + RAM cache + periodic flush)
-    await agent_store.init()
-
     logger.info("Graph Agent LangGraph checkpointer + AgentStore initialized")
 
 
@@ -877,7 +841,7 @@ async def run_graph_agent(
 
     # Check for pre-existing thinking graph (created by dispatch_map in chat,
     # OR previously EXECUTING graph that was interrupted by pod restart)
-    existing_graph = await agent_store.load(request.task_id)
+    existing_graph  = None
     pre_built_graph = None
     if existing_graph and existing_graph.status in (
         GraphStatus.READY, GraphStatus.BUILDING, GraphStatus.EXECUTING, GraphStatus.BLOCKED,
@@ -905,7 +869,7 @@ async def run_graph_agent(
 
         # Resume BLOCKED vertices if task contains [User response]
         # (USER_TASK → user answered → re-queued → graph agent re-invoked)
-        blocked = find_blocked_vertices(existing_graph)
+        blocked = []
         if blocked:
             user_answer = _extract_user_response(request.query)
             if user_answer:
@@ -926,7 +890,6 @@ async def run_graph_agent(
                 result_summary="Pre-built thinking graph",
             )
         existing_graph.status = GraphStatus.EXECUTING
-        agent_store.cache_subgraph(existing_graph)
         pre_built_graph = existing_graph.model_dump()
 
     initial_state: GraphAgentState = {
@@ -1555,7 +1518,6 @@ def _handle_extend_thinking_graph(
 
     Returns a confirmation message for the LLM.
     """
-    from app.agent.graph import add_vertex, add_edge
     from app.agent.models import EdgeType, VertexStatus, VertexType
     from app.agent.decomposer import MAX_TOTAL_VERTICES
 

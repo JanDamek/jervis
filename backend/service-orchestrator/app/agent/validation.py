@@ -14,13 +14,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-from app.agent.graph import (
-    get_fan_in_count,
-    get_incoming_edges,
-    get_outgoing_edges,
-    has_cycle,
-    topological_order,
-)
 from app.agent.models import (
     EdgeType,
     GraphType,
@@ -28,6 +21,11 @@ from app.agent.models import (
     AgentGraph,
     VertexStatus,
     VertexType,
+)
+from app.agent.graph import (
+    get_incoming_edges,
+    get_outgoing_edges,
+    get_fan_in_count,
 )
 
 logger = logging.getLogger(__name__)

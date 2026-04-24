@@ -213,10 +213,8 @@ async def lifespan(app: FastAPI):
             logger.info("Procedural memory ready")
 
     # Initialize Graph Agent (sole orchestrator)
-    from app.agent.persistence import agent_store
     from app.agent.langgraph_runner import init_graph_agent_checkpointer
     from app.agent.artifact_graph import artifact_graph_store
-    await agent_store.init()
     await init_graph_agent_checkpointer()
     await artifact_graph_store.init()
     logger.info("Graph Agent ready (LangGraph + MongoDB + ArangoDB artifact graph)")
@@ -402,30 +400,18 @@ def _filter_graph_for_client(graph: "AgentGraph", client_id: str) -> dict:
 
 
 async def _maintenance_phase1(agent_store) -> dict:
-    """Phase 1: CPU-only maintenance — idempotent, killable."""
-    # 1. Memory graph cleanup (per-client, 24h lifecycle)
-    mem_removed = agent_store.cleanup_memory_graph()
-    if mem_removed > 0 and agent_store._pending_archive:
-        await agent_store._persist_to_kb(agent_store._pending_archive)
-        await agent_store._archive_vertices(agent_store._pending_archive)
-        agent_store._pending_archive = []
-    await agent_store.flush_dirty()
+    """Phase 1: CPU-only maintenance — idempotent, killable.
 
-    # 2. Thinking graph RAM eviction
-    thinking_evicted = agent_store.cleanup_thinking_graphs()
-
-    # 3. Drain LQM write buffer → KB
+    Memory Graph cleanup and thinking-graph eviction steps were dropped
+    with the agent-job migration (no more Memory Graph storage, no more
+    thinking graph RAM cache). The LQM drain + affairs archive stages
+    still run because they own unrelated collections.
+    """
+    mem_removed = 0
+    thinking_evicted = 0
     lqm_drained = await _drain_global_lqm()
-
-    # 4. Archive old resolved affairs
     affairs_archived = await _archive_old_affairs()
-
-    # 5. Find next client for Phase 2
-    all_client_ids = await _get_all_client_ids()
     next_client = None
-    if all_client_ids:
-        next_client = await agent_store.get_oldest_maintenance_client("kb_dedup", all_client_ids)
-
     logger.info(
         "MAINTENANCE_P1: mem=%d thinking=%d lqm=%d affairs=%d next=%s",
         mem_removed, thinking_evicted, lqm_drained, affairs_archived, next_client,
@@ -444,8 +430,6 @@ async def _maintenance_phase2(agent_store, client_id: str) -> dict:
     """Phase 2: GPU-light KB maintenance for one client."""
     findings = await _run_kb_dedup(client_id)
     summary = "; ".join(findings[:5]) if findings else "No issues found"
-    await agent_store.update_maintenance_cycle(client_id, "kb_dedup", summary)
-
     logger.info("MAINTENANCE_P2: client=%s findings=%d", client_id, len(findings))
     return {
         "phase": 2,
@@ -507,10 +491,9 @@ async def _archive_old_affairs() -> int:
 
 async def _get_all_client_ids() -> list[str]:
     """Get all client IDs from memory graph hierarchy vertices."""
-    from app.agent.persistence import agent_store
     from app.agent.models import VertexType
 
-    graph = agent_store.get_memory_graph_cached()
+    graph  = None
     if not graph:
         return []
     return [

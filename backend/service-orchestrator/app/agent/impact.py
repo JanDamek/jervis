@@ -28,7 +28,6 @@ from app.agent.artifact_graph import (
     TouchKind,
     artifact_graph_store,
 )
-from app.agent.graph import add_edge
 from app.agent.models import (
     EdgeType,
     GraphVertex,
@@ -36,6 +35,7 @@ from app.agent.models import (
     VertexStatus,
     VertexType,
 )
+from app.agent.graph import add_edge
 
 logger = logging.getLogger(__name__)
 

@@ -18,7 +18,6 @@ import logging
 import time
 from dataclasses import dataclass
 
-from app.agent.graph import add_edge, add_vertex, create_task_graph
 from app.agent.models import (
     AgentGraph,
     EdgeType,
@@ -28,6 +27,7 @@ from app.agent.models import (
 from app.chat.handler_streaming import call_llm
 from app.config import settings
 from app.graph.nodes._helpers import parse_json_response
+from app.agent.graph import add_edge, add_vertex, create_task_graph
 
 logger = logging.getLogger(__name__)
 

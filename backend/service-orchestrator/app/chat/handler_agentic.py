@@ -50,6 +50,17 @@ _global_auto_approvals: set[str] = set()
 _approvals_loaded: bool = False
 
 
+def _approvals_db():
+    """Direct Mongo handle — Memory Graph's agent_store used to own the
+    connection; after its removal these handler helpers open their own
+    motor client the same way client_brief_builder / compact_store do.
+    """
+    from motor.motor_asyncio import AsyncIOMotorClient
+    from app.config import settings as _s
+    client = AsyncIOMotorClient(_s.mongodb_url)
+    return client.get_default_database()
+
+
 async def _ensure_approvals_loaded():
     """Load persistent approval rules from MongoDB (once)."""
     global _approvals_loaded
@@ -57,9 +68,7 @@ async def _ensure_approvals_loaded():
         return
     _approvals_loaded = True
     try:
-        from app.agent.persistence import agent_store
-        coll = await agent_store._ensure_collection()
-        db = coll.database
+        db = _approvals_db()
         rules_coll = db["approval_rules"]
         async for doc in rules_coll.find({"enabled": True}):
             _global_auto_approvals.add(doc["action"])
@@ -73,9 +82,7 @@ async def _ensure_approvals_loaded():
 async def _persist_approval_rule(action: str):
     """Save an auto-approval rule to MongoDB."""
     try:
-        from app.agent.persistence import agent_store
-        coll = await agent_store._ensure_collection()
-        db = coll.database
+        db = _approvals_db()
         rules_coll = db["approval_rules"]
         await rules_coll.update_one(
             {"action": action},
@@ -97,9 +104,7 @@ async def _persist_pending_approval(
     from datetime import datetime, timezone
     approval_id = str(ObjectId())
     try:
-        from app.agent.persistence import agent_store
-        coll = await agent_store._ensure_collection()
-        db = coll.database
+        db = _approvals_db()
         await db["pending_approvals"].insert_one({
             "_id": approval_id,
             "session_id": session_id,
@@ -128,9 +133,7 @@ async def _resolve_pending_approval(approval_id: str, approved: bool) -> None:
     """
     resolved_doc: dict | None = None
     try:
-        from app.agent.persistence import agent_store
-        coll = await agent_store._ensure_collection()
-        db = coll.database
+        db = _approvals_db()
         # find_one_and_update ensures we only dispatch the dismiss broadcast
         # for the first resolver — subsequent calls see status != "pending".
         from datetime import datetime, timezone
@@ -168,9 +171,7 @@ async def recover_pending_approvals() -> list[dict]:
     """
     recovered = []
     try:
-        from app.agent.persistence import agent_store
-        coll = await agent_store._ensure_collection()
-        db = coll.database
+        db = _approvals_db()
         approvals_coll = db["pending_approvals"]
 
         # Find stale pending approvals (older than 30s = orchestrator restarted)

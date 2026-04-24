@@ -233,27 +233,9 @@ class AgentTaskWatcher:
                 if mr_url:
                     logger.info("MR ready for review: task=%s url=%s", task_id, mr_url)
 
-                # Update memory graph TASK_REF vertex → completed
-                try:
-                    from app.agent.persistence import agent_store
-                    job_success = result.get("success", False)
-                    task_title = (
-                        task.title
-                        or task.content[:80]
-                        or f"Coding: {task_id[:12]}"
-                    )
-                    await agent_store.link_thinking_graph(
-                        task_id=task_id,
-                        sub_graph_id="",
-                        title=task_title,
-                        completed=job_success,
-                        failed=not job_success,
-                        result_summary=result.get("summary", ""),
-                        client_id=task.client_id,
-                        project_id=task.project_id or None,
-                    )
-                except Exception:
-                    pass  # Non-fatal
+                # Memory graph update removed — agent-job migration.
+                # AgentJobDispatcher + K8s Watch + report_agent_done own
+                # lifecycle reconciliation for the new agent job path.
             else:
                 # Graph-based task — update state and resume orchestration graph
                 try:
@@ -489,22 +471,7 @@ class AgentTaskWatcher:
             except Exception:
                 pass  # Non-fatal
 
-        # Record code review result in memory graph
-        try:
-            from app.agent.persistence import agent_store
-            review_title = f"Code Review: {verdict} (score {score}/100, round {review_round})"
-            await agent_store.link_thinking_graph(
-                task_id=task_id,
-                sub_graph_id="",
-                title=review_title,
-                completed=(verdict == "APPROVE"),
-                failed=(verdict in ("REJECT",)),
-                result_summary=f"{review_summary}\nMR: {mr_url}",
-                client_id=task.client_id,
-                project_id=task.project_id or None,
-            )
-        except Exception:
-            pass  # Non-fatal
+        # Memory graph link removed — agent-job migration.
 
         logger.info(
             "REVIEW_COMPLETED | task=%s | verdict=%s | blockers=%d | round=%d | posted=%s",

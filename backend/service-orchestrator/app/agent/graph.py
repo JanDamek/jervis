@@ -44,6 +44,20 @@ def create_task_graph(*args, **kwargs):
     return None
 
 
+# Edge/vertex traversal helpers — validators + langgraph_runner still
+# import these; return empty collections so `len(...)` / iteration works.
+def get_incoming_edges(*args, **kwargs) -> list:
+    return []
+
+
+def get_outgoing_edges(*args, **kwargs) -> list:
+    return []
+
+
+def get_fan_in_count(*args, **kwargs) -> int:
+    return 0
+
+
 # Legacy public API — every other symbol the orchestrator still tries
 # to import resolves here. Async variants are awaited by callers, so
 # module-level __getattr__ picks between sync / async based on common

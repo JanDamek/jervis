@@ -22,7 +22,6 @@ from app.agent.models import (
     VertexStatus,
     VertexType,
 )
-from app.agent.persistence import agent_store
 
 logger = logging.getLogger(__name__)
 
@@ -80,8 +79,6 @@ async def create_graph(
         created_at=now,
     )
 
-    await agent_store.save(graph)
-    agent_store.cache_subgraph(graph)
     _active_graphs[session_id] = graph_id
     logger.info("Created thinking graph: %s (%s) for session %s", title, graph_id, session_id)
     return graph
@@ -150,8 +147,6 @@ async def add_vertex(
         )
         graph.edges.append(edge)
 
-    await agent_store.save(graph)
-    agent_store.cache_subgraph(graph)
     logger.info("Added vertex '%s' (%s) to graph %s", title, vertex_id, graph.id)
     return graph, vertex
 
@@ -179,8 +174,6 @@ async def update_vertex(
     if vertex_type:
         vertex.vertex_type = _VERTEX_TYPE_MAP.get(vertex_type, vertex.vertex_type)
 
-    await agent_store.save(graph)
-    agent_store.cache_subgraph(graph)
     logger.info("Updated vertex '%s' in graph %s", vertex_id, graph.id)
     return graph, vertex
 
@@ -203,8 +196,6 @@ async def remove_vertex(
     del graph.vertices[vertex_id]
     graph.edges = [e for e in graph.edges if e.source_id != vertex_id and e.target_id != vertex_id]
 
-    await agent_store.save(graph)
-    agent_store.cache_subgraph(graph)
     logger.info("Removed vertex '%s' from graph %s", vertex_id, graph.id)
     return graph
 
@@ -245,9 +236,6 @@ async def dispatch_graph(
 
     # Re-key the graph to the real task_id
     graph.task_id = task_id
-    await agent_store.save(graph)
-    agent_store.cache_subgraph(graph)
-
     # Clear session mapping
     _active_graphs.pop(session_id, None)
 
@@ -260,7 +248,7 @@ async def get_active_graph(session_id: str) -> AgentGraph | None:
     graph_id = _active_graphs.get(session_id)
     if not graph_id:
         return None
-    graph = await agent_store.load(graph_id)
+    graph  = None
     if not graph:
         _active_graphs.pop(session_id, None)
         return None
@@ -307,9 +295,6 @@ async def run_vertex(
         task_id = str(result)
 
     # Persist correlation: task_id → (graph_id, vertex_id, session_id)
-    await agent_store.save_vertex_correlation(task_id, graph.id, vertex_id, session_id)
-
-    await agent_store.save(graph)
     logger.info(
         "Dispatched vertex '%s' (%s) from graph %s as task %s",
         vertex.title, vertex_id, graph.id, task_id,
@@ -325,12 +310,12 @@ async def handle_vertex_result(
 
     Returns (updated graph, session_id) if this was a vertex task, None otherwise.
     """
-    correlation = await agent_store.pop_vertex_correlation(task_id)
+    correlation  = None
     if not correlation:
         return None
 
     graph_id, vertex_id, session_id = correlation
-    graph = await agent_store.load_by_graph_id(graph_id)
+    graph  = None
     if not graph:
         logger.warning("Graph %s not found for vertex result (task %s)", graph_id, task_id)
         return None
@@ -340,7 +325,6 @@ async def handle_vertex_result(
         vertex.status = VertexStatus.COMPLETED
         vertex.result = result or ""
         vertex.result_summary = result or ""
-        await agent_store.save(graph)
         logger.info("Updated vertex '%s' with background result (task %s)", vertex_id, task_id)
 
     return graph, session_id

@@ -15,12 +15,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from app.agent.graph import (
-    add_edge,
-    add_vertex,
-    get_children,
-    has_cycle,
-)
 from app.agent.models import (
     EdgeType,
     GraphVertex,
@@ -31,6 +25,7 @@ from app.agent.models import (
 
 if TYPE_CHECKING:
     from app.models import EvidencePack
+from app.agent.graph import add_edge, add_vertex, create_task_graph
 
 logger = logging.getLogger(__name__)
 

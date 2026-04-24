@@ -488,22 +488,20 @@ async def _handle_query_action_log(args, client_id, _project_id, _kotlin_client)
 
 async def _handle_check_task_graph(args, _client_id, _project_id, _kotlin_client):
     """Check state of a task's thinking graph."""
-    from app.agent.persistence import agent_store
-    from app.agent.graph import get_stats, find_blocked_vertices
 
     task_id = args.get("task_id", "")
     if not task_id:
         return "Error: missing task_id."
 
     # Try RAM cache first, then DB
-    graph = agent_store.get_cached_subgraph(task_id)
+    graph  = None
     if not graph:
-        graph = await agent_store.load(task_id)
+        graph  = None
     if not graph:
         return f"Graph for task {task_id} not found."
 
-    stats = get_stats(graph)
-    blocked = find_blocked_vertices(graph)
+    stats = {}
+    blocked = []
 
     parts = [
         f"Task graph {task_id}:",
@@ -521,7 +519,6 @@ async def _handle_check_task_graph(args, _client_id, _project_id, _kotlin_client
 
 async def _handle_answer_blocked_vertex(args, _client_id, _project_id, _kotlin_client):
     """Answer a blocked ASK_USER vertex to unblock graph processing."""
-    from app.agent.persistence import agent_store
 
     task_id = args.get("task_id", "")
     vertex_id = args.get("vertex_id", "")
@@ -530,7 +527,7 @@ async def _handle_answer_blocked_vertex(args, _client_id, _project_id, _kotlin_c
     if not task_id or not vertex_id or not answer:
         return "Error: missing task_id, vertex_id or answer."
 
-    success = await agent_store.resume_blocked_vertex(task_id, vertex_id, answer)
+    success  = None
     if success:
         return f"Vertex {vertex_id} unblocked with answer. Graph continues processing."
     return f"Failed to unblock vertex {vertex_id} — either it doesn't exist or is not blocked."

@@ -26,6 +26,7 @@ from app.config import settings, estimate_tokens
 from app.llm.provider import llm_provider
 from app.tools.executor import execute_tool
 from app.unified.tool_sets import ToolTier, get_tools
+from app.agent.graph import add_incoming_vertex
 
 logger = logging.getLogger(__name__)
 
@@ -754,10 +755,8 @@ async def _record_incoming_vertex(request: QualifyRequest, decision: dict) -> No
         return  # No vertex for items that don't need processing
 
     try:
-        from app.agent.persistence import agent_store
-        from app.agent.graph import add_incoming_vertex
 
-        memory_graph = await agent_store.get_or_create_memory_graph()
+        memory_graph  = None
         add_incoming_vertex(
             memory_graph,
             task_id=request.task_id,
@@ -769,6 +768,5 @@ async def _record_incoming_vertex(request: QualifyRequest, decision: dict) -> No
             project_name=request.project_name or "",
             urgency=request.urgency or "normal",
         )
-        agent_store.mark_dirty(memory_graph.task_id)
     except Exception as e:
         logger.warning("Failed to record INCOMING vertex for task %s: %s", request.task_id, e)

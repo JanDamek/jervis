@@ -26,6 +26,7 @@ from app.chat.handler_streaming import call_llm, stream_text, save_assistant_mes
 from app.chat.models import ChatRequest, ChatStreamEvent
 from app.chat.system_prompt import build_system_prompt
 from app.chat.tools import CHAT_INITIAL_TOOLS
+from app.agent.graph import add_request_vertex, memory_graph_summary
 
 logger = logging.getLogger(__name__)
 
@@ -95,17 +96,11 @@ async def handle_chat_sse(
         map_ctx = ""
         memory_graph = None
         try:
-            from app.agent.persistence import agent_store
-            from app.agent.graph import memory_graph_summary
-            memory_graph = await agent_store.get_or_create_memory_graph()
+            memory_graph  = None
             active_cid = request.active_client_id or ""
             if not active_cid:
                 logger.warning("SSE: no active_client_id — memory graph summary will be empty")
-            map_ctx = memory_graph_summary(
-                memory_graph, max_tokens=2000,
-                client_id=active_cid,
-                project_id=request.active_project_id or "",
-            )
+            map_ctx = ""
         except Exception as e:
             logger.warning("SSE: failed to load memory graph: %s", e)
 
@@ -279,7 +274,6 @@ async def handle_chat_sse(
         # ── 4b'. Create RUNNING vertex in memory graph immediately ──
         if memory_graph and request.active_client_id:
             try:
-                from app.agent.graph import add_request_vertex
                 from app.agent.models import VertexStatus
                 _live_vertex = add_request_vertex(
                     memory_graph,
@@ -295,7 +289,6 @@ async def handle_chat_sse(
                     status=VertexStatus.RUNNING,
                 )
                 _live_vertex_id = _live_vertex.id
-                agent_store.mark_dirty(memory_graph.task_id)
                 from app.tools.kotlin_client import kotlin_client
                 await kotlin_client.notify_memory_graph_changed()
             except Exception as e:
@@ -408,10 +401,9 @@ async def handle_chat_sse(
     finally:
         # Update REQUEST vertex in Paměťový graf with final state
         try:
-            from app.agent.persistence import agent_store
             from app.agent.models import VertexStatus
             from datetime import datetime, timezone
-            master = agent_store.get_memory_graph_cached()
+            master  = None
             if master:
                 _full_response = "".join(_response_chunks) if _response_chunks else ""
                 _trace_str = "\n".join(_trace_parts) if _trace_parts else ""
@@ -444,7 +436,6 @@ async def handle_chat_sse(
                     if _vertex_status != VertexStatus.RUNNING:
                         v.completed_at = datetime.now(timezone.utc).isoformat()
                 elif request.active_client_id:
-                    from app.agent.graph import add_request_vertex
                     add_request_vertex(
                         master,
                         message=request.message,
@@ -460,7 +451,6 @@ async def handle_chat_sse(
                     )
                 else:
                     logger.warning("SSE: skipping fallback vertex — no active_client_id")
-                agent_store.mark_dirty(master.task_id)
                 from app.tools.kotlin_client import kotlin_client
                 try:
                     await kotlin_client.notify_memory_graph_changed()
@@ -511,12 +501,8 @@ async def _run_foreground_graph(
         GraphAgentState,
     )
     from app.agent.models import AgentGraph, GraphStatus, VertexStatus
-    from app.agent.persistence import agent_store
 
     # Cache graph in store for vertex executor access
-    agent_store.cache_subgraph(graph)
-    agent_store.mark_dirty(graph.task_id)
-
     # Build rules with max_openrouter_tier from request
     max_tier = getattr(request, "max_openrouter_tier", "NONE") or "NONE"
 

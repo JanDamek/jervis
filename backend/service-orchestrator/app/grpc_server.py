@@ -203,13 +203,11 @@ class OrchestratorControlServicer(control_pb2_grpc.OrchestratorControlServiceSer
         cancel_task_id = parts[1] if len(parts) >= 2 else thread_id
 
         try:
-            from app.agent.persistence import agent_store
             from app.agent.models import GraphStatus
 
-            graph = await agent_store.load(cancel_task_id)
+            graph  = None
             if graph and graph.status not in (GraphStatus.COMPLETED, GraphStatus.FAILED):
                 graph.status = GraphStatus.CANCELLED
-                await agent_store.save(graph)
                 logger.info("Marked graph %s as CANCELLED", graph.id)
         except Exception as e:
             logger.warning("Failed to mark graph as cancelled: %s", e)
@@ -364,7 +362,6 @@ class OrchestratorGraphServicer(graph_pb2_grpc.OrchestratorGraphServiceServicer)
     ) -> graph_pb2.TaskGraphResponse:
         from datetime import datetime, timedelta, timezone
 
-        from app.agent.persistence import agent_store
         from app.agent.models import GraphStatus, GraphType
         from app import main as orch_main
 
@@ -373,9 +370,9 @@ class OrchestratorGraphServicer(graph_pb2_grpc.OrchestratorGraphServiceServicer)
 
         hidden = False
         if task_id == "master":
-            graph = agent_store.get_memory_graph_cached()
+            graph  = None
             if not graph:
-                graph = await agent_store.get_or_create_memory_graph()
+                graph  = None
             if not graph:
                 return graph_pb2.TaskGraphResponse(found=False)
             if client_id:
@@ -383,16 +380,15 @@ class OrchestratorGraphServicer(graph_pb2_grpc.OrchestratorGraphServiceServicer)
             else:
                 payload = graph.model_dump()
         else:
-            graph = agent_store.get_cached_subgraph(task_id)
+            graph  = None
             if not graph:
-                graph = await agent_store.load(task_id)
+                graph  = None
             if not graph:
-                graph = await agent_store.load_by_graph_id(task_id)
+                graph  = None
             if not graph:
                 return graph_pb2.TaskGraphResponse(found=False)
             payload = graph.model_dump()
             if graph.graph_type == GraphType.THINKING_GRAPH:
-                from app.agent.persistence import _THINKING_GRAPH_HIDE_S
 
                 if graph.status in (GraphStatus.COMPLETED, GraphStatus.FAILED) and graph.completed_at:
                     hide_cutoff = (
@@ -412,7 +408,6 @@ class OrchestratorGraphServicer(graph_pb2_grpc.OrchestratorGraphServiceServicer)
         request: graph_pb2.MaintenanceRunRequest,
         context: grpc.aio.ServicerContext,
     ) -> graph_pb2.MaintenanceRunResult:
-        from app.agent.persistence import agent_store
         from app import main as orch_main
 
         phase = request.phase or 1
