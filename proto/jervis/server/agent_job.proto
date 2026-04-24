@@ -1,0 +1,100 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerAgentJobProto";
+
+// ServerAgentJobService is the Kotlin-owned surface for the
+// AgentJobRecord lifecycle. Claude calls it via MCP tools
+// (`dispatch_agent_job`, `get_agent_job_status`, `abort_agent_job`)
+// which are Python shims over this gRPC service. The server is the
+// only writer for the `agent_job_records` collection — dispatch,
+// status reads, and abort all flow through here.
+service ServerAgentJobService {
+  rpc DispatchAgentJob(DispatchAgentJobRequest) returns (DispatchAgentJobResponse);
+  rpc GetAgentJobStatus(AgentJobIdRequest) returns (GetAgentJobStatusResponse);
+  rpc AbortAgentJob(AbortAgentJobRequest) returns (AbortAgentJobResponse);
+}
+
+// ── Shared ID request ─────────────────────────────────────────────────────
+
+message AgentJobIdRequest {
+  jervis.common.RequestContext ctx = 1;
+  // 24-char hex ObjectId. Never trimmed/sliced.
+  string agent_job_id = 2;
+}
+
+// ── DispatchAgentJob ──────────────────────────────────────────────────────
+
+message DispatchAgentJobRequest {
+  jervis.common.RequestContext ctx = 1;
+  // Matches com.jervis.dto.agentjob.AgentJobFlavor enum values:
+  // CODING, ANALYSIS, RESEARCH, MEETING_ATTENDANT, MEETING_SUBSTITUTE, SCHEDULED.
+  string flavor = 2;
+  string title = 3;
+  string description = 4;
+  string client_id = 5;   // blank = GLOBAL scope
+  string project_id = 6;  // blank = client scope
+  string resource_id = 7; // required for CODING (picks ProjectResource)
+  string dispatched_by = 8; // e.g. "claude-session:<sid>", "scheduler:<name>"
+  string branch_name = 9;  // required for CODING
+}
+
+message DispatchAgentJobResponse {
+  bool ok = 1;
+  string error = 2;
+  string agent_job_id = 3;
+  string state = 4;
+  string kubernetes_job_name = 5;
+  string workspace_path = 6;
+  string branch = 7;
+}
+
+// ── GetAgentJobStatus ─────────────────────────────────────────────────────
+
+message GetAgentJobStatusResponse {
+  bool ok = 1;
+  string error = 2;
+  string agent_job_id = 3;
+  string flavor = 4;
+  string state = 5;
+  string kubernetes_job_name = 6;
+  // null when the Job object is not in the cluster (not yet created or
+  // TTL-reaped). Possible values: "Active", "Pending", "Succeeded",
+  // "Failed", "Suspended".
+  string kubernetes_job_phase = 7;
+  string client_id = 8;
+  string project_id = 9;
+  string resource_id = 10;
+  string workspace_path = 11;
+  string branch = 12;
+  string git_commit_sha = 13;
+  string title = 14;
+  string description = 15;
+  string dispatched_by = 16;
+  string result_summary = 17;
+  repeated string artifacts = 18;
+  string ask_user_question = 19;
+  string error_message = 20;
+  string created_at = 21;   // RFC3339
+  string started_at = 22;   // RFC3339, blank = not started
+  string completed_at = 23; // RFC3339, blank = not finished
+}
+
+// ── AbortAgentJob ─────────────────────────────────────────────────────────
+
+message AbortAgentJobRequest {
+  jervis.common.RequestContext ctx = 1;
+  string agent_job_id = 2;
+  string reason = 3;
+}
+
+message AbortAgentJobResponse {
+  bool ok = 1;
+  string error = 2;
+  string state = 3;  // resulting state on success (usually "CANCELLED")
+}

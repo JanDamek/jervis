@@ -3857,6 +3857,184 @@ async def report_done(
     return response
 
 
+# ── Agent Job Tools (dispatch / status / abort) ──────────────────────────
+# Thin MCP wrappers over the Kotlin ServerAgentJobService. Claude (or any
+# MCP caller) uses these to spawn background coding agents, poll their
+# state, or cancel them; the Kotlin dispatcher remains the only writer to
+# the `agent_job_records` collection. Backs the agent-job architecture
+# documented in memory `project-agent-job-migration.md`.
+
+
+@mcp.tool
+async def dispatch_agent_job(
+    flavor: str,
+    title: str,
+    description: str,
+    client_id: str = "",
+    project_id: str = "",
+    resource_id: str = "",
+    branch_name: str = "",
+    dispatched_by: str = "",
+) -> str:
+    """Dispatch a background agent job (runs as a K8s Job) and return its id.
+
+    CODING flavor spawns jervis-coding-agent against a per-agent git worktree
+    on `branch_name`, hands Claude the full brief via .jervis/brief.md, then
+    commits+pushes and calls report_done. The function returns as soon as the
+    K8s Job is created — state transitions to DONE/ERROR are reported later
+    by `get_agent_job_status` (or by the server pushing a chat message when
+    the job is linked to a session).
+
+    Args:
+        flavor: CODING | ANALYSIS | RESEARCH | MEETING_ATTENDANT |
+                MEETING_SUBSTITUTE | SCHEDULED. CODING is the only flavor
+                fully routed today; the others persist a record but do not
+                yet spawn a Job.
+        title: Short human-readable title for the record (UI / logs).
+        description: Full task brief — written verbatim into
+                     .jervis/brief.md in the worktree. May be kilobytes long;
+                     passed via filesystem, not env.
+        client_id: 24-char hex ObjectId or empty for GLOBAL scope.
+        project_id: 24-char hex ObjectId or empty for CLIENT scope.
+        resource_id: ProjectResource.id — required for CODING when the
+                     project owns more than one git repository.
+        branch_name: Required for CODING. Freshly created from the remote
+                     default branch; the agent verifies and never switches.
+        dispatched_by: Free-form provenance tag ("claude-session:<sid>",
+                       "user:<uid>", …). Auto-defaults to "mcp:unknown".
+    """
+    from app.grpc_clients import server_agent_job_stub
+    from jervis.common import types_pb2
+    from jervis.server import agent_job_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_agent_job_stub().DispatchAgentJob(
+            agent_job_pb2.DispatchAgentJobRequest(
+                ctx=ctx,
+                flavor=flavor.upper(),
+                title=title,
+                description=description,
+                client_id=client_id,
+                project_id=project_id,
+                resource_id=resource_id,
+                branch_name=branch_name,
+                dispatched_by=dispatched_by or "mcp:unknown",
+            ),
+            timeout=60.0,
+        )
+    except Exception as e:
+        return f"Error dispatching agent job: {str(e)[:300]}"
+    if not resp.ok:
+        return f"Dispatch failed: {resp.error}"
+    return json.dumps(
+        {
+            "agentJobId": resp.agent_job_id,
+            "state": resp.state,
+            "kubernetesJobName": resp.kubernetes_job_name,
+            "workspacePath": resp.workspace_path,
+            "branch": resp.branch,
+        },
+        ensure_ascii=False,
+    )
+
+
+@mcp.tool
+async def get_agent_job_status(agent_job_id: str) -> str:
+    """Read the current state of a dispatched agent job.
+
+    Returns a JSON blob with the lifecycle fields: state (QUEUED / RUNNING /
+    WAITING_USER / DONE / ERROR / CANCELLED), kubernetesJobPhase (live pod
+    phase: Active / Pending / Succeeded / Failed / Suspended, or empty when
+    the Job object is not in the cluster), plus workspacePath, branch,
+    gitCommitSha, resultSummary, artifacts, errorMessage, askUserQuestion,
+    and the three timestamps (createdAt / startedAt / completedAt).
+
+    Args:
+        agent_job_id: 24-char hex ObjectId returned by dispatch_agent_job.
+    """
+    from app.grpc_clients import server_agent_job_stub
+    from jervis.common import types_pb2
+    from jervis.server import agent_job_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_agent_job_stub().GetAgentJobStatus(
+            agent_job_pb2.AgentJobIdRequest(ctx=ctx, agent_job_id=agent_job_id),
+            timeout=15.0,
+        )
+    except Exception as e:
+        return f"Error reading agent job status: {str(e)[:300]}"
+    if not resp.ok:
+        return f"Status failed: {resp.error}"
+    return json.dumps(
+        {
+            "agentJobId": resp.agent_job_id,
+            "flavor": resp.flavor,
+            "state": resp.state,
+            "kubernetesJobName": resp.kubernetes_job_name,
+            "kubernetesJobPhase": resp.kubernetes_job_phase,
+            "clientId": resp.client_id,
+            "projectId": resp.project_id,
+            "resourceId": resp.resource_id,
+            "workspacePath": resp.workspace_path,
+            "branch": resp.branch,
+            "gitCommitSha": resp.git_commit_sha,
+            "title": resp.title,
+            "description": resp.description,
+            "dispatchedBy": resp.dispatched_by,
+            "resultSummary": resp.result_summary,
+            "artifacts": list(resp.artifacts),
+            "askUserQuestion": resp.ask_user_question,
+            "errorMessage": resp.error_message,
+            "createdAt": resp.created_at,
+            "startedAt": resp.started_at,
+            "completedAt": resp.completed_at,
+        },
+        ensure_ascii=False,
+    )
+
+
+@mcp.tool
+async def abort_agent_job(agent_job_id: str, reason: str) -> str:
+    """Abort a running agent job (idempotent on already-terminal records).
+
+    Deletes the K8s Job, releases its per-job git worktree, and transitions
+    the record to CANCELLED with `errorMessage=reason`. Calling this on a
+    record that is already DONE / ERROR / CANCELLED is a no-op and returns
+    the current state.
+
+    Args:
+        agent_job_id: 24-char hex ObjectId returned by dispatch_agent_job.
+        reason: Human-readable cancellation reason (persisted as errorMessage).
+    """
+    from app.grpc_clients import server_agent_job_stub
+    from jervis.common import types_pb2
+    from jervis.server import agent_job_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_agent_job_stub().AbortAgentJob(
+            agent_job_pb2.AbortAgentJobRequest(
+                ctx=ctx,
+                agent_job_id=agent_job_id,
+                reason=reason,
+            ),
+            timeout=30.0,
+        )
+    except Exception as e:
+        return f"Error aborting agent job: {str(e)[:300]}"
+    if not resp.ok:
+        return f"Abort failed: {resp.error}"
+    return f"Agent job {agent_job_id} → {resp.state}"
+
+
 # ── TTS Normalization Rules ──────────────────────────────────────────────
 # User-editable dictionary (`ttsRules` in MongoDB) that the XTTS pod loads
 # before each synthesis. Three rule types: acronym (spell-out),

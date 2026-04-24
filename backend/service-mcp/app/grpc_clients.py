@@ -14,6 +14,7 @@ import grpc.aio
 
 from app.config import settings
 from jervis.server import (
+    agent_job_pb2_grpc,
     bug_tracker_pb2_grpc,
     connection_pb2_grpc,
     environment_k8s_pb2_grpc,
@@ -23,6 +24,7 @@ from jervis.server import (
     meeting_attend_pb2_grpc,
     project_management_pb2_grpc,
     task_api_pb2_grpc,
+    tts_rules_pb2_grpc,
 )
 
 logger = logging.getLogger(__name__)
@@ -41,6 +43,8 @@ _task_api_stub: Optional[task_api_pb2_grpc.ServerTaskApiServiceStub] = None
 _environment_k8s_stub: Optional[
     environment_k8s_pb2_grpc.ServerEnvironmentK8sServiceStub
 ] = None
+_tts_rules_stub: Optional[tts_rules_pb2_grpc.ServerTtsRulesServiceStub] = None
+_agent_job_stub: Optional[agent_job_pb2_grpc.ServerAgentJobServiceStub] = None
 
 
 def _kotlin_server_grpc_target() -> str:
@@ -135,3 +139,17 @@ def server_environment_k8s_stub() -> (
             _get_channel()
         )
     return _environment_k8s_stub
+
+
+def server_tts_rules_stub() -> tts_rules_pb2_grpc.ServerTtsRulesServiceStub:
+    global _tts_rules_stub
+    if _tts_rules_stub is None:
+        _tts_rules_stub = tts_rules_pb2_grpc.ServerTtsRulesServiceStub(_get_channel())
+    return _tts_rules_stub
+
+
+def server_agent_job_stub() -> agent_job_pb2_grpc.ServerAgentJobServiceStub:
+    global _agent_job_stub
+    if _agent_job_stub is None:
+        _agent_job_stub = agent_job_pb2_grpc.ServerAgentJobServiceStub(_get_channel())
+    return _agent_job_stub
