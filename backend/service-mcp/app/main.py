@@ -4035,6 +4035,218 @@ async def abort_agent_job(agent_job_id: str, reason: str) -> str:
     return f"Agent job {agent_job_id} → {resp.state}"
 
 
+# ── Thought Map Tools (Claude-owned strategic memory) ────────────────────
+# Narrative/strategic layer over the KB graph (spec: docs/thought-map-spec.md).
+# Claude uses these to plant strategic anchors, recall them via spreading
+# activation, and reinforce the useful ones — complementary to tactical
+# `scratchpad_*` tools and session-narrative `save_compact` / `load_compact`.
+#
+# Scope convention mirrors the rest of the MCP surface: `client_id` +
+# `project_id` are two independent string fields. Empty both = GLOBAL;
+# client only = CLIENT scope; both = PROJECT scope.
+
+
+@mcp.tool
+async def thought_search(
+    query: str,
+    client_id: str = "",
+    project_id: str = "",
+    group_id: str = "",
+    max_results: int = 20,
+    floor: float = 0.1,
+    max_depth: int = 3,
+    entry_top_k: int = 5,
+) -> str:
+    """Spread-activation search over the Thought Map for this scope.
+
+    Finds the most relevant strategic thoughts for a natural-language query
+    via cosine entry (top-K) → 1..max_depth-hop graph traversal → weight-
+    product filter (>= `floor`). Returns activated thoughts + knowledge
+    anchors + the activation trail so Claude can decide which context to
+    pull into its next turn.
+
+    Args:
+        query: Natural-language question or topic.
+        client_id / project_id / group_id: Scope selectors.
+        max_results: Cap per result list (thoughts, knowledge).
+        floor: Minimum accumulated path weight to keep (spec default 0.1).
+        max_depth: Max graph hops (spec default 3).
+        entry_top_k: How many cosine-nearest thoughts seed the traversal.
+    """
+    from jervis_contracts import kb_client
+
+    cid = client_id or settings.default_client_id
+    pid = project_id or settings.default_project_id or ""
+    result = await kb_client.thought_traverse(
+        caller="service-mcp.thought_search",
+        query=query,
+        client_id=cid,
+        project_id=pid,
+        group_id=group_id,
+        max_results=max_results,
+        floor=floor,
+        max_depth=max_depth,
+        entry_top_k=entry_top_k,
+    )
+    return json.dumps(result, ensure_ascii=False)
+
+
+@mcp.tool
+async def thought_put(
+    label: str,
+    summary: str,
+    thought_type: str = "topic",
+    related_entities: list[str] | None = None,
+    client_id: str = "",
+    project_id: str = "",
+    group_id: str = "",
+) -> str:
+    """Create or reinforce a single thought in the Thought Map.
+
+    If a near-duplicate thought exists in this scope (cosine >= 0.85 per
+    spec), the KB reinforces its activation instead of inserting a new
+    node — Claude doesn't need to check for existence first.
+
+    `thought_type` must be one of: topic, decision, problem, insight,
+    dependency, state. `related_entities` lists KnowledgeNode keys to
+    anchor as ThoughtAnchor edges (references_code / entity / document
+    as appropriate for the anchor target).
+
+    Args:
+        label: Short display label (<=80 chars).
+        summary: 1-3 sentence narrative — this is what Claude reads later.
+        thought_type: Thought taxonomy key.
+        related_entities: Optional KnowledgeNode keys to anchor.
+        client_id / project_id / group_id: Scope.
+    """
+    from jervis_contracts import kb_client
+
+    cid = client_id or settings.default_client_id
+    pid = project_id or settings.default_project_id or ""
+    ok, keys = await kb_client.thought_create(
+        caller="service-mcp.thought_put",
+        thoughts=[
+            {
+                "label": label,
+                "summary": summary,
+                "type": thought_type,
+                "related_entities": list(related_entities or []),
+            }
+        ],
+        client_id=cid,
+        project_id=pid,
+        group_id=group_id,
+    )
+    return json.dumps({"ok": ok, "keys": keys}, ensure_ascii=False)
+
+
+@mcp.tool
+async def thought_reinforce(
+    thought_keys: list[str] | None = None,
+    edge_keys: list[str] | None = None,
+) -> str:
+    """Bump the activation score of thoughts / edges that proved useful.
+
+    Called after Claude actually leveraged a thought in its reasoning —
+    Hebbian reinforcement so genuinely useful anchors stay hot across
+    sessions instead of being decayed away by maintenance passes.
+
+    Args:
+        thought_keys: ThoughtNode `id` values to reinforce.
+        edge_keys: ThoughtEdge `id` values to reinforce.
+    """
+    from jervis_contracts import kb_client
+
+    ok = await kb_client.thought_reinforce(
+        caller="service-mcp.thought_reinforce",
+        thought_keys=list(thought_keys or []),
+        edge_keys=list(edge_keys or []),
+    )
+    return json.dumps({"ok": ok}, ensure_ascii=False)
+
+
+@mcp.tool
+async def thought_bootstrap(
+    client_id: str = "",
+    project_id: str = "",
+    group_id: str = "",
+) -> str:
+    """Seed the Thought Map for a new scope from existing KB anchors.
+
+    Called once per scope to cold-start — looks up the scope's recent
+    KnowledgeNodes (decisions, commitments, etc.) and turns them into
+    ThoughtNodes with initial edges. Idempotent; subsequent calls reinforce
+    rather than duplicate.
+
+    Args:
+        client_id / project_id / group_id: Scope to bootstrap.
+    """
+    from app.grpc_clients import _get_channel  # noqa: F401  (ensure channel boot)
+    from jervis_contracts import kb_client
+    from jervis.common import types_pb2
+    from jervis.knowledgebase import graph_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    cid = client_id or settings.default_client_id
+    pid = project_id or settings.default_project_id or ""
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    ctx.client_id = cid
+    stub = kb_client.graph_stub()
+    try:
+        resp = await stub.ThoughtBootstrap(
+            graph_pb2.ThoughtBootstrapRequest(
+                ctx=ctx,
+                client_id=cid,
+                project_id=pid,
+                group_id=group_id,
+            ),
+            timeout=60.0,
+        )
+    except Exception as e:
+        return f"Error bootstrapping thought map: {str(e)[:300]}"
+    return json.dumps({"ok": bool(resp.ok), "detail": resp.detail}, ensure_ascii=False)
+
+
+@mcp.tool
+async def thought_stats(client_id: str = "", project_id: str = "") -> str:
+    """Show how populated the Thought Map is for a scope.
+
+    Returns total thoughts, active thoughts (activationScore >= floor),
+    total edges, and average activation. Useful for deciding whether a
+    scope needs `thought_bootstrap` or maintenance.
+
+    Args:
+        client_id / project_id: Scope.
+    """
+    from jervis_contracts import kb_client
+    from jervis.common import types_pb2
+    from jervis.knowledgebase import graph_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    cid = client_id or settings.default_client_id
+    pid = project_id or settings.default_project_id or ""
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    ctx.client_id = cid
+    try:
+        resp = await kb_client.graph_stub().ThoughtStats(
+            graph_pb2.ThoughtStatsRequest(ctx=ctx, client_id=cid, project_id=pid),
+            timeout=15.0,
+        )
+    except Exception as e:
+        return f"Error reading thought stats: {str(e)[:300]}"
+    return json.dumps(
+        {
+            "totalThoughts": resp.total_thoughts,
+            "activeThoughts": resp.active_thoughts,
+            "totalEdges": resp.total_edges,
+            "avgActivation": resp.avg_activation,
+        },
+        ensure_ascii=False,
+    )
+
+
 # ── TTS Normalization Rules ──────────────────────────────────────────────
 # User-editable dictionary (`ttsRules` in MongoDB) that the XTTS pod loads
 # before each synthesis. Three rule types: acronym (spell-out),
