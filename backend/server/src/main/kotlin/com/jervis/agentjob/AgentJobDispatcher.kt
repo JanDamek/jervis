@@ -203,11 +203,11 @@ class AgentJobDispatcher(
 
     /**
      * Build and create the K8s Job manifest for a CODING-flavor record.
-     * Base env only (job metadata, workspace path, branch) — secrets
-     * (CLAUDE_CODE_OAUTH_TOKEN, git identity, GPG) land in the next
-     * commit. Until then the Job image will pull-fail (the
-     * jervis-coding-agent image is built in follow-up 3b.2), but the
-     * manifest itself is valid Kotlin + fabric8 output.
+     * Base env only (job metadata, workspace path, branch). Secrets
+     * (CLAUDE_CODE_OAUTH_TOKEN, git identity, GPG private key) land in
+     * step 3b.3 — without them the `jervis-coding-agent` entrypoint
+     * self-fails fast on the auth check and writes result.json = failure,
+     * but the manifest + image (3b.2) are already valid.
      */
     private suspend fun createKubernetesJob(record: AgentJobRecord): String {
         val jobName = codingJobName(record.id)
