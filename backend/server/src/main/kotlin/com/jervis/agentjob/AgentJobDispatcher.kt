@@ -8,6 +8,18 @@ import com.jervis.dto.agentjob.AgentJobState
 import com.jervis.project.ProjectDocument
 import com.jervis.project.ProjectRepository
 import com.jervis.project.ProjectResource
+import io.fabric8.kubernetes.api.model.EnvVar
+import io.fabric8.kubernetes.api.model.EnvVarBuilder
+import io.fabric8.kubernetes.api.model.Quantity
+import io.fabric8.kubernetes.api.model.VolumeBuilder
+import io.fabric8.kubernetes.api.model.VolumeMountBuilder
+import io.fabric8.kubernetes.api.model.batch.v1.Job
+import io.fabric8.kubernetes.api.model.batch.v1.JobBuilder
+import io.fabric8.kubernetes.client.ConfigBuilder
+import io.fabric8.kubernetes.client.KubernetesClient
+import io.fabric8.kubernetes.client.KubernetesClientBuilder
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import org.springframework.stereotype.Service
 import java.time.Instant
@@ -41,6 +53,19 @@ class AgentJobDispatcher(
     private val projectRepository: ProjectRepository,
 ) {
     private val logger = KotlinLogging.logger {}
+
+    companion object {
+        // K8s deployment constants — mirror reference-k8s-deployment.md.
+        private const val NAMESPACE = "jervis"
+        private const val CODING_AGENT_IMAGE = "registry.damek-soft.eu/jandamek/jervis-coding-agent:latest"
+        private const val MANAGED_BY = "jervis-coding-agent"
+        private const val DATA_PVC = "jervis-data-pvc"
+        private const val DATA_MOUNT = "/opt/jervis/data"
+        private const val DATA_VOLUME = "jervis-data"
+        private const val TTL_AFTER_FINISHED = 300
+
+        fun codingJobName(agentJobId: AgentJobId): String = "jervis-coding-agent-$agentJobId"
+    }
 
     /**
      * Dispatch a single agent Job. Returns the persisted record with
@@ -141,22 +166,146 @@ class AgentJobDispatcher(
                 "Resource $resourceId not found on project ${project.name} (${project.id})",
             )
 
-        return try {
-            val worktreePath = agentWorkspaceService.prepareWorktreeForJob(
+        val worktreePath = try {
+            agentWorkspaceService.prepareWorktreeForJob(
                 project = project,
                 resource = resource,
                 agentJobId = record.id,
                 branchName = requestedBranch,
             )
-            val updated = record.copy(
-                workspacePath = worktreePath.toString(),
-                gitBranch = requestedBranch,
-            )
-            agentJobRecordRepository.save(updated)
         } catch (e: Exception) {
             logger.error(e) { "dispatchCoding | workspace prep failed for job=${record.id}" }
-            fail(record, "workspace prep failed: ${e.message ?: e::class.simpleName}")
+            return fail(record, "workspace prep failed: ${e.message ?: e::class.simpleName}")
         }
+
+        val afterWorktree = record.copy(
+            workspacePath = worktreePath.toString(),
+            gitBranch = requestedBranch,
+        )
+        agentJobRecordRepository.save(afterWorktree)
+
+        return try {
+            val jobName = createKubernetesJob(afterWorktree)
+            val running = afterWorktree.copy(
+                state = AgentJobState.RUNNING,
+                kubernetesJobName = jobName,
+                startedAt = Instant.now(),
+            )
+            agentJobRecordRepository.save(running)
+        } catch (e: Exception) {
+            logger.error(e) { "dispatchCoding | K8s Job create failed for job=${record.id}" }
+            // Leave the worktree in place for debug; the (upcoming) abort
+            // path removes it cleanly and the watcher will detect the
+            // ERROR state on next cycle.
+            fail(afterWorktree, "K8s Job create failed: ${e.message ?: e::class.simpleName}")
+        }
+    }
+
+    /**
+     * Build and create the K8s Job manifest for a CODING-flavor record.
+     * Base env only (job metadata, workspace path, branch) — secrets
+     * (CLAUDE_CODE_OAUTH_TOKEN, git identity, GPG) land in the next
+     * commit. Until then the Job image will pull-fail (the
+     * jervis-coding-agent image is built in follow-up 3b.2), but the
+     * manifest itself is valid Kotlin + fabric8 output.
+     */
+    private suspend fun createKubernetesJob(record: AgentJobRecord): String {
+        val jobName = codingJobName(record.id)
+
+        val envVars = buildBaseEnv(record)
+        val volumeMount = VolumeMountBuilder()
+            .withName(DATA_VOLUME)
+            .withMountPath(DATA_MOUNT)
+            .build()
+        val volume = VolumeBuilder()
+            .withName(DATA_VOLUME)
+            .withNewPersistentVolumeClaim()
+                .withClaimName(DATA_PVC)
+            .endPersistentVolumeClaim()
+            .build()
+
+        val labels = buildLabels(record, jobName)
+
+        val job: Job = JobBuilder()
+            .withNewMetadata()
+                .withName(jobName)
+                .withNamespace(NAMESPACE)
+                .addToLabels(labels)
+            .endMetadata()
+            .withNewSpec()
+                .withTtlSecondsAfterFinished(TTL_AFTER_FINISHED)
+                .withBackoffLimit(0)
+                .withNewTemplate()
+                    .withNewMetadata()
+                        .addToLabels(labels)
+                    .endMetadata()
+                    .withNewSpec()
+                        .withRestartPolicy("Never")
+                        .addNewContainer()
+                            .withName("coding-agent")
+                            .withImage(CODING_AGENT_IMAGE)
+                            .withImagePullPolicy("Always")
+                            .withEnv(envVars)
+                            .withVolumeMounts(volumeMount)
+                            .withNewResources()
+                                .addToRequests("memory", Quantity("512Mi"))
+                                .addToRequests("cpu", Quantity("250m"))
+                                .addToLimits("memory", Quantity("2Gi"))
+                                .addToLimits("cpu", Quantity("2000m"))
+                            .endResources()
+                        .endContainer()
+                        .withVolumes(volume)
+                    .endSpec()
+                .endTemplate()
+            .endSpec()
+            .build()
+
+        withContext(Dispatchers.IO) {
+            buildK8sClient().use { client ->
+                client.batch().v1().jobs()
+                    .inNamespace(NAMESPACE)
+                    .resource(job)
+                    .create()
+            }
+        }
+        logger.info { "createKubernetesJob | created K8s Job $jobName for agent-job=${record.id}" }
+        return jobName
+    }
+
+    private fun buildBaseEnv(record: AgentJobRecord): List<EnvVar> = listOf(
+        env("AGENT_JOB_ID", record.id.toString()),
+        env("AGENT_FLAVOR", record.flavor.name),
+        env("WORKSPACE", record.workspacePath.orEmpty()),
+        env("EXPECTED_BRANCH", record.gitBranch.orEmpty()),
+        env("CLIENT_ID", record.clientId?.toString().orEmpty()),
+        env("PROJECT_ID", record.projectId?.toString().orEmpty()),
+        env("RESOURCE_ID", record.resourceId.orEmpty()),
+        env("DISPATCHED_BY", record.dispatchedBy),
+    )
+
+    private fun env(name: String, value: String): EnvVar =
+        EnvVarBuilder().withName(name).withValue(value).build()
+
+    private fun buildLabels(record: AgentJobRecord, jobName: String): Map<String, String> {
+        val labels: LinkedHashMap<String, String> = linkedMapOf(
+            "app" to MANAGED_BY,
+            "managed-by" to MANAGED_BY,
+            "job-name" to jobName,
+            "agent-job-id" to record.id.toString(),
+            "flavor" to record.flavor.name.lowercase(),
+        )
+        record.clientId?.let { labels["client-id"] = it.toString() }
+        record.projectId?.let { labels["project-id"] = it.toString() }
+        record.resourceId?.let { labels["resource-id"] = it }
+        return labels
+    }
+
+    private fun buildK8sClient(): KubernetesClient {
+        val config = ConfigBuilder()
+            .withRequestTimeout(60_000)
+            .withConnectionTimeout(15_000)
+            .build()
+        return KubernetesClientBuilder().withConfig(config).build()
     }
 
     /**
