@@ -488,6 +488,10 @@ def _stream_inference_from_sentence_queue(
     """
     total_emitted = 0
     chunk_errors: list[str] = []
+    worker_start = time.monotonic()
+    first_sentence_logged = False
+    first_pcm_logged = False
+    sentence_index = 0
     try:
         if not language:
             language = TTS_LANGUAGE
@@ -507,26 +511,44 @@ def _stream_inference_from_sentence_queue(
             item = sentence_queue.get()
             if item is None:
                 break  # producer signalled end-of-stream
-            sentence = item.strip().rstrip('.!?…,;:"\'""„‟»«')
+            # Keep terminal punctuation (.!?…). XTTS uses it for the
+            # falling / rising intonation at end of sentence; without it
+            # the voice stops flat mid-thought. Only trim whitespace.
+            sentence = item.strip()
             if not sentence:
                 continue
+            sentence_index += 1
+            if not first_sentence_logged:
+                print(
+                    f"[TTS] WORKER FIRST_SENTENCE t={time.monotonic() - worker_start:.2f}s "
+                    f"chars={len(sentence)} text={sentence[:80]!r}",
+                    flush=True,
+                )
+                first_sentence_logged = True
+            else:
+                print(
+                    f"[TTS] WORKER SENTENCE #{sentence_index} "
+                    f"t={time.monotonic() - worker_start:.2f}s "
+                    f"chars={len(sentence)} text={sentence[:80]!r}",
+                    flush=True,
+                )
+            before_emitted = total_emitted
+            inf_start = time.monotonic()
 
-            # Peel off [CS] / [EN] prefix if present.
+            # Peel off [CS] / [EN] prefix if present. Keep terminal
+            # punctuation so XTTS applies proper sentence intonation.
             piece_lang = language
             m = lang_prefix_re.match(sentence)
             if m:
                 piece_lang = m.group(1).lower()
-                sentence = m.group(2).strip().rstrip('.!?…,;:"\'""„‟»«')
+                sentence = m.group(2).strip()
                 if not sentence:
                     continue
 
             try:
                 # Stream the sentence verbatim. The normalizer prompt tells
                 # the LLM to keep lines under XTTS's ~180 char ceiling —
-                # splitting here again would hide LLM mis-splits (silent
-                # degradation) and loses prosody. If an over-long line
-                # slips through, XTTS itself will emit an error and we log
-                # + move on to the next sentence.
+                # splitting here again would hide LLM mis-splits.
                 if spk_latent is not None and spk_embedding is not None:
                     try:
                         total_emitted += _run_inference_stream_once(
@@ -544,6 +566,22 @@ def _stream_inference_from_sentence_queue(
                         with wave.open(io.BytesIO(wav_data), "rb") as wf:
                             chunk_queue.put(("pcm", wf.readframes(wf.getnframes())))
                         total_emitted += 1
+                emitted_now = total_emitted - before_emitted
+                if emitted_now > 0 and not first_pcm_logged:
+                    print(
+                        f"[TTS] WORKER FIRST_PCM t={time.monotonic() - worker_start:.2f}s "
+                        f"sentence_synth={time.monotonic() - inf_start:.2f}s "
+                        f"chunks={emitted_now} lang={piece_lang}",
+                        flush=True,
+                    )
+                    first_pcm_logged = True
+                else:
+                    print(
+                        f"[TTS] WORKER SENTENCE #{sentence_index} DONE "
+                        f"synth={time.monotonic() - inf_start:.2f}s "
+                        f"chunks={emitted_now} lang={piece_lang}",
+                        flush=True,
+                    )
             except Exception as e:
                 err_msg = f"{type(e).__name__}: {e}"
                 chunk_errors.append(err_msg)

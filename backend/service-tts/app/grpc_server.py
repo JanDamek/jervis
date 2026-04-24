@@ -1,11 +1,12 @@
 """gRPC server for `service-tts` (XTTS v2 backend).
 
-Hosts TtsService {Speak, SpeakStream} on :5501. FastAPI /tts + /tts/stream
-routes are removed; every consumer dials gRPC.
+Hosts TtsService {Speak, SpeakStream} on :5501. Runs on the VD GPU VM
+alongside Whisper — not inside K8s, per `feedback-audio-services-on-vd`.
 
-Backed by Coqui XTTS v2 helpers in `xtts_server` (multilingual neural TTS
-with voice cloning). Runs on the VD GPU VM alongside whisper — not inside
-K8s, per feedback-audio-services-on-vd.md.
+Text normalization is done on-box: `normalizer.py` applies rules loaded
+from the Kotlin server's `ttsRules` collection (acronym / strip /
+replace) in deterministic CPU order — no LLM, no cloud, no router hop.
+SSOT: `docs/tts-normalization.md`.
 """
 
 from __future__ import annotations
@@ -28,11 +29,10 @@ logger = logging.getLogger("tts.grpc")
 class TtsServicer(speak_pb2_grpc.TtsServiceServicer):
     """TtsService implementation backed by XTTS v2.
 
-    `Speak` invokes the blocking `_synthesize_text` helper on a thread; the
-    response carries a full WAV blob. `SpeakStream` uses
-    `_stream_inference` which produces raw int16 PCM chunks via XTTS
-    `inference_stream()` — the first chunk arrives in ~2s on P40 and each
-    subsequent chunk streams continuously for gapless playback.
+    `Speak` invokes the blocking `_synthesize_text` helper on a thread;
+    the response carries a full WAV blob. `SpeakStream` applies the
+    rule-based normalizer and pumps normalized sentences through
+    XTTS's streaming inference for gapless playback.
     """
 
     async def Speak(
@@ -75,9 +75,7 @@ class TtsServicer(speak_pb2_grpc.TtsServiceServicer):
         request: speak_pb2.SpeakRequest,
         context: grpc.aio.ServicerContext,
     ):
-        from app import xtts_server
-        from app import router_normalize
-        from app import router_preempt
+        from app import normalizer, rules_client, xtts_server
 
         text = (request.text or "").strip()
         if not text:
@@ -96,21 +94,34 @@ class TtsServicer(speak_pb2_grpc.TtsServiceServicer):
         voice = request.voice or None
         client_id = request.ctx.scope.client_id if request.HasField("ctx") else ""
         project_id = request.ctx.scope.project_id if request.HasField("ctx") else ""
-        max_tier = request.ctx.max_tier if request.HasField("ctx") else 0
 
-        # Tell the router to clear the GPU before we start pulling sentences
-        # — user policy: "during whisper streaming AND during XTTS
-        # generation nothing else runs on the GPU". Best-effort: if the
-        # router is unreachable we still synthesize, just contended.
-        await router_preempt.tts_notify(preempt_timeout_s=20)
+        # No router coordination needed any more. XTTS + bge-m3 fit
+        # comfortably in the 24 GB P40 VRAM together (~5 GB combined),
+        # and normalization runs on CPU here — nothing on p40-2
+        # competes for VRAM during synthesis, so the old TtsNotify /
+        # TtsDone handshake was removed with the LLM normalize path.
+        start = time.monotonic()
+        logger.info(
+            "[TTS] SpeakStream START textLen=%d lang=%s client=%s project=%s",
+            len(text), language, client_id or "-", project_id or "-",
+        )
 
-        # Two queues bridging three coroutines / threads:
-        #   [normalize task] --sentence_q--> [inference thread] --chunk_q--> [gRPC yield]
-        # The LLM normalizer streams sentences as fast as tokens arrive; the
-        # inference thread starts synthesizing the first sentence the moment
-        # it lands, overlapping GPU work with remaining LLM tokens. The gRPC
-        # yield drains PCM chunks at whatever pace the caller consumes them
-        # — the unbounded queues decouple GPU speed from network speed.
+        # 1. Fetch rules, normalize on CPU. Deterministic ~1ms.
+        rules = await rules_client.fetch_rules(
+            language=language, client_id=client_id, project_id=project_id,
+        )
+        lines = normalizer.normalize(text, rules=rules, language=language)
+        logger.info(
+            "[TTS] NORMALIZE rules=%d input_chars=%d → lines=%d t=%.3fs",
+            len(rules), len(text), len(lines), time.monotonic() - start,
+        )
+
+        if not lines:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Normalized to empty — nothing to say")
+            return
+
+        # 2. Feed normalized lines into the XTTS worker and stream PCM
+        #    back to the caller.
         sentence_q: queue.Queue = queue.Queue()
         chunk_q: queue.Queue = queue.Queue()
         thread = threading.Thread(
@@ -120,61 +131,47 @@ class TtsServicer(speak_pb2_grpc.TtsServiceServicer):
         )
         thread.start()
 
-        async def _pump_sentences():
-            try:
-                async for sentence in router_normalize.stream_sentences(
-                    text, language,
-                    client_id=client_id,
-                    project_id=project_id,
-                    max_tier=max_tier,
-                ):
-                    sentence_q.put(sentence)
-            finally:
-                sentence_q.put(None)  # end-of-stream sentinel
-
-        pump_task = asyncio.create_task(_pump_sentences())
+        for line in lines:
+            # Worker expects `[CS]` / `[EN]` prefix so it can switch the
+            # phonemizer per sentence. normalizer.NormalizedLine.lang is
+            # already lowercased; XTTS worker accepts both cases.
+            sentence_q.put(f"[{line.lang.upper()}] {line.text}")
+        sentence_q.put(None)  # end-of-stream sentinel for the worker
 
         loop = asyncio.get_event_loop()
-        start = time.monotonic()
         total_chunks = 0
-        try:
-            while True:
-                try:
-                    msg_type, data = await loop.run_in_executor(None, chunk_q.get, True, 120.0)
-                except Exception:
-                    await context.abort(grpc.StatusCode.DEADLINE_EXCEEDED, "Timeout waiting for audio chunk")
-                    return
+        while True:
+            try:
+                msg_type, data = await loop.run_in_executor(None, chunk_q.get, True, 120.0)
+            except Exception:
+                await context.abort(grpc.StatusCode.DEADLINE_EXCEEDED, "Timeout waiting for audio chunk")
+                return
 
-                if msg_type == "header":
-                    continue  # sample rate is a fixed contract, clients assume 24 kHz
+            if msg_type == "header":
+                continue  # sample rate is a fixed 24 kHz contract
 
-                if msg_type == "pcm":
-                    total_chunks += 1
-                    yield speak_pb2.AudioChunk(data=data, is_last=False)
-                    continue
-
-                if msg_type == "done":
-                    elapsed = time.monotonic() - start
+            if msg_type == "pcm":
+                total_chunks += 1
+                if total_chunks == 1:
                     logger.info(
-                        "[TTS] gRPC SpeakStream %d chars → %d PCM chunks in %.2fs (lang=%s)",
-                        len(text), total_chunks, elapsed, language,
+                        "[TTS] FIRST_PCM_YIELD t=%.2fs bytes=%d",
+                        time.monotonic() - start, len(data),
                     )
-                    yield speak_pb2.AudioChunk(data=b"", is_last=True)
-                    return
+                yield speak_pb2.AudioChunk(data=data, is_last=False)
+                continue
 
-                if msg_type == "error":
-                    await context.abort(grpc.StatusCode.INTERNAL, str(data))
-                    return
-        finally:
-            # Caller went away (cancel / disconnect) — stop the normalizer
-            # so it doesn't keep pulling from the router for a dead client.
-            # The inference thread will exit on its own once it sees the
-            # sentinel on sentence_q.
-            if not pump_task.done():
-                pump_task.cancel()
-            # Always release the GPU semaphore, even on cancel — otherwise
-            # Ollama stays blocked waiting for a TtsDone that never comes.
-            await router_preempt.tts_done()
+            if msg_type == "done":
+                elapsed = time.monotonic() - start
+                logger.info(
+                    "[TTS] SpeakStream DONE %d chars → %d PCM chunks in %.2fs (lang=%s)",
+                    len(text), total_chunks, elapsed, language,
+                )
+                yield speak_pb2.AudioChunk(data=b"", is_last=True)
+                return
+
+            if msg_type == "error":
+                await context.abort(grpc.StatusCode.INTERNAL, str(data))
+                return
 
 
 async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:

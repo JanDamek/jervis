@@ -1,0 +1,12 @@
+# Voice reference samples are large (12-112 MB) and must not land in git.
+# They live on the VD GPU VM at /opt/jervis/data/tts/speakers/ — deploy
+# script copies them from there when bootstrapping a new VM, not from
+# the repo.
+*.wav
+*.aifc
+*.flac
+*.mp3
+
+# Installed package metadata (created by `pip install -e .`)
+*.egg-info/
+__pycache__/
