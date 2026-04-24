@@ -12,10 +12,14 @@
 #   EXPECTED_BRANCH  — expected checkout branch name
 #   one of: CLAUDE_CODE_OAUTH_TOKEN | ANTHROPIC_API_KEY
 #
-# Optional env:
-#   GIT_USER_NAME, GIT_USER_EMAIL
-#   GPG_PRIVATE_KEY, GPG_KEY_ID, GPG_PASSPHRASE
-#   MCP_CONFIG_PATH  — path to .mcp.json (default: $WORKSPACE/.jervis/mcp.json)
+# Optional env (from AgentJobDispatcher):
+#   GIT_USER_NAME, GIT_USER_EMAIL                  — git commit identity
+#   GPG_PRIVATE_KEY, GPG_KEY_ID, GPG_PASSPHRASE    — signed-commit config
+#   GIT_CREDENTIALS_USERNAME, GIT_CREDENTIALS_PASSWORD  — https push creds
+#   MCP_SERVER_URL, MCP_API_TOKEN                  — Claude MCP client config
+#                                                    (MCP_API_TOKEN may be
+#                                                     comma-separated; first
+#                                                     token is used)
 #
 # Exit contract:
 #   - writes $WORKSPACE/.jervis/result.json (JSON: agentJobId, success, summary,
@@ -32,7 +36,9 @@ set -euo pipefail
 RESULT_FILE="$WORKSPACE/.jervis/result.json"
 BRIEF_FILE="$WORKSPACE/.jervis/brief.md"
 CLAUDE_MD="$WORKSPACE/.jervis/CLAUDE.md"
-MCP_CONFIG_PATH="${MCP_CONFIG_PATH:-$WORKSPACE/.jervis/mcp.json}"
+# .mcp.json is generated at runtime from MCP_* env in /tmp (never persisted
+# to the PVC — tokens must not end up on shared storage).
+MCP_CONFIG_PATH="/tmp/jervis-mcp.json"
 
 mkdir -p "$(dirname "$RESULT_FILE")"
 
@@ -130,6 +136,37 @@ if [ -n "${GPG_PRIVATE_KEY:-}" ]; then
     fi
 fi
 
+# ---- Git push credentials (from ConnectionDocument via dispatcher env) ----
+if [ -n "${GIT_CREDENTIALS_PASSWORD:-}" ]; then
+    CRED_USER="${GIT_CREDENTIALS_USERNAME:-x-access-token}"
+    GIT_CREDS_FILE="$HOME/.git-credentials"
+    # URL-encode the password in case it contains `:` / `@` / `/` / `#`.
+    # The credential file format is `https://user:pass@host` per line.
+    ENCODED_PASSWORD=$(GIT_CRED_USER="$CRED_USER" GIT_CRED_PASS="$GIT_CREDENTIALS_PASSWORD" python3 <<'PYEOF'
+import os, urllib.parse
+u = urllib.parse.quote(os.environ['GIT_CRED_USER'], safe='')
+p = urllib.parse.quote(os.environ['GIT_CRED_PASS'], safe='')
+print(f"{u}:{p}")
+PYEOF
+    )
+    : > "$GIT_CREDS_FILE"
+    chmod 600 "$GIT_CREDS_FILE"
+    for host in github.com gitlab.com bitbucket.org; do
+        printf 'https://%s@%s\n' "$ENCODED_PASSWORD" "$host" >> "$GIT_CREDS_FILE"
+    done
+    # If the dispatcher knows the exact remote host, write that too —
+    # covers self-hosted Gitea / GitLab / Bitbucket Server.
+    if [ -n "${GIT_REMOTE_URL:-}" ]; then
+        REMOTE_HOST=$(printf '%s' "$GIT_REMOTE_URL" \
+            | sed -E 's#^https?://([^/@:]+(:[0-9]+)?).*#\1#')
+        if [ -n "$REMOTE_HOST" ]; then
+            printf 'https://%s@%s\n' "$ENCODED_PASSWORD" "$REMOTE_HOST" >> "$GIT_CREDS_FILE"
+        fi
+    fi
+    git config --global credential.helper "store --file=$GIT_CREDS_FILE"
+    log "git-credentials wired (helper=store, hosts=$(wc -l <"$GIT_CREDS_FILE"))"
+fi
+
 # ---- Verify workspace is on the expected branch ----
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 if [ "$CURRENT_BRANCH" != "$EXPECTED_BRANCH" ]; then
@@ -146,6 +183,32 @@ if [ ! -f "$BRIEF_FILE" ]; then
 fi
 
 log "job=$AGENT_JOB_ID branch=$EXPECTED_BRANCH brief=$(wc -c <"$BRIEF_FILE") bytes"
+
+# ---- Render Claude MCP config from env (never touches PVC) ----
+if [ -n "${MCP_SERVER_URL:-}" ] && [ -n "${MCP_API_TOKEN:-}" ]; then
+    # MCP_API_TOKEN may be comma-separated (secret holds all accepted tokens
+    # for the server); pick the first one for the outgoing Bearer header.
+    FIRST_TOKEN="${MCP_API_TOKEN%%,*}"
+    MCP_SERVER_URL="$MCP_SERVER_URL" FIRST_TOKEN="$FIRST_TOKEN" \
+        MCP_CONFIG_PATH="$MCP_CONFIG_PATH" python3 <<'PYEOF'
+import json, os
+config = {
+    "mcpServers": {
+        "jervis-mcp": {
+            "type": "http",
+            "url": os.environ['MCP_SERVER_URL'],
+            "headers": {"Authorization": f"Bearer {os.environ['FIRST_TOKEN']}"},
+        }
+    }
+}
+with open(os.environ['MCP_CONFIG_PATH'], 'w') as f:
+    json.dump(config, f)
+PYEOF
+    chmod 600 "$MCP_CONFIG_PATH"
+    log "MCP config rendered at $MCP_CONFIG_PATH (server=$MCP_SERVER_URL)"
+else
+    log "WARN: MCP_SERVER_URL/MCP_API_TOKEN missing — Claude runs without jervis-mcp tools"
+fi
 
 # ---- Run Claude Code CLI headless ----
 CLAUDE_ARGS=(--dangerously-skip-permissions --print)

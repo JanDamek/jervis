@@ -1,16 +1,27 @@
 package com.jervis.agentjob
 
+import com.jervis.client.ClientDocument
+import com.jervis.client.ClientRepository
 import com.jervis.common.types.AgentJobId
 import com.jervis.common.types.ClientId
+import com.jervis.common.types.ConnectionId
 import com.jervis.common.types.ProjectId
+import com.jervis.connection.ConnectionDocument
+import com.jervis.connection.ConnectionRepository
 import com.jervis.dto.agentjob.AgentJobFlavor
 import com.jervis.dto.agentjob.AgentJobState
+import com.jervis.dto.connection.AuthTypeEnum
+import com.jervis.git.persistence.GpgCertificateDocument
+import com.jervis.git.persistence.GpgCertificateRepository
+import com.jervis.project.GitCommitConfig
 import com.jervis.project.ProjectDocument
 import com.jervis.project.ProjectRepository
 import com.jervis.project.ProjectResource
 import io.fabric8.kubernetes.api.model.EnvVar
 import io.fabric8.kubernetes.api.model.EnvVarBuilder
+import io.fabric8.kubernetes.api.model.EnvVarSourceBuilder
 import io.fabric8.kubernetes.api.model.Quantity
+import io.fabric8.kubernetes.api.model.SecretKeySelectorBuilder
 import io.fabric8.kubernetes.api.model.VolumeBuilder
 import io.fabric8.kubernetes.api.model.VolumeMountBuilder
 import io.fabric8.kubernetes.api.model.batch.v1.Job
@@ -21,29 +32,37 @@ import io.fabric8.kubernetes.client.KubernetesClientBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import mu.KotlinLogging
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
+import java.nio.file.Files
+import java.nio.file.Path
 import java.time.Instant
+import kotlin.io.path.createDirectories
+import kotlin.io.path.writeText
 
 /**
  * Entry point for turning a Claude-chat-manager request ("run this as
- * a background Job") into an `AgentJobRecord` + prepared workspace.
- *
- * Stage 3a — pure Kotlin-side workflow. Actually creating the K8s Job
- * (fabric8 `batch().jobs().resource(job).create()`) and reconciling
- * its lifecycle are added in follow-up commits. Splitting the commit
- * keeps the record / workspace contract reviewable on its own.
+ * a background Job") into an `AgentJobRecord` + prepared workspace +
+ * live K8s Job running the `jervis-coding-agent` image against that
+ * workspace.
  *
  * Responsibilities:
  *  1. Persist an `AgentJobRecord` in `QUEUED` state.
  *  2. For CODING flavor, materialise the per-agent `git worktree` via
  *     [AgentWorkspaceService]. Record `workspacePath` + `gitBranch`
  *     back onto the record.
- *  3. Leave the record in QUEUED — the (upcoming) K8s Job creation
- *     step will flip it to RUNNING.
+ *  3. Write `$WORKSPACE/.jervis/brief.md` + `CLAUDE.md` so the
+ *     in-container entrypoint has full task context on filesystem
+ *     (bypasses ARG_MAX — descriptions can be kilobytes long).
+ *  4. Create a fabric8 Job manifest injecting:
+ *       - plain env from per-dispatch config (git identity, GPG,
+ *         connection credentials, MCP URL)
+ *       - secretKeyRef env from `jervis-secrets` (Claude auth,
+ *         MCP bearer token)
+ *  5. Flip record to RUNNING with the K8s Job name recorded.
  *
  * Explicitly NOT here yet:
- *  - Kubernetes Job manifest build & dispatch (3b)
- *  - `abort(jobId)` + status queries + K8s watcher reconciliation (3c)
+ *  - `abort(jobId)` + status queries + K8s watcher reconciliation (3b.4)
  *  - Non-CODING flavors (analysis / research etc. delegate later)
  */
 @Service
@@ -51,6 +70,11 @@ class AgentJobDispatcher(
     private val agentJobRecordRepository: AgentJobRecordRepository,
     private val agentWorkspaceService: AgentWorkspaceService,
     private val projectRepository: ProjectRepository,
+    private val clientRepository: ClientRepository,
+    private val connectionRepository: ConnectionRepository,
+    private val gpgCertificateRepository: GpgCertificateRepository,
+    @Value("\${jervis.mcp.url:http://jervis-mcp:8100}")
+    private val mcpServerUrl: String,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -63,6 +87,15 @@ class AgentJobDispatcher(
         private const val DATA_MOUNT = "/opt/jervis/data"
         private const val DATA_VOLUME = "jervis-data"
         private const val TTL_AFTER_FINISHED = 300
+
+        // Secret / ConfigMap references. Keys must match k8s/secret-manifest.sh
+        // and k8s/configmap.yaml — changes here must land there too.
+        private const val SECRETS_NAME = "jervis-secrets"
+        private const val SECRET_KEY_CLAUDE_OAUTH = "CLAUDE_CODE_OAUTH_TOKEN"
+        private const val SECRET_KEY_ANTHROPIC_API = "ANTHROPIC_API_KEY"
+        // The secret key is pluralised (`MCP_API_TOKENS`) — value may be a
+        // comma-separated list. Entrypoint picks the first one at runtime.
+        private const val SECRET_KEY_MCP_TOKENS = "MCP_API_TOKENS"
 
         fun codingJobName(agentJobId: AgentJobId): String = "jervis-coding-agent-$agentJobId"
     }
@@ -184,8 +217,24 @@ class AgentJobDispatcher(
         )
         agentJobRecordRepository.save(afterWorktree)
 
+        // Resolve per-dispatch settings (client/project git config, GPG, push creds)
+        // before writing workspace prep + K8s Job manifest. Each lookup may return
+        // null — entrypoint handles missing values gracefully (e.g. commits remain
+        // unsigned, workspace retains whatever credentials.helper already holds).
+        val client = record.clientId?.let { clientRepository.getById(it) }
+        val gitConfig = resolveEffectiveGitConfig(client, project)
+        val gpgCert = gitConfig?.takeIf { it.gpgSign }?.let { cfg ->
+            loadGpgCertificate(cfg.gpgKeyId, record.clientId)
+        }
+        val pushConnection = runCatching {
+            connectionRepository.getById(ConnectionId(resource.connectionId))
+        }.onFailure { e ->
+            logger.warn(e) { "dispatchCoding | connection lookup failed for resource=${resource.id}" }
+        }.getOrNull()
+
         return try {
-            val jobName = createKubernetesJob(afterWorktree)
+            writeWorkspacePrep(afterWorktree, worktreePath)
+            val jobName = createKubernetesJob(afterWorktree, gitConfig, gpgCert, pushConnection)
             val running = afterWorktree.copy(
                 state = AgentJobState.RUNNING,
                 kubernetesJobName = jobName,
@@ -202,17 +251,115 @@ class AgentJobDispatcher(
     }
 
     /**
-     * Build and create the K8s Job manifest for a CODING-flavor record.
-     * Base env only (job metadata, workspace path, branch). Secrets
-     * (CLAUDE_CODE_OAUTH_TOKEN, git identity, GPG private key) land in
-     * step 3b.3 — without them the `jervis-coding-agent` entrypoint
-     * self-fails fast on the auth check and writes result.json = failure,
-     * but the manifest + image (3b.2) are already valid.
+     * Git commit config resolution matches the orchestrator's existing
+     * rule (see `AgentOrchestratorService.buildProjectRules`): project
+     * overrides client. `null` means neither layer supplied one — in
+     * that case the entrypoint skips `git config --global user.*` and
+     * git will fall back to whatever the worktree already has.
      */
-    private suspend fun createKubernetesJob(record: AgentJobRecord): String {
+    private fun resolveEffectiveGitConfig(
+        client: ClientDocument?,
+        project: ProjectDocument,
+    ): GitCommitConfig? = project.gitCommitConfig ?: client?.gitCommitConfig
+
+    /**
+     * GPG lookup hierarchy (only consulted when `gitConfig.gpgSign=true`):
+     *   1. Explicit `gpgKeyId` from GitCommitConfig → `findFirstByKeyId`
+     *   2. Any key belonging to the client → `findFirstByClientId`
+     *   3. Any key in the DB, most recent first → `findAllByOrderByCreatedAtDesc`
+     *
+     * Matches `GpgCertificateRpcImpl.getActiveKey` precedence so server
+     * and agent agree on which key is "active" for a given job.
+     */
+    private suspend fun loadGpgCertificate(
+        preferredKeyId: String?,
+        clientId: ClientId?,
+    ): GpgCertificateDocument? {
+        if (!preferredKeyId.isNullOrBlank()) {
+            gpgCertificateRepository.findFirstByKeyId(preferredKeyId)?.let { return it }
+            logger.warn { "loadGpgCertificate | gpgKeyId=$preferredKeyId not found — falling back" }
+        }
+        if (clientId != null) {
+            gpgCertificateRepository.findFirstByClientId(clientId.toString())?.let { return it }
+        }
+        // Last-resort fallback — pick whatever key exists. For single-tenant
+        // deployments this is usually the right one. For multi-tenant this
+        // logs a warning so operators notice missing client-scoped keys.
+        return runCatching {
+            var first: GpgCertificateDocument? = null
+            gpgCertificateRepository.findAllByOrderByCreatedAtDesc().collect { doc ->
+                if (first == null) first = doc
+            }
+            first
+        }.getOrNull()
+    }
+
+    /**
+     * Write `.jervis/brief.md` (full task description) and `.jervis/CLAUDE.md`
+     * (system prompt) into the agent's workspace. The entrypoint then passes
+     * these to `claude --print --append-system-prompt <CLAUDE.md> <brief.md>`.
+     *
+     * Global gitignore in the agent container (see entrypoint-coding.sh)
+     * excludes `.jervis/`, so these files never land in commits.
+     */
+    private suspend fun writeWorkspacePrep(record: AgentJobRecord, worktreePath: Path) {
+        withContext(Dispatchers.IO) {
+            val jervisDir = worktreePath.resolve(".jervis")
+            jervisDir.createDirectories()
+
+            jervisDir.resolve("brief.md").writeText(record.description)
+            jervisDir.resolve("CLAUDE.md").writeText(buildSystemPrompt(record))
+            // result.json intentionally NOT pre-created — entrypoint owns
+            // that file, and its existence is a signal to the watcher that
+            // the agent already produced a terminal result.
+            if (Files.notExists(jervisDir.resolve(".gitignore"))) {
+                jervisDir.resolve(".gitignore").writeText("*\n")
+            }
+        }
+    }
+
+    private fun buildSystemPrompt(record: AgentJobRecord): String = buildString {
+        appendLine("# Jervis coding agent brief")
+        appendLine()
+        appendLine("You are running as a background coding agent for agent-job `${record.id}`.")
+        appendLine("Your workspace is a per-job git worktree; you have full tool access.")
+        appendLine()
+        appendLine("Branch: `${record.gitBranch.orEmpty()}` (already checked out).")
+        record.clientId?.let { appendLine("Client: `$it`") }
+        record.projectId?.let { appendLine("Project: `$it`") }
+        record.resourceId?.let { appendLine("Resource: `$it`") }
+        appendLine()
+        appendLine("## Workflow")
+        appendLine()
+        appendLine("1. Read `.jervis/brief.md` for the full task description.")
+        appendLine("2. Implement the change directly in the workspace.")
+        appendLine("3. Commit on this branch (signed if GPG is configured).")
+        appendLine("4. `git push` to the remote of this branch.")
+        appendLine("5. Call MCP tool `mcp__jervis-mcp__report_done` with a short summary.")
+        appendLine()
+        appendLine("## Rules")
+        appendLine()
+        appendLine("- Do NOT open a pull request — the user reviews the pushed branch manually.")
+        appendLine("- Do NOT commit files under `.jervis/` (global gitignore).")
+        appendLine("- Do NOT switch branches; all work happens on `${record.gitBranch.orEmpty()}`.")
+        appendLine("- If the task is impossible, call `report_done` with `success=false` and an explanation.")
+    }
+
+    /**
+     * Build and create the K8s Job manifest for a CODING-flavor record.
+     * Injects plain env (git identity, GPG, connection credentials, MCP
+     * URL) plus secretKeyRef env from `jervis-secrets` (Claude auth +
+     * MCP bearer token).
+     */
+    private suspend fun createKubernetesJob(
+        record: AgentJobRecord,
+        gitConfig: GitCommitConfig?,
+        gpgCert: GpgCertificateDocument?,
+        pushConnection: ConnectionDocument?,
+    ): String {
         val jobName = codingJobName(record.id)
 
-        val envVars = buildBaseEnv(record)
+        val envVars = buildAllEnv(record, gitConfig, gpgCert, pushConnection)
         val volumeMount = VolumeMountBuilder()
             .withName(DATA_VOLUME)
             .withMountPath(DATA_MOUNT)
@@ -272,19 +419,95 @@ class AgentJobDispatcher(
         return jobName
     }
 
-    private fun buildBaseEnv(record: AgentJobRecord): List<EnvVar> = listOf(
-        env("AGENT_JOB_ID", record.id.toString()),
-        env("AGENT_FLAVOR", record.flavor.name),
-        env("WORKSPACE", record.workspacePath.orEmpty()),
-        env("EXPECTED_BRANCH", record.gitBranch.orEmpty()),
-        env("CLIENT_ID", record.clientId?.toString().orEmpty()),
-        env("PROJECT_ID", record.projectId?.toString().orEmpty()),
-        env("RESOURCE_ID", record.resourceId.orEmpty()),
-        env("DISPATCHED_BY", record.dispatchedBy),
-    )
+    private fun buildAllEnv(
+        record: AgentJobRecord,
+        gitConfig: GitCommitConfig?,
+        gpgCert: GpgCertificateDocument?,
+        pushConnection: ConnectionDocument?,
+    ): List<EnvVar> {
+        val result = mutableListOf<EnvVar>()
 
-    private fun env(name: String, value: String): EnvVar =
+        // --- Job metadata ---
+        result += plain("AGENT_JOB_ID", record.id.toString())
+        result += plain("AGENT_FLAVOR", record.flavor.name)
+        result += plain("WORKSPACE", record.workspacePath.orEmpty())
+        result += plain("EXPECTED_BRANCH", record.gitBranch.orEmpty())
+        result += plain("CLIENT_ID", record.clientId?.toString().orEmpty())
+        result += plain("PROJECT_ID", record.projectId?.toString().orEmpty())
+        result += plain("RESOURCE_ID", record.resourceId.orEmpty())
+        result += plain("DISPATCHED_BY", record.dispatchedBy)
+
+        // --- Git identity (committerX > authorX; null if neither config level set it) ---
+        gitConfig?.let { cfg ->
+            val name = cfg.committerName ?: cfg.authorName
+            val email = cfg.committerEmail ?: cfg.authorEmail
+            if (!name.isNullOrBlank()) result += plain("GIT_USER_NAME", name)
+            if (!email.isNullOrBlank()) result += plain("GIT_USER_EMAIL", email)
+        }
+
+        // --- GPG (only when gitConfig.gpgSign=true AND a key was resolved) ---
+        gpgCert?.let { cert ->
+            result += plain("GPG_KEY_ID", cert.keyId)
+            result += plain("GPG_PRIVATE_KEY", cert.privateKeyArmored)
+            cert.passphrase?.takeIf { it.isNotBlank() }?.let {
+                result += plain("GPG_PASSPHRASE", it)
+            }
+        }
+
+        // --- Git push credentials (entrypoint writes ~/.git-credentials from these) ---
+        pushConnection?.let { conn ->
+            when (conn.authType) {
+                AuthTypeEnum.BASIC -> {
+                    conn.username?.let { result += plain("GIT_CREDENTIALS_USERNAME", it) }
+                    conn.password?.let { result += plain("GIT_CREDENTIALS_PASSWORD", it) }
+                }
+                AuthTypeEnum.BEARER, AuthTypeEnum.OAUTH2 -> {
+                    conn.bearerToken?.let {
+                        // GitHub / Gitea / most hosts accept `x-access-token:<PAT>`
+                        // for HTTPS push. Username is a placeholder — the PAT is
+                        // what actually authenticates.
+                        result += plain("GIT_CREDENTIALS_USERNAME", conn.username ?: "x-access-token")
+                        result += plain("GIT_CREDENTIALS_PASSWORD", it)
+                    }
+                }
+                AuthTypeEnum.NONE -> Unit
+            }
+            conn.gitRemoteUrl?.takeIf { it.isNotBlank() }?.let {
+                result += plain("GIT_REMOTE_URL", it)
+            }
+        }
+
+        // --- MCP client config (entrypoint renders /tmp/mcp.json from these) ---
+        result += plain("MCP_SERVER_URL", mcpServerUrl)
+
+        // --- Secrets (pulled from jervis-secrets at Pod scheduling time) ---
+        result += secret("CLAUDE_CODE_OAUTH_TOKEN", SECRET_KEY_CLAUDE_OAUTH)
+        result += secret("ANTHROPIC_API_KEY", SECRET_KEY_ANTHROPIC_API)
+        // Exposed to the container as MCP_API_TOKEN (singular) for clarity —
+        // the secret key remains `MCP_API_TOKENS` because that is what the
+        // MCP server itself reads. Entrypoint handles comma-split if needed.
+        result += secret("MCP_API_TOKEN", SECRET_KEY_MCP_TOKENS)
+
+        return result
+    }
+
+    private fun plain(name: String, value: String): EnvVar =
         EnvVarBuilder().withName(name).withValue(value).build()
+
+    private fun secret(envName: String, secretKey: String): EnvVar =
+        EnvVarBuilder()
+            .withName(envName)
+            .withValueFrom(
+                EnvVarSourceBuilder()
+                    .withSecretKeyRef(
+                        SecretKeySelectorBuilder()
+                            .withName(SECRETS_NAME)
+                            .withKey(secretKey)
+                            .build(),
+                    )
+                    .build(),
+            )
+            .build()
 
     private fun buildLabels(record: AgentJobRecord, jobName: String): Map<String, String> {
         val labels: LinkedHashMap<String, String> = linkedMapOf(
