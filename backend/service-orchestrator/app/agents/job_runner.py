@@ -117,7 +117,7 @@ class JobRunner:
         gpg_key = await self._fetch_gpg_key(client_id, gpg_key_id)
 
         # Build and create Job
-        job_name = f"jervis-{agent_type}-{task_id[:12]}"
+        job_name = f"jervis-{agent_type}-{task_id}"
         job = self._build_job_manifest(
             job_name=job_name,
             agent_type=agent_type,
@@ -375,7 +375,7 @@ class JobRunner:
         gpg_key = await self._fetch_gpg_key(client_id, gpg_key_id)
 
         # Build and create Job
-        job_name = f"jervis-{agent_type}-{task_id[:12]}"
+        job_name = f"jervis-{agent_type}-{task_id}"
         job = self._build_job_manifest(
             job_name=job_name,
             agent_type=agent_type,

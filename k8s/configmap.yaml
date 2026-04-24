@@ -121,19 +121,6 @@ data:
       # User tuning: 1.2 felt too fast for Czech (unnatural for the cloned
       # voice). 1.0 is XTTS's natural speaker tempo.
       speed: 1.0
-      # Jervis infra client — sent in the SpeakRequest ctx so the router's
-      # normalize LLM call resolves to the right tier (cloud fallback when
-      # local chat GPU is saturated) instead of tier=NONE local-only.
-      normalizeClientId: "68a332361b04695a243e5ae8"
-      normalizeProjectId: "68a3318f1b04695a243e5adf"
-      # Normalize cascade: FREE → PAID → local. OpenRouter free tier
-      # first (near-zero cost); if exhausted (429), try PAID (cheap
-      # latency); if that also fails (402 no credits), drop to local
-      # qwen3-coder-tool:30b on p40-1 — where CASCADE priority preempts
-      # whatever is running so the user-waiting audio doesn't queue
-      # behind background work. Router handles the whole chain in
-      # dispatch_inference (see CLOUD_CASCADE logic).
-      normalizeMaxTier: "T2"
 
     # -- Coding tools (Claude Code only) ----------------------------------------
     coding-tools:
@@ -221,6 +208,14 @@ data:
   DATA_ROOT: "/opt/jervis/data"
   CONTAINER_REGISTRY: "registry.damek-soft.eu/jandamek"
   MCP_API_TOKEN: "72f78904b9974741fd4d2d6eef3055418b90f4a190096b631cf0266df34c5304"
+
+  # Fáze A pilot — route chat-with-clientId through a per-client Claude
+  # Companion session instead of the LangGraph chat handler. Default OFF.
+  # When turning on, optionally narrow the rollout via the allowlist
+  # (comma-separated client IDs). Empty allowlist = all clients.
+  # See docs/claude-session-pilot.md for the full picture.
+  USE_CLAUDE_CLIENT_SESSION: "true"
+  CLAUDE_CLIENT_SESSION_ALLOWED_IDS: "68a332361b04695a243e5ae8"
 
   # ── OLLAMA ROUTER: GPU/CPU routing proxy ──────────────────────────────
   ROUTER_PORT: "11430"

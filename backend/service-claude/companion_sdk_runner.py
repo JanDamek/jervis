@@ -208,7 +208,13 @@ async def run_session(workspace: Path) -> int:
         _append_outbox(workspace, "note", f"Session {session_id} ready.", final=False)
 
         with inbox.open("r", encoding="utf-8") as f:
-            f.seek(0, 2)  # tail from EOF — orchestrator appends fresh events
+            # Read from the start so any events queued BEFORE the runner
+            # became READY (chat messages can land while the K8s pod is
+            # still booting) are processed. Per-session workspaces are
+            # unique (new uuid each start) so there's no cross-session
+            # history leak, and stale-event TTL below still drops outdated
+            # meeting chunks.
+            f.seek(0, 0)
             while not stop_flag.is_set():
                 if end_marker.exists():
                     _log("END marker found — shutting down")
@@ -225,9 +231,14 @@ async def run_session(workspace: Path) -> int:
                     _log(f"Malformed inbox line: {line[:200]}")
                     continue
 
-                # Drop stale inbox events — assistant hints must be fresh.
+                # Drop stale inbox events — assistant hints (meeting
+                # chunks, system pings) must be fresh or they muddy the
+                # answer. User chat messages are not time-sensitive: if
+                # the K8s pod took 90s to boot, the user still wants an
+                # answer to what they asked at t=0. Exclude `type=user`
+                # from the TTL check.
                 ttl = float(os.environ.get("COMPANION_INBOX_MAX_AGE_SECONDS", "30"))
-                if ttl > 0 and _event_is_stale(event, ttl):
+                if ttl > 0 and event.get("type") != "user" and _event_is_stale(event, ttl):
                     _log(f"Dropping stale inbox event (age>{ttl}s)")
                     continue
 

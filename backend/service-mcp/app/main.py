@@ -19,7 +19,15 @@ import logging
 import os
 
 from fastmcp import FastMCP
-from fastmcp.server.auth import StaticTokenVerifier, TokenVerifier, AccessToken
+try:
+    # fastmcp ≥ 2.x exposed StaticTokenVerifier at the top of the auth package.
+    from fastmcp.server.auth import StaticTokenVerifier, TokenVerifier, AccessToken
+except ImportError:
+    # fastmcp 3.x refactor — TokenVerifier/AccessToken stay, but
+    # StaticTokenVerifier moved under providers.jwt. Resolve both paths
+    # so the server boots regardless of which minor version pip picks up.
+    from fastmcp.server.auth import TokenVerifier, AccessToken
+    from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -627,6 +635,271 @@ async def kb_delete_by_source(
         f"  Graph edges cleaned: {result.edges_cleaned}\n"
         f"  Graph edges deleted: {result.edges_deleted}"
     )
+
+
+# ── Memory Graph Snapshot Tools (Claude session compact/resume) ─────────
+#
+# These power the COMPACT_AND_EXIT protocol described in the per-client
+# brief template. The Claude session calls `memory_graph_save_snapshot`
+# on shutdown; the next session boot reads the latest snapshot via the
+# brief builder in the orchestrator (which ultimately reads the same
+# MongoDB collection — `load` below is exposed for agents that want to
+# peek at prior narrative during a live session).
+#
+# Scope conventions (string keys, opaque to the tool):
+#   "client:<clientId>" — per-client daily session
+#   "global"             — global Jervis session
+#   "project:<projectId>" — reserved for future per-project sessions
+
+
+@mcp.tool
+async def memory_graph_save_snapshot(
+    scope: str,
+    content: str,
+    session_id: str = "",
+    client_id: str = "",
+    project_id: str = "",
+) -> str:
+    """Persist a narrative compact snapshot for a session scope.
+
+    Call this once at the end of a session (triggered by the
+    COMPACT_AND_EXIT protocol in the brief). The snapshot is a free-form
+    markdown summary of where the session left off — state, pending
+    threads, next steps, key facts.
+
+    Args:
+        scope: Opaque scope key. Use "client:<clientId>" for per-client
+               sessions, "global" for the global Jervis session.
+        content: Markdown snapshot. Must be non-empty.
+        session_id: The Claude session id that is saving the snapshot.
+        client_id: Client id for redundant indexing (empty for global).
+        project_id: Project id if the session was project-scoped.
+
+    Returns:
+        A short confirmation string with the stored scope + char count.
+    """
+    if not scope.strip():
+        return "Error: scope is required (e.g. 'client:<id>' or 'global')."
+    if not content.strip():
+        return "Error: content must be non-empty markdown."
+    import datetime as _dt
+    db = await get_db()
+    doc = {
+        "scope": scope,
+        "content": content,
+        "client_id": client_id or None,
+        "project_id": project_id or None,
+        "session_id": session_id or None,
+        "created_at": _dt.datetime.now(_dt.timezone.utc),
+        "token_estimate": max(1, len(content) // 4),
+    }
+    await db["compact_snapshots"].insert_one(doc)
+    return f"Saved compact snapshot for scope='{scope}' chars={len(content)}"
+
+
+@mcp.tool
+async def memory_graph_load_snapshot(scope: str) -> str:
+    """Load the most recent compact snapshot for a scope.
+
+    Returns the raw markdown body (or an empty-state message if nothing
+    has been stored yet for this scope).
+
+    Args:
+        scope: The scope key used at save time (e.g. "client:<id>").
+    """
+    if not scope.strip():
+        return "Error: scope is required."
+    db = await get_db()
+    doc = await db["compact_snapshots"].find_one(
+        {"scope": scope},
+        sort=[("created_at", -1)],
+    )
+    if not doc:
+        return f"No snapshot recorded for scope='{scope}'."
+    created = doc.get("created_at")
+    prefix = f"[compact snapshot | scope={scope} | saved={created} | session={doc.get('session_id', '?')}]\n\n"
+    return prefix + (doc.get("content") or "")
+
+
+# ── Scratchpad (Claude's structured notebook) ───────────────────────────
+#
+# This is the dedicated Mongo-backed scratchpad for a Claude session to
+# stash structured records it wants to look up *by key or tag*, not by
+# semantic similarity. Prefer this over `kb_store` when:
+#   - you need exact retrieval ("all 'pending_reply' items for this client")
+#   - the data is short-lived / per-day state (follow-ups, waiting-on)
+#   - the shape is a small JSON object, not prose
+#
+# Use `kb_store` instead when the content is durable knowledge,
+# referenced by semantic search, or cross-session learning.
+#
+# Collection: `claude_scratchpad`
+#   _id, scope, namespace, key, data (arbitrary JSON), tags, created_at,
+#   updated_at, expires_at (optional), session_id, client_id, project_id
+#
+# Scope convention matches compact_snapshots: "client:<id>", "global",
+# or "project:<id>". The tools write the scope as-is; the Claude brief
+# passes the right scope hint per session.
+
+
+@mcp.tool
+async def scratchpad_put(
+    scope: str,
+    namespace: str,
+    key: str,
+    data_json: str,
+    tags: str = "",
+    ttl_days: int = 0,
+    session_id: str = "",
+    client_id: str = "",
+    project_id: str = "",
+) -> str:
+    """Upsert a structured note into the Claude scratchpad.
+
+    The upsert is keyed on (scope, namespace, key). Re-calling with the
+    same triple overwrites `data_json`/`tags`/timestamps. Useful for
+    short-lived state such as "pending_reply" items, "followup" notes,
+    or today's running decisions.
+
+    Args:
+        scope: "client:<id>", "global", or "project:<id>".
+        namespace: Logical bucket, e.g. "pending_reply", "followup",
+                   "decision", "fact", "todo".
+        key: Stable identifier inside the namespace (e.g. email_id,
+             meeting_id, or a free-form slug).
+        data_json: JSON payload as a string (object, array, number,
+                   string, ...). Parsed before storing so malformed
+                   JSON surfaces here, not at read time.
+        tags: Comma-separated tags for coarse filtering via
+              `scratchpad_query`.
+        ttl_days: Soft-TTL in days. 0 = no expiry. When set, the tool
+                  stamps `expires_at`; callers are expected to honor
+                  it or run `scratchpad_prune`.
+        session_id: The Claude session writing the note (audit trail).
+        client_id, project_id: Redundant with `scope` but useful for
+                               fast DB-side filtering.
+    """
+    if not scope.strip() or not namespace.strip() or not key.strip():
+        return "Error: scope, namespace, and key are all required."
+    if not data_json.strip():
+        return "Error: data_json must be a non-empty JSON string."
+    try:
+        data = json.loads(data_json)
+    except json.JSONDecodeError as e:
+        return f"Error: data_json is not valid JSON ({e})."
+    import datetime as _dt
+    now = _dt.datetime.now(_dt.timezone.utc)
+    tag_list = [t.strip() for t in (tags or "").split(",") if t.strip()]
+    expires_at = None
+    if ttl_days and ttl_days > 0:
+        expires_at = now + _dt.timedelta(days=int(ttl_days))
+    update = {
+        "$set": {
+            "scope": scope,
+            "namespace": namespace,
+            "key": key,
+            "data": data,
+            "tags": tag_list,
+            "updated_at": now,
+            "expires_at": expires_at,
+            "session_id": session_id or None,
+            "client_id": client_id or None,
+            "project_id": project_id or None,
+        },
+        "$setOnInsert": {"created_at": now},
+    }
+    db = await get_db()
+    await db["claude_scratchpad"].update_one(
+        {"scope": scope, "namespace": namespace, "key": key},
+        update,
+        upsert=True,
+    )
+    return f"Saved scratchpad[{scope}|{namespace}|{key}] tags={tag_list or '-'} ttl_days={ttl_days or '-'}"
+
+
+@mcp.tool
+async def scratchpad_get(scope: str, namespace: str, key: str) -> str:
+    """Fetch one scratchpad entry by (scope, namespace, key).
+
+    Returns the JSON payload plus metadata. If nothing is recorded for
+    the triple, returns an empty-state message.
+    """
+    if not scope.strip() or not namespace.strip() or not key.strip():
+        return "Error: scope, namespace, and key are all required."
+    db = await get_db()
+    doc = await db["claude_scratchpad"].find_one(
+        {"scope": scope, "namespace": namespace, "key": key},
+    )
+    if not doc:
+        return f"No scratchpad entry for [{scope}|{namespace}|{key}]."
+    payload = {
+        "scope": doc.get("scope"),
+        "namespace": doc.get("namespace"),
+        "key": doc.get("key"),
+        "data": doc.get("data"),
+        "tags": doc.get("tags", []),
+        "updated_at": (doc.get("updated_at") or "").__str__() if doc.get("updated_at") else "",
+        "expires_at": (doc.get("expires_at") or "").__str__() if doc.get("expires_at") else "",
+    }
+    return json.dumps(payload, ensure_ascii=False, default=str, indent=2)
+
+
+@mcp.tool
+async def scratchpad_query(
+    scope: str,
+    namespace: str = "",
+    tag: str = "",
+    limit: int = 20,
+) -> str:
+    """List scratchpad entries for a scope (optionally filtered).
+
+    Args:
+        scope: "client:<id>", "global", or "project:<id>".
+        namespace: Optional — if given, restrict to one bucket.
+        tag: Optional — if given, keep only entries whose `tags` array
+             contains this string.
+        limit: Max entries (default 20). Results are newest first.
+    """
+    if not scope.strip():
+        return "Error: scope is required."
+    db = await get_db()
+    query: dict = {"scope": scope}
+    if namespace:
+        query["namespace"] = namespace
+    if tag:
+        query["tags"] = tag
+    cursor = db["claude_scratchpad"].find(query).sort("updated_at", -1).limit(max(1, min(200, int(limit))))
+    items = []
+    async for doc in cursor:
+        items.append({
+            "namespace": doc.get("namespace"),
+            "key": doc.get("key"),
+            "tags": doc.get("tags", []),
+            "data": doc.get("data"),
+            "updated_at": (doc.get("updated_at") or "").__str__() if doc.get("updated_at") else "",
+            "expires_at": (doc.get("expires_at") or "").__str__() if doc.get("expires_at") else "",
+        })
+    if not items:
+        return f"No scratchpad entries for scope={scope}" + (
+            f" namespace={namespace}" if namespace else ""
+        ) + (f" tag={tag}" if tag else "") + "."
+    return json.dumps({"scope": scope, "count": len(items), "items": items},
+                      ensure_ascii=False, default=str, indent=2)
+
+
+@mcp.tool
+async def scratchpad_delete(scope: str, namespace: str, key: str) -> str:
+    """Remove one scratchpad entry by (scope, namespace, key).
+
+    Idempotent — returns the deleted count (0 or 1).
+    """
+    if not scope.strip() or not namespace.strip() or not key.strip():
+        return "Error: scope, namespace, and key are all required."
+    db = await get_db()
+    res = await db["claude_scratchpad"].delete_one(
+        {"scope": scope, "namespace": namespace, "key": key},
+    )
+    return f"Deleted {res.deleted_count} entry for [{scope}|{namespace}|{key}]."
 
 
 # ── MongoDB Tools ────────────────────────────────────────────────────────
@@ -3582,6 +3855,288 @@ async def report_done(
     if convention_hint:
         response += f"\nKB convention found: {convention_hint[:200]}"
     return response
+
+
+# ── TTS Normalization Rules ──────────────────────────────────────────────
+# User-editable dictionary (`ttsRules` in MongoDB) that the XTTS pod loads
+# before each synthesis. Three rule types: acronym (spell-out),
+# strip (regex → delete), replace (regex → word). Scope hierarchy is
+# PROJECT > CLIENT > GLOBAL. SSOT: docs/tts-normalization.md.
+
+
+def _tts_scope_enum(scope_type: str):
+    from jervis.server import tts_rules_pb2
+
+    return {
+        "global": tts_rules_pb2.GLOBAL,
+        "client": tts_rules_pb2.CLIENT,
+        "project": tts_rules_pb2.PROJECT,
+    }.get((scope_type or "global").lower(), tts_rules_pb2.GLOBAL)
+
+
+def _tts_build_scope(scope_type: str, client_id: str, project_id: str):
+    from jervis.server import tts_rules_pb2
+
+    st = (scope_type or "global").lower()
+    if st == "client" and not client_id:
+        raise ValueError("scope_type='client' requires client_id.")
+    if st == "project" and not project_id:
+        raise ValueError("scope_type='project' requires project_id.")
+    return tts_rules_pb2.TtsRuleScope(
+        type=_tts_scope_enum(st),
+        client_id=client_id if st == "client" else "",
+        project_id=project_id if st == "project" else "",
+    )
+
+
+def _tts_rule_to_dict(rule) -> dict:
+    from jervis.server import tts_rules_pb2
+
+    type_name = {
+        tts_rules_pb2.ACRONYM: "ACRONYM",
+        tts_rules_pb2.STRIP: "STRIP",
+        tts_rules_pb2.REPLACE: "REPLACE",
+    }.get(rule.type, "UNSPECIFIED")
+    scope_type_name = {
+        tts_rules_pb2.GLOBAL: "GLOBAL",
+        tts_rules_pb2.CLIENT: "CLIENT",
+        tts_rules_pb2.PROJECT: "PROJECT",
+    }.get(rule.scope.type, "UNSPECIFIED")
+    out: dict = {
+        "id": rule.id,
+        "type": type_name,
+        "language": rule.language,
+        "scope": {
+            "type": scope_type_name,
+            "clientId": rule.scope.client_id or None,
+            "projectId": rule.scope.project_id or None,
+        },
+    }
+    if rule.type == tts_rules_pb2.ACRONYM:
+        out["acronym"] = rule.acronym
+        out["pronunciation"] = rule.pronunciation
+        if rule.aliases:
+            out["aliases"] = list(rule.aliases)
+    elif rule.type == tts_rules_pb2.STRIP:
+        out["pattern"] = rule.pattern
+        out["description"] = rule.description
+        out["stripWrappingParens"] = rule.strip_wrapping_parens
+    elif rule.type == tts_rules_pb2.REPLACE:
+        out["pattern"] = rule.pattern
+        out["replacement"] = rule.replacement
+        out["description"] = rule.description
+    return out
+
+
+@mcp.tool
+async def tts_rule_add_acronym(
+    acronym: str,
+    pronunciation: str,
+    language: str = "cs",
+    aliases: list[str] | None = None,
+    scope_type: str = "global",
+    client_id: str = "",
+    project_id: str = "",
+) -> str:
+    """Add an acronym → spelled-out pronunciation to the TTS dictionary.
+
+    Example: tts_rule_add_acronym("BMS", "bé-em-es", language="cs") makes
+    XTTS read "BMS" as "bé-em-es" in every scope-matching Czech output.
+
+    Args:
+        acronym: Source form (case-sensitive base).
+        pronunciation: Spelled-out target form (e.g. "bé-em-es").
+        language: "cs", "en", or "any" (default "cs").
+        aliases: Case variants matched case-insensitively.
+        scope_type: "global" / "client" / "project".
+        client_id: Required when scope_type="client".
+        project_id: Required when scope_type="project".
+    """
+    from app.grpc_clients import server_tts_rules_stub
+    from jervis.server import tts_rules_pb2
+
+    if not acronym.strip() or not pronunciation.strip():
+        return "Error: acronym and pronunciation are required."
+    try:
+        scope = _tts_build_scope(scope_type, client_id, project_id)
+        req = tts_rules_pb2.TtsRule(
+            type=tts_rules_pb2.ACRONYM,
+            language=language or "cs",
+            scope=scope,
+            acronym=acronym,
+            pronunciation=pronunciation,
+            aliases=list(aliases or []),
+        )
+        saved = await server_tts_rules_stub().Add(req, timeout=10.0)
+        return json.dumps({"ok": True, "rule": _tts_rule_to_dict(saved)}, ensure_ascii=False)
+    except Exception as e:
+        return f"Error: {e}"
+
+
+@mcp.tool
+async def tts_rule_add_strip(
+    pattern: str,
+    description: str,
+    language: str = "any",
+    strip_wrapping_parens: bool = False,
+    scope_type: str = "global",
+    client_id: str = "",
+    project_id: str = "",
+) -> str:
+    """Add a regex pattern whose matches are deleted from TTS input.
+
+    Use for IDs, UUIDs, long hashes, anything the listener shouldn't hear.
+    If `strip_wrapping_parens=True`, also removes the enclosing `(...)` group.
+
+    Example: tts_rule_add_strip(r"\\b[0-9a-f]{24}\\b",
+        description="MongoObjectId", strip_wrapping_parens=True)
+    """
+    from app.grpc_clients import server_tts_rules_stub
+    from jervis.server import tts_rules_pb2
+
+    if not pattern or not description:
+        return "Error: pattern and description are required."
+    try:
+        scope = _tts_build_scope(scope_type, client_id, project_id)
+        req = tts_rules_pb2.TtsRule(
+            type=tts_rules_pb2.STRIP,
+            language=language or "any",
+            scope=scope,
+            pattern=pattern,
+            description=description,
+            strip_wrapping_parens=bool(strip_wrapping_parens),
+        )
+        saved = await server_tts_rules_stub().Add(req, timeout=10.0)
+        return json.dumps({"ok": True, "rule": _tts_rule_to_dict(saved)}, ensure_ascii=False)
+    except Exception as e:
+        return f"Error: {e}"
+
+
+@mcp.tool
+async def tts_rule_add_replace(
+    pattern: str,
+    replacement: str,
+    description: str,
+    language: str = "any",
+    scope_type: str = "global",
+    client_id: str = "",
+    project_id: str = "",
+) -> str:
+    """Add a regex pattern → replacement word substitution for TTS input.
+
+    Use for URLs → "odkaz", file paths → "soubor", emails → "e-mail", etc.
+    """
+    from app.grpc_clients import server_tts_rules_stub
+    from jervis.server import tts_rules_pb2
+
+    if not pattern or replacement is None or not description:
+        return "Error: pattern, replacement, and description are required."
+    try:
+        scope = _tts_build_scope(scope_type, client_id, project_id)
+        req = tts_rules_pb2.TtsRule(
+            type=tts_rules_pb2.REPLACE,
+            language=language or "any",
+            scope=scope,
+            pattern=pattern,
+            replacement=replacement,
+            description=description,
+        )
+        saved = await server_tts_rules_stub().Add(req, timeout=10.0)
+        return json.dumps({"ok": True, "rule": _tts_rule_to_dict(saved)}, ensure_ascii=False)
+    except Exception as e:
+        return f"Error: {e}"
+
+
+@mcp.tool
+async def tts_rule_list() -> str:
+    """List all TTS normalization rules currently stored."""
+    from app.grpc_clients import server_tts_rules_stub
+    from jervis.common import types_pb2
+    from jervis.server import tts_rules_pb2
+
+    try:
+        ctx = types_pb2.RequestContext()
+        resp = await server_tts_rules_stub().List(
+            tts_rules_pb2.ListTtsRulesRequest(ctx=ctx), timeout=10.0,
+        )
+        return json.dumps(
+            {"rules": [_tts_rule_to_dict(r) for r in resp.rules]},
+            ensure_ascii=False,
+        )
+    except Exception as e:
+        return f"Error: {e}"
+
+
+@mcp.tool
+async def tts_rule_delete(id: str) -> str:
+    """Delete a TTS normalization rule by its Mongo `_id` (hex string)."""
+    from app.grpc_clients import server_tts_rules_stub
+    from jervis.common import types_pb2
+    from jervis.server import tts_rules_pb2
+
+    if not id:
+        return "Error: id is required."
+    try:
+        ctx = types_pb2.RequestContext()
+        resp = await server_tts_rules_stub().Delete(
+            tts_rules_pb2.DeleteTtsRuleRequest(ctx=ctx, id=id), timeout=10.0,
+        )
+        return json.dumps({"ok": bool(resp.ok)}, ensure_ascii=False)
+    except Exception as e:
+        return f"Error: {e}"
+
+
+@mcp.tool
+async def tts_rule_test(
+    text: str,
+    language: str = "any",
+    client_id: str = "",
+    project_id: str = "",
+) -> str:
+    """Dry-run normalization — apply matching rules and return output + hit trace.
+
+    Use before saving a new rule to preview its effect, or to debug why
+    an acronym isn't being spelled out as expected.
+    """
+    from app.grpc_clients import server_tts_rules_stub
+    from jervis.common import types_pb2
+    from jervis.server import tts_rules_pb2
+
+    if not text:
+        return "Error: text is required."
+    try:
+        ctx = types_pb2.RequestContext()
+        resp = await server_tts_rules_stub().Preview(
+            tts_rules_pb2.PreviewRequest(
+                ctx=ctx,
+                text=text,
+                language=language or "any",
+                client_id=client_id or "",
+                project_id=project_id or "",
+            ),
+            timeout=10.0,
+        )
+        type_name = {
+            tts_rules_pb2.ACRONYM: "ACRONYM",
+            tts_rules_pb2.STRIP: "STRIP",
+            tts_rules_pb2.REPLACE: "REPLACE",
+        }
+        return json.dumps(
+            {
+                "output": resp.output,
+                "hits": [
+                    {
+                        "ruleId": h.rule_id,
+                        "type": type_name.get(h.type, "UNSPECIFIED"),
+                        "charsRemoved": h.chars_removed,
+                    }
+                    for h in resp.hits
+                ],
+            },
+            ensure_ascii=False,
+        )
+    except Exception as e:
+        return f"Error: {e}"
 
 
 # Combined app: OAuth routes + MCP (as catch-all mount)

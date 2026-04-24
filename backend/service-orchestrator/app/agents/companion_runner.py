@@ -80,7 +80,7 @@ class CompanionRunner:
         if not decision.allowed:
             raise RuntimeError(f"Companion budget/limit reached: {decision.reason}")
 
-        job_name = f"jervis-companion-{task_id[:12]}"
+        job_name = f"jervis-companion-{task_id}"
         manifest = self._build_job_manifest(
             job_name=job_name,
             mode="adhoc",
@@ -133,7 +133,7 @@ class CompanionRunner:
         outbox event when ready; consumers start streaming the outbox right
         away and receive it in-band. No ready-polling here (fail-fast).
         """
-        sid = session_id or f"s-{uuid.uuid4().hex[:10]}"
+        sid = session_id or f"s{uuid.uuid4().hex}"
         workspace = self._prepare_workspace(
             session_id=sid,
             brief=brief,
@@ -149,7 +149,7 @@ class CompanionRunner:
         if not decision.allowed:
             raise RuntimeError(f"Companion budget/limit reached: {decision.reason}")
 
-        job_name = f"jervis-companion-s-{sid[:12]}"
+        job_name = f"jervis-companion-s-{sid}"
         manifest = self._build_job_manifest(
             job_name=job_name,
             mode="session",
@@ -242,7 +242,7 @@ class CompanionRunner:
         """
         workspace = self._session_workspace(session_id)
         (workspace / ".jervis" / "END").write_text(_utc_now_iso())
-        job_name = f"jervis-companion-s-{session_id[:12]}"
+        job_name = f"jervis-companion-s-{session_id}"
         try:
             job_runner.batch_v1.delete_namespaced_job(
                 name=job_name,
@@ -422,8 +422,8 @@ class CompanionRunner:
         labels = {
             "app": "jervis-companion",
             "companion-mode": mode,
-            "session-id": session_id[:63],
-            "task-id": task_id[:63],
+            "session-id": session_id,
+            "task-id": task_id,
         }
 
         return client.V1Job(

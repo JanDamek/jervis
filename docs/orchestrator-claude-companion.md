@@ -1,7 +1,7 @@
 # Orchestrator-Claude Companion — SSOT
 
-**Datum:** 2026-04-15
-**Status:** První implementace (test: 2026-04-16)
+**Datum:** 2026-04-15 (extended 2026-04-24 pro client-session pilot)
+**Status:** První implementace (test: 2026-04-16). Fáze A pilot (client-session) 2026-04-24 — viz `docs/claude-session-pilot.md`.
 **Supersedes:** orchestrator-plan-v4/v5/v6 (v rámci companion role)
 
 ## 1. Role a princip

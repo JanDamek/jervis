@@ -992,6 +992,32 @@ def _chat_request_from_proto(request: chat_pb2.ChatRequest):
     )
 
 
+def _should_route_to_client_session(request: chat_pb2.ChatRequest, settings_ref) -> bool:
+    """Decide whether a chat request goes through the per-client Claude session.
+
+    Conditions (all must hold):
+    - `USE_CLAUDE_CLIENT_SESSION` feature flag is ON.
+    - request carries a non-empty `active_client_id`.
+    - if `CLAUDE_CLIENT_SESSION_ALLOWED_IDS` is set, client id is on the list.
+
+    Returns False for chats attached to a specific task (contextTaskId) to
+    avoid diverting re-qualification / user-task replies from their
+    existing handlers.
+    """
+    if not getattr(settings_ref, "use_claude_client_session", False):
+        return False
+    if request.context_task_id:
+        return False
+    client_id = (request.active_client_id or "").strip()
+    if not client_id:
+        return False
+    allowed_raw = getattr(settings_ref, "claude_client_session_allowed_ids", "") or ""
+    allowed = {x.strip() for x in allowed_raw.split(",") if x.strip()}
+    if allowed and client_id not in allowed:
+        return False
+    return True
+
+
 class OrchestratorChatServicer(chat_pb2_grpc.OrchestratorChatServiceServicer):
     """OrchestratorChatService — foreground agentic chat stream.
 
@@ -1008,6 +1034,7 @@ class OrchestratorChatServicer(chat_pb2_grpc.OrchestratorChatServiceServicer):
     ):
         from app import main as orch_main
         from app.agent.sse_handler import handle_chat_sse as handle_chat
+        from app.config import settings as _settings
 
         try:
             chat_request = _chat_request_from_proto(request)
@@ -1018,6 +1045,35 @@ class OrchestratorChatServicer(chat_pb2_grpc.OrchestratorChatServiceServicer):
 
         session_id = request.session_id or chat_request.session_id
         logger.info("CHAT_REQUEST | session=%s | message=%s", session_id, chat_request.message[:100])
+
+        # ── Fáze A pilot: route through per-client Claude Companion ───────
+        # When enabled (feature flag + optional allowlist + active_client_id),
+        # bypass the LangGraph/SSE path entirely. The session manager owns
+        # lifecycle, context, and response streaming.
+        if _should_route_to_client_session(request, _settings):
+            logger.info(
+                "CHAT_CLIENT_SESSION_ROUTE | session=%s client=%s project=%s",
+                session_id, request.active_client_id, request.active_project_id or "-",
+            )
+            from app.sessions.client_session_manager import client_session_manager
+            try:
+                async for evt in client_session_manager.chat(
+                    client_id=request.active_client_id,
+                    project_id=request.active_project_id or None,
+                    message=request.message,
+                ):
+                    if context.cancelled():
+                        break
+                    meta = {str(k): str(v) for k, v in (evt.get("metadata") or {}).items()}
+                    yield chat_pb2.ChatEvent(
+                        type=str(evt.get("type", "")),
+                        content=str(evt.get("content", "")),
+                        metadata=meta,
+                    )
+            except Exception as e:
+                logger.exception("client session chat failed | session=%s", session_id)
+                yield chat_pb2.ChatEvent(type="error", content=f"client session error: {e}")
+            return
 
         existing_event = orch_main._active_chat_stops.get(session_id)
         if existing_event and not existing_event.is_set():

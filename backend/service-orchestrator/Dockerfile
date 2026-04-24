@@ -2,10 +2,23 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# System dependencies
+# System dependencies.
+# - git: repo access from the orchestrator (agent hooks, docs lookups)
+# - curl + ca-certificates: bootstrap Node.js + Claude Code CLI below
+# - nodejs (20.x): required by @anthropic-ai/claude-code; claude-agent-sdk
+#   spawns this CLI as a subprocess to host per-client Claude sessions
+#   directly inside the orchestrator pod (no K8s Job cold-start for chat).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git \
+    git curl ca-certificates \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
+
+# Claude Code CLI — consumed by claude-agent-sdk for in-process sessions.
+# Keep the pin aligned with the jervis-claude image used for adhoc/meeting
+# Jobs; update both together.
+RUN npm install -g @anthropic-ai/claude-code@2.1.119 \
+    && npm cache clean --force
 
 # Shared cross-service version constraints (SSOT in repo root).
 COPY constraints.txt /constraints.txt

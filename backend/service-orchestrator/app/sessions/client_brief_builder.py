@@ -1,0 +1,233 @@
+"""Build the `brief.md` + `CLAUDE.md` pair for a per-client Claude session.
+
+The brief stays minimal on purpose — Claude has the jervis MCP tools at
+hand (kb_search, list_tasks, o365_calendar_events, ...) and is expected
+to hydrate what it needs lazily. Loading all the data upfront wastes
+tokens and makes the start of session slow.
+
+What the brief *does* include:
+- the session role (Jervis assistant for a specific client)
+- client + project identification (IDs + human names)
+- the last compact snapshot (narrative "where we left off")
+- instruction for the COMPACT_AND_EXIT protocol
+- default output language (Czech for user-facing answers)
+"""
+
+from __future__ import annotations
+
+import datetime
+import logging
+from dataclasses import dataclass
+
+from motor.motor_asyncio import AsyncIOMotorClient
+from bson import ObjectId
+
+from app.config import settings
+from app.sessions.compact_store import load_latest, scope_for_client
+
+logger = logging.getLogger(__name__)
+
+_mongo: AsyncIOMotorClient | None = None
+
+
+def _db():
+    global _mongo
+    if _mongo is None:
+        _mongo = AsyncIOMotorClient(settings.mongodb_url)
+    return _mongo.get_default_database()
+
+
+@dataclass
+class ClientBrief:
+    client_id: str
+    project_id: str | None
+    brief_md: str
+    claude_md: str
+
+
+async def _resolve_names(client_id: str, project_id: str | None) -> tuple[str, str | None]:
+    """Best-effort lookup of human-readable client/project names.
+
+    On failure returns ids as names — Claude still works, just gets a less
+    pretty introduction.
+    """
+    client_name = client_id
+    project_name = project_id
+    try:
+        db = _db()
+        cid_obj = ObjectId(client_id) if ObjectId.is_valid(client_id) else None
+        if cid_obj:
+            doc = await db["clients"].find_one({"_id": cid_obj})
+            if doc and doc.get("name"):
+                client_name = doc["name"]
+        if project_id:
+            pid_obj = ObjectId(project_id) if ObjectId.is_valid(project_id) else None
+            if pid_obj:
+                pdoc = await db["projects"].find_one({"_id": pid_obj})
+                if pdoc and pdoc.get("name"):
+                    project_name = pdoc["name"]
+    except Exception as e:
+        logger.warning("client/project name lookup failed: %s", e)
+    return client_name, project_name
+
+
+async def build_brief(
+    *,
+    client_id: str,
+    project_id: str | None,
+    session_id: str,
+) -> ClientBrief:
+    """Produce the brief/CLAUDE pair for a fresh per-client session."""
+    client_name, project_name = await _resolve_names(client_id, project_id)
+    last_compact = await load_latest(scope_for_client(client_id))
+
+    today = datetime.datetime.now().strftime("%Y-%m-%d")
+
+    brief_parts: list[str] = []
+    brief_parts.append(f"# Jervis — per-client session for {client_name}")
+    brief_parts.append("")
+    brief_parts.append(f"**Session id:** `{session_id}`  ")
+    brief_parts.append(f"**Client id:** `{client_id}` ({client_name})  ")
+    if project_id:
+        brief_parts.append(f"**Project id:** `{project_id}` ({project_name})  ")
+    else:
+        brief_parts.append("**Project id:** *not set — operate at client scope*  ")
+    brief_parts.append(f"**Today:** {today}")
+    brief_parts.append("")
+
+    brief_parts.append("## Role")
+    brief_parts.append(
+        "You are Jervis — Jan Damek's assistant — operating with a daily overview "
+        "of everything related to this specific client. You pick up the ongoing "
+        "conversation where the previous session left off (see `Previous compact` "
+        "below, if present), and you always answer in Czech unless the user asks "
+        "otherwise."
+    )
+    brief_parts.append("")
+
+    brief_parts.append("## Data access")
+    brief_parts.append(
+        "All client data is reachable through the `jervis` MCP server. Use it "
+        "lazily — do not pre-fetch everything. Typical tools:"
+    )
+    brief_parts.append("- `kb_search(query, client_id, project_id)` — hybrid RAG + graph")
+    brief_parts.append("- `list_tasks(client_id=...)` — open tasks for this client")
+    brief_parts.append("- `o365_calendar_events(...)` — today's meetings")
+    brief_parts.append("- `o365_mail_list(...)` — recent mails for this client")
+    brief_parts.append("- `get_meeting(meeting_id)` + `get_meeting_transcript(meeting_id)`")
+    brief_parts.append("- `list_meetings(...)` — past meetings for context")
+    brief_parts.append("- `memory_graph_save_snapshot(scope, content)` — see shutdown protocol below")
+    brief_parts.append("")
+    brief_parts.append("**Your scratchpad (structured notebook, MongoDB-backed):**")
+    brief_parts.append(
+        "- `scratchpad_put(scope, namespace, key, data_json, tags, ttl_days, ...)` — "
+        "stash small JSON records you want to look up by key, not by semantic similarity."
+    )
+    brief_parts.append("- `scratchpad_get(scope, namespace, key)` — exact fetch")
+    brief_parts.append("- `scratchpad_query(scope, namespace?, tag?, limit=20)` — list")
+    brief_parts.append("- `scratchpad_delete(scope, namespace, key)` — remove")
+    brief_parts.append(
+        "  Typical namespaces: `pending_reply`, `followup`, `decision`, `todo`, `fact`. "
+        "Use TTL (in days) for short-lived state; omit for durable notes."
+    )
+    brief_parts.append("")
+    brief_parts.append(
+        "Choose between scratchpad / KB / mongo tools like this:"
+    )
+    brief_parts.append("- **Scratchpad** — exact keys, structured JSON, your own bookkeeping (waiting-on lists, daily decisions, follow-ups). Fast, scoped, TTL-capable.")
+    brief_parts.append("- **KB** (`kb_search`, `kb_store`) — semantic/fuzzy search across accumulated knowledge. Use `kb_store` only for durable, non-trivial findings.")
+    brief_parts.append("- **Mongo admin** (`mongo_query`, `mongo_get_document`) — read other collections (tasks, meetings, clients). Don't use it as a scratchpad — scratchpad tools are simpler and scoped.")
+    brief_parts.append("")
+    brief_parts.append(f"Default scope for all KB and scratchpad calls: `client:{client_id}` "
+                       + f"(i.e. scope=\"client:{client_id}\" and kb client_id={client_id}"
+                       + (f", project_id={project_id}" if project_id else "")
+                       + ")")
+    brief_parts.append("")
+
+    if last_compact:
+        age = datetime.datetime.now(datetime.timezone.utc) - last_compact.created_at
+        age_str = f"{int(age.total_seconds() // 60)} min ago" if age.total_seconds() < 86400 \
+            else f"{age.days} days ago"
+        brief_parts.append(f"## Previous compact ({age_str})")
+        brief_parts.append("")
+        brief_parts.append(last_compact.content.strip())
+        brief_parts.append("")
+        brief_parts.append(
+            "The compact above is the narrative of the last session. Use it as "
+            "prior context; you do not need to re-verify everything, but "
+            "cross-check against KB when the user's question depends on specifics."
+        )
+        brief_parts.append("")
+    else:
+        brief_parts.append("## Previous compact")
+        brief_parts.append("*No prior session recorded for this client — this is a cold start.*")
+        brief_parts.append("")
+
+    brief_parts.append("## Shutdown protocol (important)")
+    brief_parts.append(
+        "When you receive a system event `COMPACT_AND_EXIT`, write a concise "
+        "markdown summary of the current state and emit it as your **final** "
+        "outbox event with `type=note` and `meta.kind=compact`. Include:"
+    )
+    brief_parts.append("- **State**: what you've been working on")
+    brief_parts.append("- **Pending**: open threads, unanswered questions, promises")
+    brief_parts.append("- **Next**: concrete next steps for tomorrow")
+    brief_parts.append("- **Key facts**: durable knowledge worth carrying over")
+    brief_parts.append("")
+    brief_parts.append(
+        "Also call `memory_graph_save_snapshot(scope=\"client:"
+        + client_id
+        + "\", content=<the same markdown>)` so the snapshot is persisted "
+        "to MongoDB before you exit. After that one final emit, stop."
+    )
+    brief_parts.append("")
+
+    brief_parts.append("## Ground rules")
+    brief_parts.append("- Czech for user-facing answers, English for internal analysis when helpful.")
+    brief_parts.append("- READ-ONLY on the repo — no git, no code edits. Code work dispatches as a separate Job.")
+    brief_parts.append("- Do NOT `find /` or walk the filesystem blindly.")
+    brief_parts.append("- Store durable findings to KB (`kb_store`) sparingly — only non-trivial new facts.")
+    brief_parts.append("- If the user asks for something outside this client's scope, say so and suggest a scope switch.")
+
+    brief_md = "\n".join(brief_parts)
+
+    claude_md_parts: list[str] = []
+    claude_md_parts.append("# Jervis client-session agent")
+    claude_md_parts.append("")
+    claude_md_parts.append("You are Jervis, Jan Damek's assistant, in **client-session** mode.")
+    claude_md_parts.append("You run in-process inside the orchestrator pod (no filesystem workspace).")
+    claude_md_parts.append("Your operational memory is the current thread + MCP tools + the brief.")
+    claude_md_parts.append("")
+    claude_md_parts.append("## Message framing")
+    claude_md_parts.append("The orchestrator sends you messages as plain user prompts over the SDK.")
+    claude_md_parts.append("Most prompts come from Jan through the chat UI — answer naturally in Czech.")
+    claude_md_parts.append("If a prompt starts with `[system] COMPACT_AND_EXIT`, run the shutdown")
+    claude_md_parts.append("protocol from the brief: emit one markdown summary and stop.")
+    claude_md_parts.append("")
+    claude_md_parts.append("## Response protocol")
+    claude_md_parts.append("Reply as normal assistant text — the orchestrator streams your tokens")
+    claude_md_parts.append("straight to the UI. Keep answers focused, in Czech, and don't dump the")
+    claude_md_parts.append("whole KB at the user — cite concrete facts.")
+    claude_md_parts.append("")
+    claude_md_parts.append("## MCP — `jervis` server is attached")
+    claude_md_parts.append("See the brief for the tool catalog. Prefer `kb_search` with client_id scope.")
+    claude_md_parts.append("For your own bookkeeping (pending replies, today's follow-ups, decisions you want to retrieve by name, not by meaning) use the `scratchpad_*` tools — they are scoped to this client automatically.")
+    claude_md_parts.append("")
+    claude_md_parts.append("## What NOT to do")
+    claude_md_parts.append("- Do NOT triage spam / auto-reply / ACK messages — the qualifier layer drops those before they reach you.")
+    claude_md_parts.append("- Do NOT answer trivial \"OK\"/confirmation messages in Teams/chat proactively — the qualifier handles those.")
+    claude_md_parts.append("- Do NOT call Read/Glob/Grep on the filesystem — there is no repo attached. All data goes through MCP.")
+    claude_md_parts.append("- You only see events that genuinely need judgement; assume everything you get deserves attention.")
+    claude_md_parts.append("")
+    claude_md_parts.append(f"**Hardwired scope:** client_id=`{client_id}`"
+                           + (f", project_id=`{project_id}`" if project_id else "")
+                           + f" → scratchpad/compact scope string is `client:{client_id}`")
+
+    claude_md = "\n".join(claude_md_parts)
+
+    return ClientBrief(
+        client_id=client_id,
+        project_id=project_id,
+        brief_md=brief_md,
+        claude_md=claude_md,
+    )
