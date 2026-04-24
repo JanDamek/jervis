@@ -45,18 +45,15 @@ from app.sessions.compact_store import save_compact, scope_for_client
 
 logger = logging.getLogger(__name__)
 
-# Total budget for one chat turn. Claude may iterate through many MCP
-# tool calls for open-ended questions; the keepalive below keeps the UI
-# stream alive while it works. A hard cap of 15 min protects against
-# runaway loops.
-CHAT_RESPONSE_TIMEOUT = 900.0
+# No hard total-turn cap — project rule "NEVER hard timeouts, stream +
+# heartbeat" (memory/feedback rule). Claude can iterate through tool
+# calls as long as the SDK keeps producing messages; the keepalive below
+# keeps the UI stream alive during silent tool-use loops. Runaway
+# protection is the SDK's own `max_turns` limit (set on the session).
 
 # If no SDK message arrives for this long, emit a 'thinking' keepalive
 # so the chat stream stays responsive during silent tool-use loops.
 IDLE_KEEPALIVE_SECONDS = 20.0
-
-# How long a compact round-trip may take before we force a teardown.
-COMPACT_TIMEOUT = 120.0
 
 # Periodic compact cadence — Claude emits a mid-session snapshot every
 # this many seconds so a SIGKILL shortly before shutdown still leaves a
@@ -335,17 +332,21 @@ class ClientSessionManager:
         await session.in_queue.put(message)
         yield {"type": "thinking", "content": "Zpracovávám dotaz...", "metadata": {}}
 
-        start = time.monotonic()
+        # No hard cap on total turn duration — project rule "NEVER hard
+        # timeouts, stream + heartbeat". Loop until _TURN_DONE, __error__,
+        # or the session task dies. Keepalive tick every
+        # IDLE_KEEPALIVE_SECONDS keeps the UI stream alive during silent
+        # tool-use loops.
         while True:
-            remaining = CHAT_RESPONSE_TIMEOUT - (time.monotonic() - start)
-            if remaining <= 0:
-                logger.warning("one_turn: total timeout | session=%s", sid)
-                yield {"type": "error", "content": "claude session response timed out"}
-                return
-            wait_budget = min(IDLE_KEEPALIVE_SECONDS, remaining)
             try:
-                item = await asyncio.wait_for(session.out_queue.get(), timeout=wait_budget)
+                item = await asyncio.wait_for(
+                    session.out_queue.get(),
+                    timeout=IDLE_KEEPALIVE_SECONDS,
+                )
             except asyncio.TimeoutError:
+                if session.stop_flag.is_set() or (session.task and session.task.done()):
+                    yield {"type": "error", "content": "claude session task exited unexpectedly"}
+                    return
                 yield {"type": "thinking", "content": "Stále pracuji…", "metadata": {}}
                 continue
 
