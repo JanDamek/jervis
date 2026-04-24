@@ -103,7 +103,7 @@ async def build_brief(
     brief_parts.append("")
     brief_parts.append(
         "Regardless of how short or casual the user's very first message is "
-        "in this session, your FIRST step is ALWAYS these two tool calls, "
+        "in this session, your FIRST step is ALWAYS these three tool calls, "
         "in this order, before you write a single word of reply:"
     )
     brief_parts.append("")
@@ -113,11 +113,17 @@ async def build_brief(
     brief_parts.append(
         f"    memory_graph_load_snapshot(scope=\"client:{client_id}\")"
     )
+    brief_parts.append(
+        f"    thought_search(query=<user's request>, client_id=\"{client_id}\""
+        + (f", project_id=\"{project_id}\"" if project_id else "")
+        + ", max_results=10)"
+    )
     brief_parts.append("")
     brief_parts.append(
-        "If either returns content, your reply MUST open by summarising "
-        "what's there — concrete keys, task ids, statuses. If both come "
-        "back empty, say \"žádný záznam\" and do not invent prior work."
+        "If any of them returns content, your reply MUST open by summarising "
+        "what's there — concrete keys, task ids, thought labels, statuses. "
+        "If all three come back empty, say \"žádný záznam\" and do not "
+        "invent prior work."
     )
     brief_parts.append("")
     brief_parts.append(
@@ -163,12 +169,82 @@ async def build_brief(
         "Use TTL (in days) for short-lived state; omit for durable notes."
     )
     brief_parts.append("")
+    brief_parts.append("**Strategic memory — Thought Map (spreading activation over the KB graph):**")
     brief_parts.append(
-        "Choose between scratchpad / KB / mongo tools like this:"
+        "- `thought_search(query, client_id, project_id?, max_results=20, floor=0.1)` — "
+        "surface the thoughts / knowledge anchors most relevant to a topic. First call of each session."
     )
-    brief_parts.append("- **Scratchpad** — exact keys, structured JSON, your own bookkeeping (waiting-on lists, daily decisions, follow-ups). Fast, scoped, TTL-capable.")
-    brief_parts.append("- **KB** (`kb_search`, `kb_store`) — semantic/fuzzy search across accumulated knowledge. Use `kb_store` only for durable, non-trivial findings.")
-    brief_parts.append("- **Mongo admin** (`mongo_query`, `mongo_get_document`) — read other collections (tasks, meetings, clients). Don't use it as a scratchpad — scratchpad tools are simpler and scoped.")
+    brief_parts.append(
+        "- `thought_put(label, summary, thought_type=topic|decision|problem|insight|dependency|state, "
+        "related_entities?, client_id, project_id?)` — plant or reinforce a strategic anchor. Match-first "
+        "(cosine≥0.85) dedupes against an existing node."
+    )
+    brief_parts.append(
+        "- `thought_reinforce(thought_keys?, edge_keys?)` — Hebbian bump after a thought actually helped your reasoning."
+    )
+    brief_parts.append(
+        "- `thought_bootstrap(client_id, project_id?)` — cold-start a scope (idempotent; call once if "
+        "`thought_search` returns empty on what should be a rich scope)."
+    )
+    brief_parts.append(
+        "- `thought_stats(client_id, project_id?)` — how populated the scope is."
+    )
+    brief_parts.append("")
+    brief_parts.append("**Background coding — dispatch a real K8s Job that edits / commits / pushes code:**")
+    brief_parts.append(
+        "- `dispatch_agent_job(flavor=\"CODING\", title, description, client_id, project_id, resource_id, branch_name)` — "
+        "spawns `jervis-coding-agent` against a per-agent git worktree, hands it `.jervis/brief.md`, "
+        "commits+pushes on `branch_name`, calls `report_done` when finished. Returns the `agentJobId`."
+    )
+    brief_parts.append(
+        "- `get_agent_job_status(agent_job_id)` — poll lifecycle (QUEUED / RUNNING / WAITING_USER / DONE / ERROR / CANCELLED) "
+        "+ K8s pod phase. Read this instead of assuming the job is still running."
+    )
+    brief_parts.append(
+        "- `abort_agent_job(agent_job_id, reason)` — cancel + release worktree if you no longer need the result."
+    )
+    brief_parts.append(
+        "The user will merge the pushed branch manually; DO NOT open a pull request from your side. "
+        "A worktree is created per job so two agents can edit the same project concurrently without stepping on each other."
+    )
+    brief_parts.append("")
+    brief_parts.append("### Scratchpad vs Thought Map vs AgentJobRecord — decision matrix")
+    brief_parts.append("")
+    brief_parts.append(
+        "- **Scratchpad** (tactical notebook): exact keys, structured JSON, "
+        "short-lived state (todos, pending-reply lists, today's decisions, "
+        "intermediate computations). Fast, scoped, TTL-capable, YOUR bookkeeping."
+    )
+    brief_parts.append(
+        "- **Thought Map** (strategic memory): narrative anchors for concepts, "
+        "decisions, problems, insights, dependencies, states. Spreading "
+        "activation = natural recall by topic. Use `thought_put` for things "
+        "you'll want to recognise in a FUTURE session when they're relevant, "
+        "not just retrieve by exact key."
+    )
+    brief_parts.append(
+        "- **AgentJobRecord** (background K8s Job lifecycle): every real "
+        "coding job has one. Created by `dispatch_agent_job`, mutated only "
+        "by the Kotlin server + watcher. Never write to it directly — read "
+        "it via `get_agent_job_status`, cancel via `abort_agent_job`."
+    )
+    brief_parts.append(
+        "- **KB** (`kb_search`, `kb_store`): semantic search across "
+        "accumulated project knowledge. `kb_store` only for durable, "
+        "non-trivial findings."
+    )
+    brief_parts.append(
+        "- **Mongo admin** (`mongo_query`, `mongo_get_document`): read "
+        "other collections (tasks, meetings, clients). Don't use as a "
+        "scratchpad — scratchpad tools are simpler and scoped."
+    )
+    brief_parts.append("")
+    brief_parts.append(
+        "Rule of thumb: if you'd want to find this later via \"search by "
+        "topic\", use Thought Map. If you need to find it by name in 10 "
+        "minutes, scratchpad. If it's code that needs to land on a branch, "
+        "`dispatch_agent_job`."
+    )
     brief_parts.append("")
     brief_parts.append(f"Default scope for all KB and scratchpad calls: `client:{client_id}` "
                        + f"(i.e. scope=\"client:{client_id}\" and kb client_id={client_id}"
@@ -246,9 +322,18 @@ async def build_brief(
 
     brief_parts.append("## Ground rules")
     brief_parts.append("- Czech for user-facing answers, English for internal analysis when helpful.")
-    brief_parts.append("- READ-ONLY on the repo — no git, no code edits. Code work dispatches as a separate Job.")
+    brief_parts.append(
+        "- READ-ONLY on the repo — no local git, no code edits in this session. "
+        "Code work dispatches through `dispatch_agent_job(flavor=\"CODING\", ...)`, "
+        "which spawns a fresh K8s Job with its own per-agent git worktree; "
+        "poll it via `get_agent_job_status` and cancel via `abort_agent_job`."
+    )
     brief_parts.append("- Do NOT `find /` or walk the filesystem blindly.")
     brief_parts.append("- Store durable findings to KB (`kb_store`) sparingly — only non-trivial new facts.")
+    brief_parts.append(
+        "- Plant recurring strategic anchors (decisions, dependencies, open problems) as Thought Map "
+        "nodes via `thought_put` so your future self can pick them up with `thought_search`."
+    )
     brief_parts.append("- If the user asks for something outside this client's scope, say so and suggest a scope switch.")
 
     brief_md = "\n".join(brief_parts)
