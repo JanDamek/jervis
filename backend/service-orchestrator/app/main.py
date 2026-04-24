@@ -236,9 +236,11 @@ async def lifespan(app: FastAPI):
     from app.agent_task_watcher import agent_task_watcher
     await agent_task_watcher.start()
 
-    # Start proactive scheduler (morning briefing, overdue check, weekly summary)
-    from app.proactive import scheduler as proactive_scheduler
-    await proactive_scheduler.start()
+    # Proactive scheduler moved to Kotlin (ScheduledTriggerExecutor + *Handler
+    # beans + ProactiveTriggerSeeder) — running both loops would fire each
+    # trigger twice. The Python implementation is retained in
+    # `app/proactive/scheduler.py` for reference until the Kotlin cutover
+    # has been verified end-to-end; re-enable only as emergency rollback.
 
     # Start pod-to-pod gRPC surface (:5501). Runs alongside FastAPI (:8090)
     # for the duration of Phase 3 — each slice moves more traffic off REST.
@@ -271,8 +273,7 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("client_session_manager.shutdown failed")
 
-    # Stop proactive scheduler
-    await proactive_scheduler.stop()
+    # Proactive scheduler moved to Kotlin — nothing to stop here.
 
     # Stop AgentTaskWatcher
     await agent_task_watcher.stop()

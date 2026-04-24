@@ -124,3 +124,31 @@ class AbortAgentJobResponse(_message.Message):
     error: str
     state: str
     def __init__(self, ok: bool = ..., error: _Optional[str] = ..., state: _Optional[str] = ...) -> None: ...
+
+class ReportAgentDoneRequest(_message.Message):
+    __slots__ = ("ctx", "agent_job_id", "success", "summary", "commit_sha", "branch", "changed_files")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    AGENT_JOB_ID_FIELD_NUMBER: _ClassVar[int]
+    SUCCESS_FIELD_NUMBER: _ClassVar[int]
+    SUMMARY_FIELD_NUMBER: _ClassVar[int]
+    COMMIT_SHA_FIELD_NUMBER: _ClassVar[int]
+    BRANCH_FIELD_NUMBER: _ClassVar[int]
+    CHANGED_FILES_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    agent_job_id: str
+    success: bool
+    summary: str
+    commit_sha: str
+    branch: str
+    changed_files: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., agent_job_id: _Optional[str] = ..., success: bool = ..., summary: _Optional[str] = ..., commit_sha: _Optional[str] = ..., branch: _Optional[str] = ..., changed_files: _Optional[_Iterable[str]] = ...) -> None: ...
+
+class ReportAgentDoneResponse(_message.Message):
+    __slots__ = ("ok", "error", "state")
+    OK_FIELD_NUMBER: _ClassVar[int]
+    ERROR_FIELD_NUMBER: _ClassVar[int]
+    STATE_FIELD_NUMBER: _ClassVar[int]
+    ok: bool
+    error: str
+    state: str
+    def __init__(self, ok: bool = ..., error: _Optional[str] = ..., state: _Optional[str] = ...) -> None: ...

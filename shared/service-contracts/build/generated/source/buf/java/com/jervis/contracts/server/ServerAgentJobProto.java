@@ -56,6 +56,16 @@ public final class ServerAgentJobProto extends com.google.protobuf.GeneratedFile
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_jervis_server_AbortAgentJobResponse_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_ReportAgentDoneRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_ReportAgentDoneRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_ReportAgentDoneResponse_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_ReportAgentDoneResponse_fieldAccessorTable;
 
   public static com.google.protobuf.Descriptors.FileDescriptor
       getDescriptor() {
@@ -108,16 +118,27 @@ public final class ServerAgentJobProto extends com.google.protobuf.GeneratedFile
       "d\030\002 \001(\tR\nagentJobId\022\026\n\006reason\030\003 \001(\tR\006rea" +
       "son\"S\n\025AbortAgentJobResponse\022\016\n\002ok\030\001 \001(\010" +
       "R\002ok\022\024\n\005error\030\002 \001(\tR\005error\022\024\n\005state\030\003 \001(" +
-      "\tR\005state2\271\002\n\025ServerAgentJobService\022c\n\020Di" +
-      "spatchAgentJob\022&.jervis.server.DispatchA" +
-      "gentJobRequest\032\'.jervis.server.DispatchA" +
-      "gentJobResponse\022_\n\021GetAgentJobStatus\022 .j" +
-      "ervis.server.AgentJobIdRequest\032(.jervis." +
-      "server.GetAgentJobStatusResponse\022Z\n\rAbor" +
-      "tAgentJob\022#.jervis.server.AbortAgentJobR" +
-      "equest\032$.jervis.server.AbortAgentJobResp" +
-      "onseB4\n\033com.jervis.contracts.serverB\023Ser" +
-      "verAgentJobProtoP\001b\006proto3"
+      "\tR\005state\"\373\001\n\026ReportAgentDoneRequest\022/\n\003c" +
+      "tx\030\001 \001(\0132\035.jervis.common.RequestContextR" +
+      "\003ctx\022 \n\014agent_job_id\030\002 \001(\tR\nagentJobId\022\030" +
+      "\n\007success\030\003 \001(\010R\007success\022\030\n\007summary\030\004 \001(" +
+      "\tR\007summary\022\035\n\ncommit_sha\030\005 \001(\tR\tcommitSh" +
+      "a\022\026\n\006branch\030\006 \001(\tR\006branch\022#\n\rchanged_fil" +
+      "es\030\007 \003(\tR\014changedFiles\"U\n\027ReportAgentDon" +
+      "eResponse\022\016\n\002ok\030\001 \001(\010R\002ok\022\024\n\005error\030\002 \001(\t" +
+      "R\005error\022\024\n\005state\030\003 \001(\tR\005state2\233\003\n\025Server" +
+      "AgentJobService\022c\n\020DispatchAgentJob\022&.je" +
+      "rvis.server.DispatchAgentJobRequest\032\'.je" +
+      "rvis.server.DispatchAgentJobResponse\022_\n\021" +
+      "GetAgentJobStatus\022 .jervis.server.AgentJ" +
+      "obIdRequest\032(.jervis.server.GetAgentJobS" +
+      "tatusResponse\022Z\n\rAbortAgentJob\022#.jervis." +
+      "server.AbortAgentJobRequest\032$.jervis.ser" +
+      "ver.AbortAgentJobResponse\022`\n\017ReportAgent" +
+      "Done\022%.jervis.server.ReportAgentDoneRequ" +
+      "est\032&.jervis.server.ReportAgentDoneRespo" +
+      "nseB4\n\033com.jervis.contracts.serverB\023Serv" +
+      "erAgentJobProtoP\001b\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
@@ -159,6 +180,18 @@ public final class ServerAgentJobProto extends com.google.protobuf.GeneratedFile
     internal_static_jervis_server_AbortAgentJobResponse_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_server_AbortAgentJobResponse_descriptor,
+        new java.lang.String[] { "Ok", "Error", "State", });
+    internal_static_jervis_server_ReportAgentDoneRequest_descriptor =
+      getDescriptor().getMessageType(6);
+    internal_static_jervis_server_ReportAgentDoneRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_ReportAgentDoneRequest_descriptor,
+        new java.lang.String[] { "Ctx", "AgentJobId", "Success", "Summary", "CommitSha", "Branch", "ChangedFiles", });
+    internal_static_jervis_server_ReportAgentDoneResponse_descriptor =
+      getDescriptor().getMessageType(7);
+    internal_static_jervis_server_ReportAgentDoneResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_ReportAgentDoneResponse_descriptor,
         new java.lang.String[] { "Ok", "Error", "State", });
     descriptor.resolveAllFeaturesImmutable();
     com.jervis.contracts.common.TypesProto.getDescriptor();

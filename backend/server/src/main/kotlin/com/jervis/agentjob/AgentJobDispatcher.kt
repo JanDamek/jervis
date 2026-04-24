@@ -235,6 +235,77 @@ class AgentJobDispatcher(
     }
 
     /**
+     * Agent-initiated terminal transition. Called by MCP `report_agent_done`
+     * immediately after the container commits + pushes — the happy-path
+     * push channel that replaces pre-watcher polling. Idempotent: when
+     * the K8s Watch also fires for the same Job, the second caller sees
+     * a terminal record and no-ops.
+     *
+     * Worktree cleanup + base-clone fetch happen here too so a subsequent
+     * dispatch sees fresh remote state without waiting for the K8s Watch.
+     */
+    suspend fun completeFromAgent(
+        jobId: AgentJobId,
+        success: Boolean,
+        summary: String?,
+        commitSha: String?,
+        branch: String?,
+        changedFiles: List<String>,
+    ): AgentJobRecord {
+        val record = agentJobRecordRepository.getById(jobId)
+            ?: throw NoSuchElementException("Agent job $jobId not found")
+        if (record.state.isTerminal()) {
+            logger.info { "completeFromAgent | job=$jobId already terminal (${record.state}) — no-op" }
+            return record
+        }
+
+        val updated = if (success) {
+            record.copy(
+                state = AgentJobState.DONE,
+                resultSummary = summary?.takeIf { it.isNotBlank() }
+                    ?: "Agent reported success (no summary provided)",
+                gitBranch = branch?.takeIf { it.isNotBlank() } ?: record.gitBranch,
+                gitCommitSha = commitSha?.takeIf { it.isNotBlank() },
+                artifacts = changedFiles,
+                completedAt = Instant.now(),
+            )
+        } else {
+            record.copy(
+                state = AgentJobState.ERROR,
+                errorMessage = summary?.takeIf { it.isNotBlank() }
+                    ?: "Agent reported failure (no summary provided)",
+                gitBranch = branch?.takeIf { it.isNotBlank() } ?: record.gitBranch,
+                gitCommitSha = commitSha?.takeIf { it.isNotBlank() },
+                artifacts = changedFiles,
+                completedAt = Instant.now(),
+            )
+        }
+        val saved = agentJobRecordRepository.save(updated)
+        logger.info {
+            "completeFromAgent | job=$jobId → ${saved.state} " +
+                "sha=${saved.gitCommitSha ?: "<none>"} files=${changedFiles.size}"
+        }
+
+        // Best-effort workspace cleanup + base fetch. Failures don't
+        // reverse the terminal transition; the startup reconcile / next
+        // K8s watch event will retry.
+        record.projectId?.let { pid ->
+            runCatching {
+                val project = projectRepository.getById(pid) ?: return@let
+                agentWorkspaceService.releaseWorktreeForJob(project, record.id)
+                record.resourceId?.let { rid ->
+                    project.resources.firstOrNull { it.id == rid }?.let { resource ->
+                        agentWorkspaceService.fetchAfterJobCompletion(project, resource)
+                    }
+                }
+            }.onFailure { e ->
+                logger.warn(e) { "completeFromAgent | workspace cleanup failed for job=$jobId (continuing)" }
+            }
+        }
+        return saved
+    }
+
+    /**
      * CODING-flavor prep: clone/fetch the base project workspace and
      * carve out a per-job `git worktree` on a fresh branch. The record
      * is updated with workspacePath + gitBranch, still in QUEUED state
@@ -399,14 +470,19 @@ class AgentJobDispatcher(
         appendLine("2. Implement the change directly in the workspace.")
         appendLine("3. Commit on this branch (signed if GPG is configured).")
         appendLine("4. `git push` to the remote of this branch.")
-        appendLine("5. Call MCP tool `mcp__jervis-mcp__report_done` with a short summary.")
+        appendLine("5. Record the commit SHA with `git rev-parse HEAD`, then call MCP tool")
+        appendLine("   `mcp__jervis-mcp__report_agent_done(agent_job_id=\"${record.id}\", success=true,")
+        appendLine("    summary=\"<what you did>\", commit_sha=\"<sha>\", branch=\"${record.gitBranch.orEmpty()}\",")
+        appendLine("    changed_files=[<files>])`. This is the push channel that tells Jervis the job")
+        appendLine("   is DONE — without it you are relying on the K8s watch fallback.")
         appendLine()
         appendLine("## Rules")
         appendLine()
         appendLine("- Do NOT open a pull request — the user reviews the pushed branch manually.")
         appendLine("- Do NOT commit files under `.jervis/` (global gitignore).")
         appendLine("- Do NOT switch branches; all work happens on `${record.gitBranch.orEmpty()}`.")
-        appendLine("- If the task is impossible, call `report_done` with `success=false` and an explanation.")
+        appendLine("- If the task is impossible, call `report_agent_done` with `success=false` and an")
+        appendLine("  explanation in `summary` — do NOT leave the job hanging.")
     }
 
     /**

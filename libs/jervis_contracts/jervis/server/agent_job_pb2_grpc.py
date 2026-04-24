@@ -55,6 +55,11 @@ class ServerAgentJobServiceStub(object):
                 request_serializer=jervis_dot_server_dot_agent__job__pb2.AbortAgentJobRequest.SerializeToString,
                 response_deserializer=jervis_dot_server_dot_agent__job__pb2.AbortAgentJobResponse.FromString,
                 _registered_method=True)
+        self.ReportAgentDone = channel.unary_unary(
+                '/jervis.server.ServerAgentJobService/ReportAgentDone',
+                request_serializer=jervis_dot_server_dot_agent__job__pb2.ReportAgentDoneRequest.SerializeToString,
+                response_deserializer=jervis_dot_server_dot_agent__job__pb2.ReportAgentDoneResponse.FromString,
+                _registered_method=True)
 
 
 class ServerAgentJobServiceServicer(object):
@@ -84,6 +89,15 @@ class ServerAgentJobServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ReportAgentDone(self, request, context):
+        """Agent-initiated terminal transition (push from the in-pod agent via
+        MCP `report_agent_done`). Idempotent: second caller on a terminal
+        record returns the current state instead of a second transition.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ServerAgentJobServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -101,6 +115,11 @@ def add_ServerAgentJobServiceServicer_to_server(servicer, server):
                     servicer.AbortAgentJob,
                     request_deserializer=jervis_dot_server_dot_agent__job__pb2.AbortAgentJobRequest.FromString,
                     response_serializer=jervis_dot_server_dot_agent__job__pb2.AbortAgentJobResponse.SerializeToString,
+            ),
+            'ReportAgentDone': grpc.unary_unary_rpc_method_handler(
+                    servicer.ReportAgentDone,
+                    request_deserializer=jervis_dot_server_dot_agent__job__pb2.ReportAgentDoneRequest.FromString,
+                    response_serializer=jervis_dot_server_dot_agent__job__pb2.ReportAgentDoneResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -190,6 +209,33 @@ class ServerAgentJobService(object):
             '/jervis.server.ServerAgentJobService/AbortAgentJob',
             jervis_dot_server_dot_agent__job__pb2.AbortAgentJobRequest.SerializeToString,
             jervis_dot_server_dot_agent__job__pb2.AbortAgentJobResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ReportAgentDone(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.server.ServerAgentJobService/ReportAgentDone',
+            jervis_dot_server_dot_agent__job__pb2.ReportAgentDoneRequest.SerializeToString,
+            jervis_dot_server_dot_agent__job__pb2.ReportAgentDoneResponse.FromString,
             options,
             channel_credentials,
             insecure,

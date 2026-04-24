@@ -4000,6 +4000,61 @@ async def get_agent_job_status(agent_job_id: str) -> str:
 
 
 @mcp.tool
+async def report_agent_done(
+    agent_job_id: str,
+    success: bool,
+    summary: str = "",
+    commit_sha: str = "",
+    branch: str = "",
+    changed_files: list[str] | None = None,
+) -> str:
+    """Signal to Jervis that THIS coding agent has finished — the push
+    channel that replaces polling. Call this from inside the coding
+    K8s Job right after `git push` succeeds (or on failure, with
+    success=False and a summary describing why).
+
+    The Kotlin server transitions the AgentJobRecord to DONE / ERROR,
+    releases the worktree, and refreshes the base clone immediately;
+    the K8s Watch remains as a fallback for the case where the agent
+    crashed before it could call this.
+
+    Args:
+        agent_job_id: The id handed to you via AGENT_JOB_ID env.
+        success: True for a successful commit+push, False for any
+                 terminal failure you want to surface.
+        summary: 1-3 sentences describing what you did (or why you failed).
+        commit_sha: `git rev-parse HEAD` after your commit (if any).
+        branch: Branch you pushed to (defaults to the one set by dispatcher).
+        changed_files: Paths touched by your diff, if you want to record them.
+    """
+    from app.grpc_clients import server_agent_job_stub
+    from jervis.common import types_pb2
+    from jervis.server import agent_job_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await server_agent_job_stub().ReportAgentDone(
+            agent_job_pb2.ReportAgentDoneRequest(
+                ctx=ctx,
+                agent_job_id=agent_job_id,
+                success=success,
+                summary=summary,
+                commit_sha=commit_sha,
+                branch=branch,
+                changed_files=list(changed_files or []),
+            ),
+            timeout=30.0,
+        )
+    except Exception as e:
+        return f"Error reporting agent done: {str(e)[:300]}"
+    if not resp.ok:
+        return f"Report failed: {resp.error}"
+    return f"Agent job {agent_job_id} → {resp.state}"
+
+
+@mcp.tool
 async def abort_agent_job(agent_job_id: str, reason: str) -> str:
     """Abort a running agent job (idempotent on already-terminal records).
 

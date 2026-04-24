@@ -49,9 +49,11 @@ write_result() {
     local success=$1
     local summary=$2
     local branch=""
+    local commit_sha=""
     local changed_json="[]"
     if [ -d "$WORKSPACE/.git" ] || [ -f "$WORKSPACE/.git" ]; then
         branch=$(git -C "$WORKSPACE" branch --show-current 2>/dev/null || echo "")
+        commit_sha=$(git -C "$WORKSPACE" rev-parse HEAD 2>/dev/null || echo "")
         changed_json=$(WORKSPACE="$WORKSPACE" python3 - <<'PYEOF' 2>/dev/null || echo "[]"
 import json, os, subprocess
 ws = os.environ['WORKSPACE']
@@ -70,6 +72,7 @@ PYEOF
     fi
     _JERVIS_SUMMARY="$summary" \
     _JERVIS_BRANCH="$branch" \
+    _JERVIS_COMMIT_SHA="$commit_sha" \
     _JERVIS_SUCCESS="$success" \
     _JERVIS_JOB="$AGENT_JOB_ID" \
     _JERVIS_CHANGED="$changed_json" \
@@ -82,6 +85,7 @@ with open(os.environ['_JERVIS_RESULT_FILE'], 'w') as f:
         'success': os.environ['_JERVIS_SUCCESS'] == 'true',
         'summary': os.environ.get('_JERVIS_SUMMARY', ''),
         'branch': os.environ.get('_JERVIS_BRANCH', ''),
+        'commitSha': os.environ.get('_JERVIS_COMMIT_SHA', ''),
         'changedFiles': json.loads(os.environ.get('_JERVIS_CHANGED', '[]') or '[]'),
         'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }, f, indent=2)

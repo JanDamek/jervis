@@ -18,6 +18,10 @@ service ServerAgentJobService {
   rpc DispatchAgentJob(DispatchAgentJobRequest) returns (DispatchAgentJobResponse);
   rpc GetAgentJobStatus(AgentJobIdRequest) returns (GetAgentJobStatusResponse);
   rpc AbortAgentJob(AbortAgentJobRequest) returns (AbortAgentJobResponse);
+  // Agent-initiated terminal transition (push from the in-pod agent via
+  // MCP `report_agent_done`). Idempotent: second caller on a terminal
+  // record returns the current state instead of a second transition.
+  rpc ReportAgentDone(ReportAgentDoneRequest) returns (ReportAgentDoneResponse);
 }
 
 // ── Shared ID request ─────────────────────────────────────────────────────
@@ -97,4 +101,22 @@ message AbortAgentJobResponse {
   bool ok = 1;
   string error = 2;
   string state = 3;  // resulting state on success (usually "CANCELLED")
+}
+
+// ── ReportAgentDone (agent push after commit+push) ────────────────────────
+
+message ReportAgentDoneRequest {
+  jervis.common.RequestContext ctx = 1;
+  string agent_job_id = 2;
+  bool success = 3;
+  string summary = 4;
+  string commit_sha = 5;
+  string branch = 6;
+  repeated string changed_files = 7;
+}
+
+message ReportAgentDoneResponse {
+  bool ok = 1;
+  string error = 2;
+  string state = 3;  // resulting state on success (DONE or ERROR)
 }

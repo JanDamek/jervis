@@ -11,6 +11,8 @@ import com.jervis.contracts.server.AgentJobIdRequest
 import com.jervis.contracts.server.DispatchAgentJobRequest
 import com.jervis.contracts.server.DispatchAgentJobResponse
 import com.jervis.contracts.server.GetAgentJobStatusResponse
+import com.jervis.contracts.server.ReportAgentDoneRequest
+import com.jervis.contracts.server.ReportAgentDoneResponse
 import com.jervis.contracts.server.ServerAgentJobServiceGrpcKt
 import com.jervis.dto.agentjob.AgentJobFlavor
 import mu.KotlinLogging
@@ -98,6 +100,40 @@ class ServerAgentJobGrpcImpl(
         } catch (e: Exception) {
             logger.error(e) { "getAgentJobStatus failed" }
             GetAgentJobStatusResponse.newBuilder()
+                .setOk(false)
+                .setError(e.message ?: e::class.simpleName.orEmpty())
+                .build()
+        }
+    }
+
+    override suspend fun reportAgentDone(request: ReportAgentDoneRequest): ReportAgentDoneResponse {
+        return try {
+            val jobId = AgentJobId(ObjectId(request.agentJobId))
+            val record = dispatcher.completeFromAgent(
+                jobId = jobId,
+                success = request.success,
+                summary = request.summary.takeIf { it.isNotBlank() },
+                commitSha = request.commitSha.takeIf { it.isNotBlank() },
+                branch = request.branch.takeIf { it.isNotBlank() },
+                changedFiles = request.changedFilesList.orEmpty().toList(),
+            )
+            ReportAgentDoneResponse.newBuilder()
+                .setOk(true)
+                .setState(record.state.name)
+                .build()
+        } catch (e: NoSuchElementException) {
+            ReportAgentDoneResponse.newBuilder()
+                .setOk(false)
+                .setError(e.message ?: "not found")
+                .build()
+        } catch (e: IllegalArgumentException) {
+            ReportAgentDoneResponse.newBuilder()
+                .setOk(false)
+                .setError("Invalid agent_job_id: '${request.agentJobId}'")
+                .build()
+        } catch (e: Exception) {
+            logger.error(e) { "reportAgentDone failed" }
+            ReportAgentDoneResponse.newBuilder()
                 .setOk(false)
                 .setError(e.message ?: e::class.simpleName.orEmpty())
                 .build()
