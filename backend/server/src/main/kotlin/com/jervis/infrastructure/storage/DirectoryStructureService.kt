@@ -238,6 +238,33 @@ class DirectoryStructureService(
 
     fun projectGitIndexingDir(project: ProjectDocument): Path = projectGitIndexingDir(project.clientId, project.id)
 
+    /**
+     * Parent directory containing all per-agent-job git worktrees for a
+     * given project. Created on-demand; individual worktrees live under
+     * [agentJobWorkspaceDir].
+     */
+    fun projectAgentJobsDir(
+        clientId: ClientId,
+        projectId: ProjectId,
+    ): Path =
+        projectDir(clientId, projectId).resolve(DirectoryStructure.AGENT_JOBS_SUBDIR).also {
+            createDirectoryIfNotExists(it)
+        }
+
+    fun projectAgentJobsDir(project: ProjectDocument): Path = projectAgentJobsDir(project.clientId, project.id)
+
+    /**
+     * Per-agent-job workspace path — the target of `git worktree add`.
+     * Caller (AgentWorkspaceService) materialises the worktree; this
+     * helper only resolves the path and ensures the parent dir exists.
+     */
+    fun agentJobWorkspaceDir(
+        clientId: ClientId,
+        projectId: ProjectId,
+        agentJobId: com.jervis.common.types.AgentJobId,
+    ): Path =
+        projectAgentJobsDir(clientId, projectId).resolve(agentJobId.toString())
+
     fun projectUploadsDir(
         clientId: ClientId,
         projectId: ProjectId,

@@ -54,6 +54,8 @@ data class DirectoryStructure(
     val projectAudioDir: Path? = projectDir?.resolve(AUDIO_SUBDIR)
     val projectDocumentsDir: Path? = projectDir?.resolve(DOCUMENTS_SUBDIR)
     val projectMeetingsDir: Path? = projectDir?.resolve(MEETINGS_SUBDIR)
+    /** Parent dir for per-agent-job git worktrees (see AgentWorkspaceService). */
+    val projectAgentJobsDir: Path? = projectDir?.resolve(AGENT_JOBS_SUBDIR)
 
     companion object {
         const val CLIENTS_DIR = "clients"
@@ -74,6 +76,15 @@ data class DirectoryStructure(
         const val UPLOADS_SUBDIR = "uploads"
         const val DOCUMENTS_SUBDIR = "documents"
         const val MEETINGS_SUBDIR = "meetings"
+
+        /**
+         * Parent directory for per-agent-job git worktrees attached to the
+         * project's base agent workspace (GIT_SUBDIR). Each worktree is a
+         * separate working tree sharing the base repository's `.git` dir,
+         * which is why multiple agents can run concurrently on the same
+         * project without cloning the whole repo each time.
+         */
+        const val AGENT_JOBS_SUBDIR = "agent-jobs"
 
         fun forWorkspace(workspaceRoot: String): DirectoryStructure = DirectoryStructure(Paths.get(workspaceRoot), null, null)
 
