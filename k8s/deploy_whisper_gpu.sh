@@ -2,20 +2,20 @@
 set -e
 
 # =============================================================================
-# Deploy Whisper GPU REST service to ollama.lan.mazlusek.com (p40-2 VM).
+# Deploy jervis-whisper-gpu (faster-whisper + pyannote.audio) as a Docker
+# container on the VD GPU VM (ollama.lan.mazlusek.com, p40-2).
 #
-# This service runs OUTSIDE K8s — directly on the GPU VM as a systemd service,
-# sharing the P40 GPU with Ollama via CUDA.
-#
-# Prerequisites:
-#   - SSH access to GPU_HOST (key-based or sshpass)
-#   - Python 3.11+ on GPU_HOST
-#   - NVIDIA driver installed on GPU_HOST
+# Flow (all runs from the Mac):
+#   1. buildx docker image (linux/amd64) from backend/service-whisper/Dockerfile.gpu
+#   2. push to registry.damek-soft.eu
+#   3. SSH to VD → stop+disable legacy systemd unit → docker pull → docker run --gpus all
+#   4. health-check :8786/health over SSH
 #
 # Usage:
-#   ./deploy_whisper_gpu.sh                    # uses SSH key auth
-#   SSH_PASS=secret ./deploy_whisper_gpu.sh    # uses sshpass
-#   HF_TOKEN=hf_xxx ./deploy_whisper_gpu.sh    # enables speaker diarization
+#   ./deploy_whisper_gpu.sh                    # uses SSH key auth (~/.ssh/id_starkys)
+#   HF_TOKEN=hf_xxx ./deploy_whisper_gpu.sh    # passes token to the container
+#                                              # (auto-fetched from K8s jervis-secrets when omitted)
+#   SKIP_BUILD=1 ./deploy_whisper_gpu.sh       # pull+run only (faster redeploy)
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -23,143 +23,123 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 GPU_HOST="${GPU_HOST:-ollama.lan.mazlusek.com}"
 GPU_USER="${GPU_USER:-damekjan}"
-INSTALL_DIR="/opt/jervis/whisper"
-SERVICE_NAME="jervis-whisper"
+SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_starkys}"
+REGISTRY="${REGISTRY:-registry.damek-soft.eu/jandamek}"
+IMAGE_NAME="jervis-whisper-gpu"
+IMAGE="${REGISTRY}/${IMAGE_NAME}:latest"
+CONTAINER_NAME="jervis-whisper-gpu"
+DOCKERFILE="${PROJECT_ROOT}/backend/service-whisper/Dockerfile.gpu"
 
-# SSH wrapper — uses sshpass if SSH_PASS is set, otherwise plain ssh
+# Router gRPC — same reasoning as XTTS: Whisper runs outside the K8s
+# cluster, dial the worker-node NodePort.
+ROUTER_GRPC_HOST="${ROUTER_GRPC_HOST:-jervis-router.lan.mazlusek.com}"
+ROUTER_GRPC_PORT="${ROUTER_GRPC_PORT:-5501}"
+
 ssh_cmd() {
-    if [ -n "$SSH_PASS" ]; then
-        sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$GPU_USER@$GPU_HOST" "$@"
-    else
-        ssh -o StrictHostKeyChecking=no "$GPU_USER@$GPU_HOST" "$@"
-    fi
+    ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$GPU_USER@$GPU_HOST" "$@"
 }
 
-scp_cmd() {
-    if [ -n "$SSH_PASS" ]; then
-        sshpass -p "$SSH_PASS" scp -o StrictHostKeyChecking=no "$@"
-    else
-        scp -o StrictHostKeyChecking=no "$@"
-    fi
-}
+echo "=== Deploying $CONTAINER_NAME (faster-whisper + pyannote) to $GPU_HOST ==="
 
-echo "=== Deploying $SERVICE_NAME to $GPU_HOST ==="
-
-# Step 1: Ensure target directory and venv exist
-echo "Step 1/6: Setting up directory and virtualenv..."
-ssh_cmd "echo '$SSH_PASS' | sudo -S mkdir -p $INSTALL_DIR 2>/dev/null; echo '$SSH_PASS' | sudo -S chown -R $GPU_USER:$GPU_USER /opt/jervis 2>/dev/null; [ -d $INSTALL_DIR/venv ] || python3 -m venv $INSTALL_DIR/venv"
-echo "  directory and venv OK"
-
-# Step 2: Install/upgrade Python dependencies
-echo "Step 2/6: Installing Python dependencies..."
-ssh_cmd "$INSTALL_DIR/venv/bin/pip install --no-cache-dir -q \
-    faster-whisper \
-    pyannote.audio \
-    fastapi uvicorn python-multipart sse-starlette \
-    grpcio grpcio-reflection protobuf \
-    torch torchaudio --index-url https://download.pytorch.org/whl/cu124 2>&1 | tail -3"
-echo "  dependencies OK (including grpcio + pyannote-audio for speaker diarization)"
-
-# Step 3: Copy server files (using ssh+cat — more reliable with sshpass than scp)
-echo "Step 3/6: Copying server files + jervis_contracts..."
-ssh_cmd "cat > $INSTALL_DIR/whisper_runner.py" < "$PROJECT_ROOT/backend/service-whisper/whisper_runner.py"
-ssh_cmd "cat > $INSTALL_DIR/whisper_rest_server.py" < "$PROJECT_ROOT/backend/service-whisper/whisper_rest_server.py"
-ssh_cmd "cat > $INSTALL_DIR/grpc_server.py" < "$PROJECT_ROOT/backend/service-whisper/grpc_server.py"
-
-# Copy jervis_contracts as an editable install so gRPC stubs are available.
-# Previous tar-over-ssh + scp-cat fallbacks both failed silently and only
-# pip-registered the package metadata (jervis-contracts 0.1.0) while the
-# actual `jervis/` + `jervis_contracts/` Python packages never landed —
-# whisper then crashed at startup with
-# `ModuleNotFoundError: No module named 'jervis'`. scp -r is reliable.
-ssh_cmd "rm -rf $INSTALL_DIR/libs/jervis_contracts && mkdir -p $INSTALL_DIR/libs/jervis_contracts"
-scp_cmd -r \
-    "$PROJECT_ROOT/libs/jervis_contracts/jervis" \
-    "$PROJECT_ROOT/libs/jervis_contracts/jervis_contracts" \
-    "$PROJECT_ROOT/libs/jervis_contracts/pyproject.toml" \
-    "$GPU_USER@$GPU_HOST:$INSTALL_DIR/libs/jervis_contracts/"
-ssh_cmd "$INSTALL_DIR/venv/bin/pip install --no-cache-dir -q -e $INSTALL_DIR/libs/jervis_contracts"
-ssh_cmd "$INSTALL_DIR/venv/bin/python3 -c 'from jervis.whisper import transcribe_pb2' && echo '  jervis_contracts verified' || echo '  WARNING: jervis_contracts import still broken'"
-echo "  files copied"
-
-# Step 4: Pre-download whisper models (if not cached)
-echo "Step 4/6: Pre-downloading whisper models..."
-ssh_cmd "$INSTALL_DIR/venv/bin/python3 -c \"
-from faster_whisper.utils import download_model
-for m in ['tiny', 'base', 'small', 'medium', 'large-v3']:
-    print(f'  checking {m}...')
-    download_model(m)
-print('  all models ready')
-\""
-
-# Step 5: Create/update systemd service
-echo "Step 5/6: Setting up systemd service..."
-# HF_TOKEN: use env var, or auto-fetch from K8s secret
-if [ -z "$HF_TOKEN" ]; then
-    HF_TOKEN=$(kubectl get secret jervis-secrets -n jervis -o jsonpath='{.data.HF_TOKEN}' 2>/dev/null | base64 -d 2>/dev/null || true)
-fi
-HF_TOKEN_LINE=""
-if [ -n "$HF_TOKEN" ]; then
-    HF_TOKEN_LINE="Environment=HF_TOKEN=$HF_TOKEN"
-fi
-
-ssh_cmd "cat > /tmp/$SERVICE_NAME.service << 'UNIT_EOF'
-[Unit]
-Description=Jervis Whisper GPU REST Service
-After=network.target
-
-[Service]
-Type=simple
-User=$GPU_USER
-WorkingDirectory=$INSTALL_DIR
-ExecStart=$INSTALL_DIR/venv/bin/python3 $INSTALL_DIR/whisper_rest_server.py
-Restart=on-failure
-RestartSec=10
-
-Environment=WHISPER_DEVICE=cuda
-Environment=WHISPER_COMPUTE_TYPE=int8_float32
-Environment=WHISPER_DEFAULT_MODEL=medium
-Environment=WHISPER_REST_PORT=8786
-# XTTS owns :5501 on the VD — Whisper takes :5502 to avoid the port
-# collision that silently dropped Whisper gRPC at boot.
-Environment=WHISPER_GRPC_PORT=5502
-Environment=WHISPER_REST_HOST=0.0.0.0
-Environment=WHISPER_REST_WORKERS=1
-# Router gRPC: whisper signals WhisperNotify/WhisperDone on RouterAdminService
-# so the router actively preempts Ollama LLM/VLM + unloads before we load
-# the whisper model. XTTS (permanent GPU resident) is never touched.
-Environment=ROUTER_GRPC_HOST=jervis-router.lan.mazlusek.com
-Environment=ROUTER_GRPC_PORT=5501
-$HF_TOKEN_LINE
-
-[Install]
-WantedBy=multi-user.target
-UNIT_EOF
-
-echo '$SSH_PASS' | sudo -S mv /tmp/$SERVICE_NAME.service /etc/systemd/system/$SERVICE_NAME.service 2>/dev/null
-echo '$SSH_PASS' | sudo -S systemctl daemon-reload 2>/dev/null
-echo '$SSH_PASS' | sudo -S systemctl enable $SERVICE_NAME 2>/dev/null"
-echo "  systemd service configured"
-
-# Step 6: Restart the service
-echo "Step 6/6: Restarting service..."
-ssh_cmd "echo '$SSH_PASS' | sudo -S systemctl restart $SERVICE_NAME 2>/dev/null"
-sleep 3
-
-# Check health
-echo ""
-echo "Checking health..."
-HEALTH=$(curl -s --max-time 10 "http://$GPU_HOST:8786/health" 2>/dev/null || echo '{"status":"starting"}')
-echo "  $HEALTH"
-
-STATUS=$(echo "$HEALTH" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','unknown'))" 2>/dev/null || echo "unknown")
-if [ "$STATUS" = "ok" ]; then
-    echo ""
-    echo "=== $SERVICE_NAME deployed and healthy on $GPU_HOST:8786 ==="
+# ---------------------------------------------------------------------------
+# Step 1/5: build + push (skip with SKIP_BUILD=1)
+# ---------------------------------------------------------------------------
+if [ -z "$SKIP_BUILD" ]; then
+    echo "Step 1/5: Building $IMAGE (linux/amd64)..."
+    docker buildx build --platform linux/amd64 \
+        -f "$DOCKERFILE" \
+        -t "$IMAGE" \
+        --push \
+        "$PROJECT_ROOT"
+    echo "  image built + pushed"
 else
-    echo ""
-    echo "Service is starting up (model loading may take a minute)."
-    echo "Check status: ssh $GPU_USER@$GPU_HOST 'sudo systemctl status $SERVICE_NAME'"
-    echo "Check logs:   ssh $GPU_USER@$GPU_HOST 'sudo journalctl -u $SERVICE_NAME -f'"
-    echo "=== $SERVICE_NAME deployed to $GPU_HOST (health check pending) ==="
+    echo "Step 1/5: SKIP_BUILD set — skipping build/push"
+fi
+
+# ---------------------------------------------------------------------------
+# Step 2/5: stop + disable legacy systemd unit.
+#           Separate SSH calls per command — chaining sudo + pkill in one
+#           session occasionally closes with exit-signal on this VD.
+# ---------------------------------------------------------------------------
+echo "Step 2/5: Stopping legacy systemd unit (if present)..."
+# Trailing `|| true` swallows SSH exit-signal 255 from remote pkill/sudo
+# side-effects that occasionally kill the channel on this VD.
+ssh_cmd "sudo systemctl stop jervis-whisper 2>/dev/null || true" || true
+ssh_cmd "sudo systemctl disable jervis-whisper 2>/dev/null || true" || true
+ssh_cmd "pkill -f 'whisper_rest_server' 2>/dev/null || true" || true
+echo "  legacy unit stopped"
+
+# ---------------------------------------------------------------------------
+# Step 3/5: resolve HF_TOKEN (env var > K8s jervis-secrets > empty).
+# ---------------------------------------------------------------------------
+if [ -z "$HF_TOKEN" ]; then
+    HF_TOKEN=$(kubectl get secret jervis-secrets -n jervis -o jsonpath='{.data.HF_TOKEN}' 2>/dev/null \
+        | base64 -d 2>/dev/null || true)
+fi
+if [ -n "$HF_TOKEN" ]; then
+    echo "Step 3/5: HF_TOKEN resolved (diarization enabled)"
+else
+    echo "Step 3/5: HF_TOKEN not available — diarization will fall back to single-speaker"
+fi
+
+# ---------------------------------------------------------------------------
+# Step 4/5: pull + run.
+#
+# Flags mirror the XTTS deploy — same VD, same GPU, same bind-mount layout.
+# --network host: :5502 (gRPC) + :8786 (REST) reachable at
+#                 ollama.lan.mazlusek.com directly.
+# HF cache is shared with XTTS at /opt/jervis/hf-cache to avoid a second
+# ~2-5 GB model-weights footprint on disk.
+# ---------------------------------------------------------------------------
+echo "Step 4/5: Pulling + running $IMAGE..."
+ssh_cmd "docker pull '$IMAGE'"
+ssh_cmd "docker stop '$CONTAINER_NAME' 2>/dev/null || true"
+ssh_cmd "docker rm '$CONTAINER_NAME' 2>/dev/null || true"
+ssh_cmd "mkdir -p /opt/jervis/hf-cache"
+
+HF_ENV=""
+if [ -n "$HF_TOKEN" ]; then
+    HF_ENV="-e HF_TOKEN='$HF_TOKEN'"
+fi
+
+ssh_cmd "docker run -d \
+    --name '$CONTAINER_NAME' \
+    --restart unless-stopped \
+    --gpus all \
+    --network host \
+    -v /opt/jervis/hf-cache:/opt/jervis/hf-cache \
+    -e WHISPER_DEVICE=cuda \
+    -e WHISPER_COMPUTE_TYPE=int8_float32 \
+    -e WHISPER_DEFAULT_MODEL=medium \
+    -e WHISPER_REST_PORT=8786 \
+    -e WHISPER_GRPC_PORT=5502 \
+    -e WHISPER_REST_HOST=0.0.0.0 \
+    -e WHISPER_REST_WORKERS=1 \
+    -e ROUTER_GRPC_HOST='$ROUTER_GRPC_HOST' \
+    -e ROUTER_GRPC_PORT='$ROUTER_GRPC_PORT' \
+    -e CUDA_VISIBLE_DEVICES=0 \
+    $HF_ENV \
+    '$IMAGE'"
+echo "  container started"
+
+# ---------------------------------------------------------------------------
+# Step 5/5: health-check :8786/health.
+# ---------------------------------------------------------------------------
+echo "Step 5/5: Waiting for REST :8786/health (models preload ~30-60s)..."
+for i in $(seq 1 30); do
+    HEALTH=$(curl -s --max-time 5 "http://$GPU_HOST:8786/health" 2>/dev/null || echo '{"status":"starting"}')
+    STATUS=$(echo "$HEALTH" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','unknown'))" 2>/dev/null || echo "unknown")
+    if [ "$STATUS" = "ok" ]; then
+        echo "  REST healthy (attempt $i): $HEALTH"
+        break
+    fi
+    sleep 5
+done
+
+if [ "$STATUS" = "ok" ]; then
+    echo "=== ✓ $CONTAINER_NAME running on $GPU_HOST (:5502 gRPC, :8786 REST) ==="
+else
+    echo "⚠ /health not OK after 150s — still loading or boot failed."
+    echo "Logs: ssh -i $SSH_KEY $GPU_USER@$GPU_HOST 'docker logs --tail 80 $CONTAINER_NAME'"
+    exit 1
 fi

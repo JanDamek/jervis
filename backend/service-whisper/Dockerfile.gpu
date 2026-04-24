@@ -1,0 +1,73 @@
+# =============================================================================
+# jervis-whisper-gpu — faster-whisper STT + pyannote diarization on VD GPU VM.
+#
+# Runs on `ollama.lan.mazlusek.com` (p40-2) as a Docker container with
+# --gpus all. Replaces the previous systemd user unit
+# (`jervis-whisper.service`) so all three GPU services (XTTS, Whisper,
+# Ollama) share the same docker-run deploy pattern.
+#
+# Build from the repo root:
+#   docker buildx build --platform linux/amd64 \
+#     -f backend/service-whisper/Dockerfile.gpu \
+#     -t registry.damek-soft.eu/jandamek/jervis-whisper-gpu:latest .
+# =============================================================================
+
+FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONUNBUFFERED=1
+
+# --- Base tools + Python 3.11 (Ubuntu 22.04 default) ---
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        python3 python3-pip python3-venv \
+        git curl ca-certificates \
+        libsndfile1 ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- PyTorch + torchaudio (CUDA 12.4 wheels from pytorch.org) ---
+RUN pip install --no-cache-dir \
+    torch torchaudio \
+    --index-url https://download.pytorch.org/whl/cu124
+
+# --- Whisper + diarization stack ---
+RUN pip install --no-cache-dir \
+    faster-whisper \
+    pyannote.audio \
+    'grpcio>=1.66.0,<1.80' 'grpcio-reflection>=1.66.0,<1.80' 'protobuf>=5.28.0,<7' \
+    fastapi uvicorn python-multipart sse-starlette
+
+# --- jervis_contracts — pyproject.toml requires Python >= 3.12 but the
+#     Ubuntu 22.04 base ships 3.10, so pip install refuses. Generated
+#     code is stdlib + protobuf/grpcio only (already installed above),
+#     so expose the source tree on PYTHONPATH. Rebuild on proto changes
+#     (COPY invalidates the layer).
+COPY libs/jervis_contracts /opt/jervis/libs/jervis_contracts
+ENV PYTHONPATH=/opt/jervis/libs/jervis_contracts
+
+# --- App ---
+COPY backend/service-whisper/whisper_runner.py /opt/jervis/whisper/whisper_runner.py
+COPY backend/service-whisper/whisper_rest_server.py /opt/jervis/whisper/whisper_rest_server.py
+COPY backend/service-whisper/grpc_server.py /opt/jervis/whisper/grpc_server.py
+WORKDIR /opt/jervis/whisper
+
+# Non-root — uid 1000 matches the host `damekjan` user so bind mounts
+# stay read-write.
+RUN useradd -m -u 1000 jervis && \
+    chown -R jervis:jervis /opt/jervis
+USER jervis
+
+# HuggingFace model cache comes in via bind-mount at runtime
+# (/opt/jervis/hf-cache on the VD — shared with XTTS for a single
+# model-cache footprint on disk).
+ENV HF_HOME=/opt/jervis/hf-cache \
+    XDG_CACHE_HOME=/opt/jervis/hf-cache
+
+# Ports:
+#   5502 gRPC (jervis.whisper.WhisperService — pod→pod h2c)
+#   8786 REST (FastAPI /transcribe + SSE streaming for the legacy path)
+EXPOSE 5502 8786
+
+ENTRYPOINT ["python3", "whisper_rest_server.py"]

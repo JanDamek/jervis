@@ -1,0 +1,77 @@
+# =============================================================================
+# jervis-xtts-gpu — Coqui XTTS v2 neural TTS on the VD GPU VM.
+#
+# Runs on `ollama.lan.mazlusek.com` (p40-2) as a Docker container with
+# --gpus all. Replaces the previous systemd user unit (`jervis-xtts.service`)
+# so all three GPU services (XTTS, Whisper, Ollama) share the same
+# docker-run deploy pattern.
+#
+# Build from the repo root:
+#   docker buildx build --platform linux/amd64 \
+#     -f backend/service-tts/Dockerfile.gpu \
+#     -t registry.damek-soft.eu/jandamek/jervis-xtts-gpu:latest .
+# =============================================================================
+
+FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONUNBUFFERED=1
+
+# --- Base tools + Python 3.11 (Ubuntu 22.04 default) ---
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        python3 python3-pip python3-venv \
+        git curl ca-certificates \
+        libsndfile1 ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- PyTorch + torchaudio (CUDA 12.4 wheels from pytorch.org) ---
+RUN pip install --no-cache-dir \
+    torch torchaudio \
+    --index-url https://download.pytorch.org/whl/cu124
+
+# --- TTS stack ---
+# transformers pinned: coqui-tts uses `isin_mps_friendly` from
+# transformers.pytorch_utils, which was removed in 5.x. 4.43-4.49 works;
+# newer upstream might bring it back — revisit if coqui-tts releases a fix.
+RUN pip install --no-cache-dir \
+    'transformers>=4.43,<4.50' \
+    coqui-tts numpy num2words \
+    'grpcio>=1.66.0,<1.80' 'grpcio-reflection>=1.66.0,<1.80' 'protobuf>=5.28.0,<7' \
+    'fastapi' 'uvicorn' 'sse-starlette'
+
+# --- jervis_contracts — pyproject.toml requires Python >= 3.12 but the
+#     Ubuntu 22.04 base ships 3.10, so pip install would fail. The actual
+#     generated code is stdlib-only + protobuf/grpcio (already installed
+#     above), so we just expose the source tree on PYTHONPATH. Rebuild
+#     the image when protos change (the COPY invalidates the layer).
+COPY libs/jervis_contracts /opt/jervis/libs/jervis_contracts
+ENV PYTHONPATH=/opt/jervis/libs/jervis_contracts
+
+# --- App ---
+COPY backend/service-tts/app /opt/jervis/xtts/app
+WORKDIR /opt/jervis/xtts
+
+# Non-root so the container can't accidentally touch host files outside
+# the bind-mounted /opt/jervis/data. UID 1000 matches the `damekjan` host
+# user so bind-mounts stay read-write.
+RUN useradd -m -u 1000 jervis && \
+    chown -R jervis:jervis /opt/jervis
+USER jervis
+
+# Model cache + voice samples come in via bind-mount at runtime:
+#   /opt/jervis/data/tts        ← ro-ish voice reference wavs
+#   /opt/jervis/hf-cache        ← HF_HOME, XTTS model weights cache
+# COQUI_TOS_AGREED=1 avoids the interactive TOS prompt that crashes with
+# EOFError under docker (no stdin). XTTS is CPML-licensed for non-commercial;
+# the image bakes the agreement — fine for self-hosted use.
+ENV HF_HOME=/opt/jervis/hf-cache \
+    TTS_HOME=/opt/jervis/hf-cache \
+    XDG_CACHE_HOME=/opt/jervis/hf-cache \
+    COQUI_TOS_AGREED=1
+
+EXPOSE 5501 8787
+
+ENTRYPOINT ["python3", "-m", "app"]

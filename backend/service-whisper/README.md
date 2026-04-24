@@ -8,49 +8,53 @@ on :8788 for the legacy streaming path.
 ## Where it runs
 
 **Not in K8s.** Whisper lives directly on the VD GPU VM
-(`ollama.lan.mazlusek.com`, p40-2) as a systemd user service, sharing the
-P40 GPU with Ollama and XTTS. See
+(`ollama.lan.mazlusek.com`, p40-2) as a Docker container (`--gpus all
+--network host`), sharing the P40 with Ollama and XTTS. See
 `memory/feedback-audio-services-on-vd.md` for the rationale (CUDA VRAM on
 CPU-only K8s nodes is a non-starter; co-locating with Ollama wins on the
 shared idle-semaphore path).
 
 Kotlin consumers (`WhisperGrpcClient.kt`) dial
-`ollama.lan.mazlusek.com:5501` directly over h2c.
+`ollama.lan.mazlusek.com:5502` directly over h2c (XTTS owns :5501).
 
 ## Deploy
 
-Run from the repo root on your Mac (SSH-pushes code + deps to the VM):
+Run from the repo root on your Mac:
 
 ```bash
-./k8s/deploy_whisper_gpu.sh                    # uses SSH key auth (~/.ssh/id_starkys)
-SSH_PASS=secret ./k8s/deploy_whisper_gpu.sh    # or sshpass
-HF_TOKEN=hf_xxx ./k8s/deploy_whisper_gpu.sh    # enables diarization (auto-fetched from jervis-secrets when omitted)
+./k8s/deploy_whisper_gpu.sh                  # build + push + pull + run
+SKIP_BUILD=1 ./k8s/deploy_whisper_gpu.sh     # pull + run only (faster redeploy)
+HF_TOKEN=hf_xxx ./k8s/deploy_whisper_gpu.sh  # diarization token
+                                             # (auto-fetched from K8s jervis-secrets when omitted)
 ```
 
 The script:
 
-1. Ensures `/opt/jervis/whisper/venv` exists on the VM.
-2. Installs deps (`faster-whisper`, `pyannote.audio`, `fastapi`, `grpcio`,
-   `torch` / `torchaudio` CUDA 12.4 wheels).
-3. Copies `whisper_runner.py` / `whisper_rest_server.py` / `grpc_server.py`
-   plus `libs/jervis_contracts/` (editable install) to the VM.
-4. Pre-downloads `tiny`, `base`, `small`, `medium`, and `large-v3` models.
-5. Drops the HuggingFace token into systemd env (required for `pyannote`
-   speaker-diarization models behind gated HF repos).
-6. (Re-)creates the `jervis-whisper` systemd user unit and restarts it.
-7. Health-checks `:8788/health`.
+1. Builds `Dockerfile.gpu` on the Mac (`buildx --platform linux/amd64`)
+   and pushes to `registry.damek-soft.eu/jandamek/jervis-whisper-gpu:latest`.
+2. SSHes to the VD, stops + disables the legacy `jervis-whisper` systemd
+   unit (one-shot migration).
+3. Resolves HF_TOKEN (env > K8s `jervis-secrets` > empty).
+4. `docker pull` + `docker run -d --gpus all --network host --restart
+   unless-stopped` with bind-mount to `/opt/jervis/hf-cache` (shared
+   model-weights cache with XTTS).
+5. Polls `:8786/health`.
+
+Models (`tiny`, `base`, `small`, `medium`, `large-v3`) download on first
+request and persist in `/opt/jervis/hf-cache` via the bind mount.
 
 ## What's on disk
 
+Host paths (bind-mounted into the container):
+
 ```
-/opt/jervis/whisper/
-├── venv/                     # Python 3.11 + CUDA 12.4 torch + faster-whisper
-├── whisper_runner.py         # faster-whisper wrapper + diarization glue
-├── whisper_rest_server.py    # FastAPI /transcribe + SSE streaming
-├── grpc_server.py            # jervis.whisper.WhisperService impl
-└── libs/jervis_contracts/    # local editable install
-~/.cache/huggingface/hub/     # downloaded models (first-run cache)
+/opt/jervis/hf-cache/         # faster-whisper + pyannote models (~2-5 GB)
+                              # shared with XTTS
 ```
+
+Everything else lives inside the image — no venv, no source files on
+the host. To change the image, edit `backend/service-whisper/Dockerfile.gpu`
+and re-run the deploy script.
 
 ## Diarization note
 
@@ -72,7 +76,10 @@ with `deploy_whisper_gpu.sh`; read logs via Kibana.
 
 ## Logs
 
-VD's fluent-bit forwards systemd journald of the unit into the cluster
-Elasticsearch. Query Kibana with `kubernetes.labels.app: jervis-whisper-gpu`
-— see `memory/feedback-use-kibana-for-logs.md` for the console-proxy
-template.
+Docker container stdout/stderr is picked up by the VD's fluent-bit
+(not the K8s DaemonSet) and forwarded to the cluster Elasticsearch.
+Query Kibana for the container name — see
+`memory/feedback-use-kibana-for-logs.md` for the console-proxy template.
+
+Ad-hoc on the VD:
+`ssh damekjan@ollama.lan.mazlusek.com 'docker logs --tail 100 -f jervis-whisper-gpu'`.
