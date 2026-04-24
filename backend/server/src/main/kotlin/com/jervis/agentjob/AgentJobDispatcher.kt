@@ -27,6 +27,7 @@ import io.fabric8.kubernetes.api.model.VolumeMountBuilder
 import io.fabric8.kubernetes.api.model.batch.v1.Job
 import io.fabric8.kubernetes.api.model.batch.v1.JobBuilder
 import io.fabric8.kubernetes.client.ConfigBuilder
+import io.fabric8.kubernetes.api.model.DeletionPropagation
 import io.fabric8.kubernetes.client.KubernetesClient
 import io.fabric8.kubernetes.client.KubernetesClientBuilder
 import kotlinx.coroutines.Dispatchers
@@ -168,6 +169,69 @@ class AgentJobDispatcher(
                 saved
             }
         }
+    }
+
+    /**
+     * Abort a running (or queued) agent job.
+     *
+     *  1. Delete the K8s Job (propagation=Background so the Pod is
+     *     terminated and cleaned asynchronously — we don't need to wait).
+     *  2. Release the per-job worktree (silently no-op if the path is
+     *     already gone, e.g. Job never materialised).
+     *  3. Transition the record to CANCELLED with `errorMessage=reason`.
+     *
+     * Idempotent: calling abort on a terminal record is a no-op returning
+     * the record unchanged.
+     *
+     * @throws NoSuchElementException if the job id is unknown.
+     */
+    suspend fun abort(jobId: AgentJobId, reason: String): AgentJobRecord {
+        require(reason.isNotBlank()) { "reason must not be blank" }
+        val record = agentJobRecordRepository.getById(jobId)
+            ?: throw NoSuchElementException("Agent job $jobId not found")
+
+        if (record.state.isTerminal()) {
+            logger.info { "abort | job=${record.id} already terminal state=${record.state} — no-op" }
+            return record
+        }
+
+        // Best-effort K8s Job delete — cluster may have already reaped it,
+        // that's fine. A failure here should not block the state transition.
+        record.kubernetesJobName?.let { jobName ->
+            runCatching { deleteK8sJob(jobName) }.onFailure { e ->
+                logger.warn(e) { "abort | K8s delete of $jobName failed (continuing)" }
+            }
+        }
+
+        // Workspace release — needs the project to locate the worktree.
+        record.projectId?.let { pid ->
+            runCatching {
+                val project = projectRepository.getById(pid)
+                    ?: error("Project $pid not found")
+                agentWorkspaceService.releaseWorktreeForJob(project, record.id)
+            }.onFailure { e ->
+                logger.warn(e) { "abort | workspace release failed for job=${record.id} (continuing)" }
+            }
+        }
+
+        val updated = record.copy(
+            state = AgentJobState.CANCELLED,
+            errorMessage = reason,
+            completedAt = Instant.now(),
+        )
+        logger.info { "abort | job=${record.id} → CANCELLED reason='$reason'" }
+        return agentJobRecordRepository.save(updated)
+    }
+
+    /**
+     * Snapshot of a record + current K8s Job phase. Does not mutate state —
+     * pure read path for MCP `get_agent_job_status` and debug tools.
+     */
+    suspend fun getStatus(jobId: AgentJobId): AgentJobStatusSnapshot {
+        val record = agentJobRecordRepository.getById(jobId)
+            ?: throw NoSuchElementException("Agent job $jobId not found")
+        val phase = record.kubernetesJobName?.let { queryK8sJobPhase(it) }
+        return AgentJobStatusSnapshot(record = record, kubernetesJobPhase = phase)
     }
 
     /**
@@ -530,6 +594,57 @@ class AgentJobDispatcher(
             .build()
         return KubernetesClientBuilder().withConfig(config).build()
     }
+
+    /**
+     * Delete a K8s Job by name. Uses `BACKGROUND` propagation — the
+     * API call returns immediately, and the garbage collector removes
+     * the owned Pods asynchronously. Callers should not block on Pod
+     * termination (the watcher handles any late state).
+     */
+    private suspend fun deleteK8sJob(jobName: String) {
+        withContext(Dispatchers.IO) {
+            buildK8sClient().use { client ->
+                client.batch().v1().jobs()
+                    .inNamespace(NAMESPACE)
+                    .withName(jobName)
+                    .withPropagationPolicy(DeletionPropagation.BACKGROUND)
+                    .delete()
+            }
+        }
+        logger.info { "deleteK8sJob | $jobName deleted (propagation=background)" }
+    }
+
+    /**
+     * Map a K8s Job's observed status to a human phase string.
+     * Returns null when the Job object itself is not found.
+     *
+     * K8s `Job.status` is condition-based, not a single enum:
+     *  - `status.conditions[].type == Complete` → "Succeeded"
+     *  - `status.conditions[].type == Failed`   → "Failed"
+     *  - `status.conditions[].type == Suspended` → "Suspended"
+     *  - otherwise, if `active > 0`              → "Active"
+     *  - else                                    → "Pending"
+     */
+    internal suspend fun queryK8sJobPhase(jobName: String): String? =
+        withContext(Dispatchers.IO) {
+            buildK8sClient().use { client ->
+                val job = client.batch().v1().jobs()
+                    .inNamespace(NAMESPACE)
+                    .withName(jobName)
+                    .get() ?: return@use null
+                val conditions = job.status?.conditions.orEmpty()
+                val completed = conditions.any { it.type == "Complete" && it.status == "True" }
+                val failed = conditions.any { it.type == "Failed" && it.status == "True" }
+                val suspended = conditions.any { it.type == "Suspended" && it.status == "True" }
+                when {
+                    completed -> "Succeeded"
+                    failed -> "Failed"
+                    suspended -> "Suspended"
+                    (job.status?.active ?: 0) > 0 -> "Active"
+                    else -> "Pending"
+                }
+            }
+        }
 
     /**
      * Resource lookup by id — matches ProjectResource.id (a free-form

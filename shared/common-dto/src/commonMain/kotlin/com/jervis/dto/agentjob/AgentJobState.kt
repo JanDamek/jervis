@@ -24,5 +24,12 @@ enum class AgentJobState {
     WAITING_USER,
     DONE,
     ERROR,
-    CANCELLED,
+    CANCELLED;
+
+    /**
+     * Terminal states are the ones from which no further transition is
+     * allowed. The watcher never re-opens a terminal record; abort on
+     * a terminal record is a no-op.
+     */
+    fun isTerminal(): Boolean = this == DONE || this == ERROR || this == CANCELLED
 }
