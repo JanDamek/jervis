@@ -58,6 +58,14 @@ IDLE_KEEPALIVE_SECONDS = 20.0
 # How long a compact round-trip may take before we force a teardown.
 COMPACT_TIMEOUT = 120.0
 
+# Periodic compact cadence — Claude emits a mid-session snapshot every
+# this many seconds so a SIGKILL shortly before shutdown still leaves a
+# reasonably fresh narrative on disk. The loop only fires when the
+# session has been idle for at least PERIODIC_COMPACT_IDLE_SECONDS,
+# matching human pauses so we don't interrupt an active turn.
+PERIODIC_COMPACT_INTERVAL = 420.0       # 7 min
+PERIODIC_COMPACT_IDLE_SECONDS = 180.0   # at least 3 min of quiet
+
 # Sentinel objects used on the per-session queues.
 _STOP = object()
 _TURN_DONE = object()
@@ -82,6 +90,9 @@ class ClientSession:
     task: asyncio.Task | None = None
     turn_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     stop_flag: asyncio.Event = field(default_factory=asyncio.Event)
+    # Periodic-compact background loop — owned by ClientSessionManager,
+    # cancelled at teardown.
+    compact_task: asyncio.Task | None = None
 
 
 class ClientSessionManager:
@@ -213,6 +224,15 @@ class ClientSessionManager:
             logger.error("session task failed to become ready | session=%s", session_id)
             await self._teardown(session)
             raise RuntimeError("claude session failed to initialize within 30s")
+
+        # Kick off the periodic-compact loop so a mid-session SIGKILL
+        # still leaves a fairly fresh narrative on disk (reduces delta
+        # loss between shutdowns — Claude SDK cannot resume a killed
+        # subprocess, so frequent snapshots are the cheapest safety net).
+        session.compact_task = asyncio.create_task(
+            self._periodic_compact_loop(session),
+            name=f"periodic-compact-{session_id}",
+        )
 
         logger.info(
             "started in-process client session | client=%s project=%s session=%s mcp=%s",
@@ -386,14 +406,42 @@ class ClientSessionManager:
         return True
 
     async def _request_compact(self, session: ClientSession) -> str | None:
-        """Emit COMPACT_AND_EXIT, collect Claude's final markdown."""
-        if session.stop_flag.is_set() or not session.task or session.task.done():
-            return None
-        prompt = (
+        """Emit COMPACT_AND_EXIT and collect Claude's final markdown.
+
+        Used by the shutdown path — sends the exit sentinel so Claude's
+        own shutdown protocol kicks in. The periodic version
+        (:_request_periodic_compact:) keeps the session running afterwards.
+        """
+        exit_prompt = (
             "[system] COMPACT_AND_EXIT — emit exactly one final markdown "
             "summary following the shutdown protocol described in your "
             "brief. Do NOT append anything after it."
         )
+        return await self._run_compact_turn(session, exit_prompt)
+
+    async def _request_periodic_compact(self, session: ClientSession) -> str | None:
+        """Emit PERIODIC_COMPACT and collect an interim summary.
+
+        Claude writes the same markdown shape as the exit compact, but the
+        session stays alive afterwards — Claude is expected to treat this
+        as "save a mid-flight snapshot, then keep going". Called by the
+        background loop on idle sessions so a SIGKILL a few seconds before
+        shutdown still leaves at most PERIODIC_COMPACT_INTERVAL of delta
+        loss on disk.
+        """
+        periodic_prompt = (
+            "[system] PERIODIC_COMPACT — emit exactly one concise markdown "
+            "snapshot (state / pending / next / key facts) for this session "
+            "so far. Do NOT stop; the session continues after this snapshot. "
+            "Do NOT append anything after the markdown."
+        )
+        return await self._run_compact_turn(session, periodic_prompt)
+
+    async def _run_compact_turn(self, session: ClientSession, prompt: str) -> str | None:
+        """Shared body of exit and periodic compact — single turn, collect
+        AssistantMessage text blocks, return joined markdown or None."""
+        if session.stop_flag.is_set() or not session.task or session.task.done():
+            return None
         async with session.turn_lock:
             try:
                 await session.in_queue.put(prompt)
@@ -421,8 +469,80 @@ class ClientSessionManager:
             body = "\n".join(collected).strip()
             return body or None
 
+    async def _periodic_compact_loop(self, session: ClientSession) -> None:
+        """Background task firing PERIODIC_COMPACT every
+        PERIODIC_COMPACT_INTERVAL seconds, but only when the session has
+        been idle for PERIODIC_COMPACT_IDLE_SECONDS (no interruption of
+        an active turn).
+        """
+        sid = session.session_id
+        cid = session.client_id
+        logger.info(
+            "periodic compact loop started | session=%s interval=%.0fs idle_gate=%.0fs",
+            sid, PERIODIC_COMPACT_INTERVAL, PERIODIC_COMPACT_IDLE_SECONDS,
+        )
+        try:
+            while not session.stop_flag.is_set():
+                try:
+                    await asyncio.sleep(PERIODIC_COMPACT_INTERVAL)
+                except asyncio.CancelledError:
+                    return
+                if session.stop_flag.is_set():
+                    return
+                idle_for = time.monotonic() - session.last_activity_monotonic
+                if idle_for < PERIODIC_COMPACT_IDLE_SECONDS:
+                    logger.debug(
+                        "periodic compact skipped (active) | session=%s idle=%.0fs",
+                        sid, idle_for,
+                    )
+                    continue
+
+                logger.info("periodic compact tick | session=%s", sid)
+                try:
+                    snapshot = await self._request_periodic_compact(session)
+                except Exception:
+                    logger.exception("periodic compact turn failed | session=%s", sid)
+                    continue
+                if not snapshot:
+                    logger.debug("periodic compact produced no content | session=%s", sid)
+                    continue
+                try:
+                    await save_compact(
+                        scope=scope_for_client(cid),
+                        content=snapshot,
+                        client_id=cid,
+                        project_id=session.project_id,
+                        session_id=sid,
+                    )
+                    logger.info(
+                        "periodic compact saved | session=%s chars=%d",
+                        sid, len(snapshot),
+                    )
+                except Exception:
+                    logger.exception("periodic compact save failed | session=%s", sid)
+        finally:
+            logger.info("periodic compact loop exiting | session=%s", sid)
+
     async def _teardown(self, session: ClientSession) -> None:
         session.stop_flag.set()
+        # Stop the periodic-compact loop before the SDK task so the loop
+        # doesn't try to queue a prompt against a session that's tearing
+        # down. Cancel is fire-and-forget: the loop is idempotent and
+        # handles CancelledError internally.
+        compact_task = session.compact_task
+        if compact_task and not compact_task.done():
+            compact_task.cancel()
+            try:
+                await asyncio.wait_for(compact_task, timeout=5.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
+            except Exception:
+                logger.exception(
+                    "periodic compact task exit raised | session=%s",
+                    session.session_id,
+                )
+        session.compact_task = None
+
         try:
             session.in_queue.put_nowait(_STOP)
         except asyncio.QueueFull:
