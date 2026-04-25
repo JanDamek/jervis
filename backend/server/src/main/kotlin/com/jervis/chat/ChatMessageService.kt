@@ -57,13 +57,19 @@ class ChatMessageService(
 
         val nextSequence = getNextSequenceAtomic(conversationId)
 
+        // Domain timestamps split: USER carries requestTime (when the turn
+        // landed), every other role carries responseTime (when the response
+        // was produced). Sort & display fall back via responseTime ?: requestTime.
+        val now = Instant.now()
+        val isUser = role == MessageRole.USER
         val message = ChatMessageDocument(
             id = ObjectId(),
             conversationId = conversationId,
             correlationId = correlationId,
             role = role,
             content = content,
-            timestamp = Instant.now(),
+            requestTime = if (isUser) now else null,
+            responseTime = if (isUser) null else now,
             sequence = nextSequence,
             metadata = metadata,
             clientMessageId = clientMessageId,

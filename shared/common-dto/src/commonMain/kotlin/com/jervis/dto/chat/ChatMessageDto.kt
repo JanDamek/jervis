@@ -16,7 +16,10 @@ enum class ChatRole {
 data class ChatMessageDto(
     val role: ChatRole = ChatRole.USER,
     val content: String = "",
-    val timestamp: String = "", // ISO-8601 format
+    /** USER role only — when the user submitted this turn (ISO-8601 string, empty if N/A). */
+    val requestTime: String = "",
+    /** Non-USER roles — when the response landed (ISO-8601 string, empty if N/A). */
+    val responseTime: String = "",
     val correlationId: String? = null,
     val metadata: Map<String, String> = emptyMap(),
     val sequence: Long? = null,
@@ -24,4 +27,12 @@ data class ChatMessageDto(
     val isOutOfScope: Boolean = false, // Server sets true when message scope doesn't match current filter
     val isDecomposed: Boolean = false, // Master request was decomposed into sub-requests
     val parentRequestId: String? = null, // For sub-requests: ID of the master request
-)
+) {
+    /**
+     * Convenience accessor for sort / display — picks `responseTime`
+     * (non-USER) and falls back to `requestTime` (USER). Returns `""`
+     * only if both are empty (never under normal flow).
+     */
+    val effectiveTimestamp: String
+        get() = responseTime.ifEmpty { requestTime }
+}

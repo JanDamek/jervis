@@ -17,12 +17,21 @@ import java.time.Instant
  *
  * Supports efficient pagination: load last 10, then "load more" on demand.
  *
+ * Domain timestamps (per `project-domain-timestamps-audit.md`):
+ *  - role=USER → `requestTime` is set (when the user sent it).
+ *  - role=ASSISTANT/SYSTEM/BACKGROUND/ALERT → `responseTime` is set
+ *    (when the response landed).
+ *
+ * Sort / display always uses `responseTime ?: requestTime` so a single
+ * field works regardless of role.
+ *
  * @property id MongoDB ObjectId (auto-generated)
  * @property conversationId Reference to conversation thread (ChatSession or TaskDocument)
  * @property correlationId Trace ID for linking message to execution
  * @property role Who sent the message: USER, ASSISTANT, SYSTEM
  * @property content Message text
- * @property timestamp When the message was created
+ * @property requestTime When the user request landed (USER role only).
+ * @property responseTime When the response was produced (non-USER roles).
  * @property sequence Order within conversation (auto-incremented, 1, 2, 3, ...)
  * @property metadata Additional message metadata (e.g., model used, tokens, etc.)
  * @property clientMessageId Client-generated ID for deduplication on retry
@@ -36,6 +45,8 @@ import java.time.Instant
  */
 @Document(collection = "chat_messages")
 @CompoundIndex(name = "conversation_sequence_idx", def = "{'conversationId': 1, 'sequence': -1}")
+@CompoundIndex(name = "conversation_requestTime_idx", def = "{'conversationId': 1, 'requestTime': 1}")
+@CompoundIndex(name = "conversation_responseTime_idx", def = "{'conversationId': 1, 'responseTime': 1}")
 @CompoundIndex(name = "scope_idx", def = "{'conversationId': 1, 'clientId': 1, 'projectId': 1, '_id': -1}")
 data class ChatMessageDocument(
     @Id
@@ -46,7 +57,10 @@ data class ChatMessageDocument(
     val correlationId: String,
     val role: MessageRole,
     val content: String,
-    val timestamp: Instant = Instant.now(),
+    /** USER-role only — when the user submitted this turn. */
+    val requestTime: Instant? = null,
+    /** Non-USER roles — when the response landed. */
+    val responseTime: Instant? = null,
     @Indexed
     val sequence: Long,
     val metadata: Map<String, String> = emptyMap(),
@@ -62,7 +76,15 @@ data class ChatMessageDocument(
     val isDecomposed: Boolean = false,
     val subRequestIds: List<String> = emptyList(),
     val affectedScopes: List<ScopeRef> = emptyList(),
-)
+) {
+    /**
+     * Effective timestamp for sort / display — `responseTime` for non-USER
+     * messages, `requestTime` for USER. Falls back to `Instant.EPOCH` only
+     * for legacy rows that the migration somehow missed (defensive).
+     */
+    val effectiveTimestamp: Instant
+        get() = responseTime ?: requestTime ?: Instant.EPOCH
+}
 
 /**
  * Reference to a client/project scope — used in affectedScopes for cross-context master messages.

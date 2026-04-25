@@ -56,13 +56,16 @@ interface ChatMessageRepository : CoroutineCrudRepository<ChatMessageDocument, O
     suspend fun countByConversationId(conversationId: ObjectId): Long
 
     /**
-     * Count USER messages for a conversation after a given timestamp.
+     * Count USER messages for a conversation after a given request time.
      * Used to detect inline messages sent while agent was orchestrating.
+     * USER messages carry `requestTime`; non-USER roles use `responseTime`
+     * which is irrelevant here (orchestrator polls for inline USER turns
+     * arriving mid-flight).
      */
-    suspend fun countByConversationIdAndRoleAndTimestampAfter(
+    suspend fun countByConversationIdAndRoleAndRequestTimeAfter(
         conversationId: ObjectId,
         role: MessageRole,
-        timestamp: java.time.Instant,
+        requestTime: java.time.Instant,
     ): Long
 
     /**

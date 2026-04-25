@@ -14,7 +14,8 @@ fun ChatMessageDocument.toDto(): ChatMessageDto = ChatMessageDto(
         MessageRole.ALERT -> com.jervis.dto.chat.ChatRole.ALERT
     },
     content = this.content,
-    timestamp = this.timestamp.toString(),
+    requestTime = this.requestTime?.toString().orEmpty(),
+    responseTime = this.responseTime?.toString().orEmpty(),
     correlationId = this.correlationId,
     metadata = this.metadata,
     sequence = this.sequence,

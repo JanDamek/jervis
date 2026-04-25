@@ -142,6 +142,7 @@ class OrchestratorStatusHandler(
                         role = com.jervis.chat.MessageRole.ASSISTANT,
                         content = description,
                         sequence = sequence,
+                        responseTime = java.time.Instant.now(),
                         clientId = task.clientId.toString(),
                         projectId = task.projectId?.toString(),
                     ),
@@ -200,6 +201,7 @@ class OrchestratorStatusHandler(
                         content = resultSummary,
                         sequence = sequence,
                         metadata = metadata,
+                        responseTime = java.time.Instant.now(),
                         clientId = task.clientId.toString(),
                         projectId = task.projectId?.toString(),
                     ),
@@ -216,10 +218,10 @@ class OrchestratorStatusHandler(
         // Check if new user messages arrived during orchestration (inline messages)
         val hasInlineMessages = task.orchestrationStartedAt?.let { startedAt ->
             try {
-                chatMessageRepository.countByConversationIdAndRoleAndTimestampAfter(
+                chatMessageRepository.countByConversationIdAndRoleAndRequestTimeAfter(
                     conversationId = task.id.value,
                     role = com.jervis.chat.MessageRole.USER,
-                    timestamp = startedAt,
+                    requestTime = startedAt,
                 ) > 0
             } catch (e: Exception) {
                 logger.warn(e) { "Failed to check for inline messages for task ${task.id}" }
@@ -304,6 +306,7 @@ class OrchestratorStatusHandler(
                         content = cancelMsg,
                         sequence = sequence,
                         metadata = mapOf("status" to "cancelled"),
+                        responseTime = java.time.Instant.now(),
                         clientId = task.clientId.toString(),
                         projectId = task.projectId?.toString(),
                     ),
@@ -350,6 +353,7 @@ class OrchestratorStatusHandler(
                         content = errorContent,
                         sequence = sequence,
                         metadata = mapOf("status" to "error"),
+                        responseTime = java.time.Instant.now(),
                         clientId = task.clientId.toString(),
                         projectId = task.projectId?.toString(),
                     ),

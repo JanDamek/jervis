@@ -178,7 +178,8 @@ class UserTaskRpcImpl(
                             role = com.jervis.chat.MessageRole.USER,
                             content = messageContent,
                             sequence = messageSequence,
-                            timestamp = Instant.now(),
+                            // USER role → requestTime is the domain timestamp.
+                            requestTime = Instant.now(),
                         )
                     chatMessageRepository.save(userMessage)
                     logger.info {
@@ -213,7 +214,7 @@ class UserTaskRpcImpl(
                                 role = com.jervis.chat.MessageRole.USER,
                                 content = additionalInput,
                                 sequence = messageSequence,
-                                timestamp = Instant.now(),
+                                requestTime = Instant.now(),
                             )
                         chatMessageRepository.save(userMessage)
                     }
@@ -336,7 +337,7 @@ class UserTaskRpcImpl(
             role = com.jervis.chat.MessageRole.USER,
             content = response,
             sequence = messageSequence,
-            timestamp = Instant.now(),
+            requestTime = Instant.now(),
         )
         chatMessageRepository.save(userMessage)
 

@@ -77,13 +77,18 @@ class UnifiedTimelineService(
             Document("\$match", Document("conversationId", conversationId).append("\$or", orConditions))
         }
 
+        // Sort key uses domain timestamps: responseTime (non-USER) || requestTime (USER).
+        // Both are nullable Instants on the document; $ifNull picks the one that's set.
+        val effectiveTs = Document("\$ifNull", listOf("\$responseTime", "\$requestTime"))
         val chatProject = Document(
             "\$project", Document()
-                .append("_sort_ts", "\$timestamp")
+                .append("_sort_ts", effectiveTs)
                 .append("_source", Document("\$literal", "chat"))
                 .append("role", "\$role")
                 .append("content", "\$content")
-                .append("timestamp", Document("\$toString", "\$timestamp"))
+                // Both fields stringified; "" if unset (per ChatMessageDto contract).
+                .append("requestTime", Document("\$ifNull", listOf(Document("\$toString", "\$requestTime"), "")))
+                .append("responseTime", Document("\$ifNull", listOf(Document("\$toString", "\$responseTime"), "")))
                 .append("correlationId", "\$correlationId")
                 .append("metadata", "\$metadata")
                 .append("sequence", "\$sequence")
@@ -111,7 +116,10 @@ class UnifiedTimelineService(
                                 ),
                             ),
                         )
-                        .append("timestamp", Document("\$toString", "\$createdAt"))
+                        // USER_TASK rendered as ALERT/BACKGROUND — non-USER role,
+                        // so its time goes into responseTime; requestTime is "".
+                        .append("requestTime", Document("\$literal", ""))
+                        .append("responseTime", Document("\$toString", "\$createdAt"))
                         .append("correlationId", Document("\$literal", ""))
                         .append(
                             "metadata", Document(
@@ -181,7 +189,8 @@ class UnifiedTimelineService(
         return ChatMessageDto(
             role = role,
             content = doc.getString("content") ?: "",
-            timestamp = doc.getString("timestamp") ?: "",
+            requestTime = doc.getString("requestTime") ?: "",
+            responseTime = doc.getString("responseTime") ?: "",
             correlationId = doc.getString("correlationId") ?: "",
             metadata = metadata,
             sequence = (doc.get("sequence") as? Number)?.toLong() ?: 0L,

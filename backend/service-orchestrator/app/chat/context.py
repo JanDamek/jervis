@@ -12,7 +12,7 @@ Used by:
 - Background orchestrator (replaces Kotlin prepareChatHistoryPayload)
 
 MongoDB collections:
-- chat_messages:   {conversationId, role, content, timestamp, sequence, correlationId, ...}
+- chat_messages:   {conversationId, role, content, requestTime|responseTime, sequence, correlationId, ...}
 - chat_summaries:  {conversationId, sequenceStart, sequenceEnd, summary, keyDecisions, topics, ...}
 
 Note: 'conversationId' is the ObjectId linking messages to a conversation thread.
@@ -59,6 +59,28 @@ MAX_TOOL_RESULT_IN_MSG = settings.max_tool_result_in_msg
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _effective_ts(doc: dict) -> str:
+    """Read the effective timestamp from a chat_messages doc.
+
+    Domain timestamps (Fáze A): USER role carries `requestTime`,
+    every other role carries `responseTime`. Sort/display picks
+    `responseTime ?? requestTime`. Falls back to `now` only as a
+    defensive default for malformed legacy rows the migration somehow
+    missed.
+    """
+    ts = doc.get("responseTime") or doc.get("requestTime") or doc.get("timestamp")
+    if ts is None:
+        return datetime.now(timezone.utc).isoformat()
+    if isinstance(ts, str):
+        return ts
+    # datetime / bson types support .isoformat()
+    return ts.isoformat()
+
+
+# ---------------------------------------------------------------------------
 # Data classes
 # ---------------------------------------------------------------------------
 
@@ -67,7 +89,7 @@ class ChatMessage:
     """Single message from chat_messages collection."""
     role: str          # "user" | "assistant" | "system" | "background" | "alert"
     content: str
-    timestamp: str     # ISO datetime
+    timestamp: str     # ISO datetime — effective (responseTime ?? requestTime)
     sequence: int
 
 
@@ -447,7 +469,7 @@ class ChatContextAssembler:
             messages.append(ChatMessage(
                 role=role,
                 content=content,
-                timestamp=doc.get("timestamp", datetime.now(timezone.utc)).isoformat(),
+                timestamp=_effective_ts(doc),
                 sequence=doc.get("sequence", 0),
             ))
 
@@ -473,7 +495,7 @@ class ChatContextAssembler:
             messages.append(ChatMessage(
                 role=role,
                 content=doc.get("content", ""),
-                timestamp=doc.get("timestamp", datetime.now(timezone.utc)).isoformat(),
+                timestamp=_effective_ts(doc),
                 sequence=doc.get("sequence", 0),
             ))
 
@@ -712,12 +734,18 @@ class ChatContextAssembler:
                 conversation_id, len(content), len(saved_content),
             )
 
+        # Domain timestamps (Fáze A): USER carries requestTime, every other
+        # role carries responseTime. Sort/display falls back to
+        # responseTime ?? requestTime.
+        now = datetime.now(timezone.utc)
+        is_user = role.upper() == "USER"
         doc = {
             "conversationId": ObjectId(conversation_id),
             "correlationId": correlation_id,
             "role": role.upper(),
             "content": saved_content,
-            "timestamp": datetime.now(timezone.utc),
+            "requestTime": now if is_user else None,
+            "responseTime": None if is_user else now,
             "sequence": sequence,
             "metadata": metadata or {},
         }

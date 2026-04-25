@@ -210,7 +210,8 @@ class ChatRpcImpl(
                             role = MessageRole.USER,
                             content = text,
                             sequence = seq,
-                            timestamp = now,
+                            // USER role → requestTime is the domain timestamp.
+                            requestTime = now,
                         ),
                     )
                     val updated = task.copy(
@@ -472,7 +473,10 @@ class ChatRpcImpl(
                         content = "[K reakci] ${task.taskName ?: "Úloha vyžaduje pozornost"}${
                             task.pendingUserQuestion?.let { "\n\n$it" } ?: ""
                         }",
-                        timestamp = task.createdAt?.toString() ?: "",
+                        // ALERT is a non-USER role → responseTime carries the
+                        // moment the alert became visible (task.createdAt is
+                        // when it landed in the queue).
+                        responseTime = task.createdAt?.toString() ?: "",
                         messageId = task.id.toString(),
                         metadata = buildMap {
                             put("needsReaction", "true")
@@ -497,7 +501,7 @@ class ChatRpcImpl(
                     ChatMessageDto(
                         role = ChatRole.ALERT,
                         content = "[K reakci] ${q.question}",
-                        timestamp = q.createdAt.toString(),
+                        responseTime = q.createdAt.toString(),
                         messageId = q.id.toString(),
                         metadata = buildMap {
                             put("needsReaction", "true")
@@ -551,11 +555,11 @@ class ChatRpcImpl(
             val existingTaskIds = dtos.mapNotNull { it.metadata["taskId"] }.toSet()
             val dedupedUserTasks = kreakciDtos.filter { it.metadata["taskId"] !in existingTaskIds }
             // Merge: USER_TASKs always included (few items), pagination cursor only for chat_messages.
-            val merged = (dtos + dedupedUserTasks).sortedBy { it.timestamp }
+            val merged = (dtos + dedupedUserTasks).sortedBy { it.effectiveTimestamp }
             return ChatHistoryDto(
                 messages = merged,
                 hasMore = messages.size >= limit,
-                oldestMessageId = messages.firstOrNull()?.timestamp?.toString(),
+                oldestMessageId = messages.firstOrNull()?.id?.toString(),
                 userTaskCount = userTaskCount,
                 backgroundMessageCount = 0,
             )
@@ -564,7 +568,7 @@ class ChatRpcImpl(
         // ── No filterClientId — return only USER_TASKs if K reakci is active ──
         if (kreakciDtos.isNotEmpty()) {
             return ChatHistoryDto(
-                messages = kreakciDtos.sortedBy { it.timestamp },
+                messages = kreakciDtos.sortedBy { it.effectiveTimestamp },
                 hasMore = false,
                 oldestMessageId = null,
                 userTaskCount = userTaskCount,
@@ -1133,7 +1137,8 @@ private suspend fun ChatMessageDocument.toChatMessageDto(
             MessageRole.ALERT -> ChatRole.ALERT
         },
         content = content,
-        timestamp = timestamp.toString(),
+        requestTime = requestTime?.toString().orEmpty(),
+        responseTime = responseTime?.toString().orEmpty(),
         correlationId = correlationId,
         metadata = if (msgTaskId != null) metadata + ("hasGraph" to hasGraph.toString()) else metadata,
         sequence = sequence,
