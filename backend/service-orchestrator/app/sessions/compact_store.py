@@ -11,17 +11,23 @@ Document shape::
 
     {
         "_id": ObjectId(...),
-        "scope": "client:68a332...",   # or "global", "project:..." later
+        "scope": "client:68a332...",
         "content": "…markdown…",
-        "client_id": "68a332...",       # redundant for fast filtering
+        "client_id": "68a332...",
         "project_id": None,
-        "created_at": datetime,
-        "session_id": "s-abc123",       # which session produced it
-        "token_estimate": 1240,         # rough size for budget accounting
+        "session_id": "s-abc123",
+        "snapshot_at": datetime,         # domain timestamp — Claude reads it
+                                          # to know how old the narrative is
+        "token_estimate": 1240,
     }
 
+`snapshot_at` is a *domain* timestamp (input to Claude's freshness
+judgement), not an audit field. Stored explicitly so the meaning is
+unambiguous and it survives a re-import / re-shard where ObjectId
+generation_time would lie.
+
 Only the *latest* snapshot per scope is ever read when bootstrapping the
-next session — older ones are kept for audit but not surfaced.
+next session.
 """
 
 from __future__ import annotations
@@ -30,6 +36,7 @@ import datetime
 import logging
 from dataclasses import dataclass
 
+from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 
 from app.config import estimate_tokens, settings
@@ -46,6 +53,19 @@ def _db() -> AsyncIOMotorDatabase:
     return _client.get_default_database()
 
 
+def _utc_now() -> datetime.datetime:
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
+def _as_aware_utc(value: datetime.datetime) -> datetime.datetime:
+    """Mongo BSON datetimes come back naive (UTC-in-time, no tzinfo).
+    Normalise to aware UTC so arithmetic with `now(tz=UTC)` doesn't raise.
+    """
+    if value.tzinfo is None:
+        return value.replace(tzinfo=datetime.timezone.utc)
+    return value
+
+
 @dataclass
 class CompactSnapshot:
     scope: str
@@ -53,19 +73,28 @@ class CompactSnapshot:
     client_id: str | None
     project_id: str | None
     session_id: str | None
-    created_at: datetime.datetime
     token_estimate: int
+    # Domain timestamp — when this narrative was captured. Drives the
+    # freshness hint in the next session's brief.
+    snapshot_at: datetime.datetime
 
     @classmethod
     def from_doc(cls, doc: dict) -> "CompactSnapshot":
+        snapshot_at = doc.get("snapshot_at")
+        if snapshot_at is None:
+            # Legacy rows written before snapshot_at existed — fall back to
+            # the ObjectId's generation time. Acceptable approximation; new
+            # writes always set the field explicitly.
+            oid = doc.get("_id")
+            snapshot_at = oid.generation_time if isinstance(oid, ObjectId) else _utc_now()
         return cls(
             scope=doc["scope"],
             content=doc.get("content", ""),
             client_id=doc.get("client_id"),
             project_id=doc.get("project_id"),
             session_id=doc.get("session_id"),
-            created_at=doc.get("created_at") or datetime.datetime.now(datetime.timezone.utc),
             token_estimate=int(doc.get("token_estimate", 0)),
+            snapshot_at=_as_aware_utc(snapshot_at),
         )
 
 
@@ -87,14 +116,13 @@ async def save_compact(
     """Insert a new compact snapshot. Does NOT delete previous ones."""
     if not content.strip():
         raise ValueError("compact content is empty")
-    now = datetime.datetime.now(datetime.timezone.utc)
     doc = {
         "scope": scope,
         "content": content,
         "client_id": client_id,
         "project_id": project_id,
         "session_id": session_id,
-        "created_at": now,
+        "snapshot_at": _utc_now(),
         "token_estimate": estimate_tokens(content),
     }
     await _db()["compact_snapshots"].insert_one(doc)
@@ -109,7 +137,7 @@ async def load_latest(scope: str) -> CompactSnapshot | None:
     """Return the most recent snapshot for a scope or None."""
     doc = await _db()["compact_snapshots"].find_one(
         {"scope": scope},
-        sort=[("created_at", -1)],
+        sort=[("snapshot_at", -1)],
     )
     if not doc:
         return None
@@ -122,7 +150,7 @@ async def prune_old(scope: str, keep_latest: int = 10) -> int:
     Run occasionally from maintenance; not on the hot path.
     """
     coll = _db()["compact_snapshots"]
-    cursor = coll.find({"scope": scope}, sort=[("created_at", -1)]).skip(keep_latest)
+    cursor = coll.find({"scope": scope}, sort=[("snapshot_at", -1)]).skip(keep_latest)
     ids = [d["_id"] async for d in cursor]
     if not ids:
         return 0
@@ -140,9 +168,9 @@ async def ensure_indexes() -> None:
                          but the orchestrator owns index lifecycle).
     """
     db = _db()
-    # Compact snapshots — fetch by scope (latest first) + client filter.
+    # Compact snapshots — fetch latest per scope by snapshot_at.
     compact = db["compact_snapshots"]
-    await compact.create_index([("scope", 1), ("created_at", -1)])
+    await compact.create_index([("scope", 1), ("snapshot_at", -1)])
     await compact.create_index("client_id")
     # Scratchpad — primary key is (scope, namespace, key); also query by
     # scope alone (listing) and by tag for coarse filters.

@@ -277,9 +277,17 @@ async def build_brief(
     brief_parts.append("")
 
     if last_compact:
-        age = datetime.datetime.now(datetime.timezone.utc) - last_compact.created_at
-        age_str = f"{int(age.total_seconds() // 60)} min ago" if age.total_seconds() < 86400 \
-            else f"{age.days} days ago"
+        # Domain freshness hint — Claude reads `snapshot_at` to judge
+        # whether the narrative is still trustworthy or worth re-checking
+        # against scratchpad / KB.
+        age = datetime.datetime.now(datetime.timezone.utc) - last_compact.snapshot_at
+        secs = age.total_seconds()
+        if secs < 3600:
+            age_str = f"{int(secs // 60)} min ago"
+        elif secs < 86400:
+            age_str = f"{int(secs // 3600)} h ago"
+        else:
+            age_str = f"{age.days} days ago"
         brief_parts.append(f"## Previous compact ({age_str}) — loaded eagerly")
         brief_parts.append("")
         brief_parts.append(last_compact.content.strip())
