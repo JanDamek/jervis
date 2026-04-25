@@ -39,6 +39,7 @@ class OrchestratorStatusHandler(
     private val userTaskService: UserTaskService,
     private val agentOrchestratorRpc: AgentOrchestratorRpcImpl,
     private val chatMessageRepository: ChatMessageRepository,
+    private val chatMessageService: com.jervis.chat.ChatMessageService,
     private val workflowTracker: OrchestratorWorkflowTracker,
     private val projectService: ProjectService,
     private val clientRepository: ClientRepository,
@@ -135,7 +136,7 @@ class OrchestratorStatusHandler(
             // Persist as assistant message so it survives reconnects
             try {
                 val sequence = chatMessageRepository.countByConversationId(task.id.value) + 1
-                chatMessageRepository.save(
+                chatMessageService.save(
                     com.jervis.chat.ChatMessageDocument(
                         conversationId = task.id.value,
                         correlationId = task.correlationId,
@@ -193,7 +194,7 @@ class OrchestratorStatusHandler(
                     mapOf("workflowSteps" to workflowStepsJson)
                 } else emptyMap()
 
-                chatMessageRepository.save(
+                chatMessageService.save(
                     com.jervis.chat.ChatMessageDocument(
                         conversationId = task.id.value,
                         correlationId = task.correlationId,
@@ -298,7 +299,7 @@ class OrchestratorStatusHandler(
         if (task.processingMode == com.jervis.task.ProcessingMode.FOREGROUND) {
             try {
                 val sequence = chatMessageRepository.countByConversationId(task.id.value) + 1
-                chatMessageRepository.save(
+                chatMessageService.save(
                     com.jervis.chat.ChatMessageDocument(
                         conversationId = task.id.value,
                         correlationId = task.correlationId,
@@ -345,7 +346,7 @@ class OrchestratorStatusHandler(
             val errorContent = "Chyba orchestrátoru: $errorMsg"
             try {
                 val sequence = chatMessageRepository.countByConversationId(task.id.value) + 1
-                chatMessageRepository.save(
+                chatMessageService.save(
                     com.jervis.chat.ChatMessageDocument(
                         conversationId = task.id.value,
                         correlationId = task.correlationId,

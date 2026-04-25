@@ -49,6 +49,7 @@ class ChatRpcImpl(
     private val chatService: ChatService,
     private val chatMessageService: ChatMessageService,
     private val chatMessageRepository: ChatMessageRepository,
+    private val chatThreadEventPublisher: ChatThreadEventPublisher,
     private val backgroundEngine: BackgroundEngine,
     private val clientRepository: ClientRepository,
     private val projectRepository: ProjectRepository,
@@ -203,7 +204,7 @@ class ChatRpcImpl(
                     val task = taskRepository.getById(taskId) ?: return@launch
                     val now = java.time.Instant.now()
                     val seq = chatMessageRepository.countByConversationId(task.id.value) + 1
-                    chatMessageRepository.save(
+                    chatMessageService.save(
                         ChatMessageDocument(
                             conversationId = task.id.value,
                             correlationId = task.correlationId,
@@ -632,6 +633,59 @@ class ChatRpcImpl(
 
     override suspend fun getSessionConversationHistory(sessionId: String, limit: Int): ChatHistoryDto =
         loadConversationHistory("SESSION_CONV_HISTORY", sessionId, limit)
+
+    override fun subscribeChatThread(
+        threadId: String,
+        sinceMessageId: String?,
+    ): Flow<com.jervis.dto.chat.ChatThreadEvent> = flow {
+        val conversationObjectId = try {
+            ObjectId(threadId)
+        } catch (e: Exception) {
+            logger.warn { "CHAT_THREAD_SUBSCRIBE: invalid threadId=$threadId — ${e.message}" }
+            // Defensive: emit empty snapshot, then complete. The UI gets a
+            // valid stream that simply has no messages.
+            emit(com.jervis.dto.chat.ChatThreadEvent.HistoryLoaded(emptyList()))
+            return@flow
+        }
+        val sinceObjectId = sinceMessageId?.takeIf { it.isNotBlank() }?.let {
+            try { ObjectId(it) } catch (_: Exception) { null }
+        }
+
+        // Subscribe BEFORE loading the snapshot to avoid the race where a
+        // message is persisted between the load completing and the
+        // subscriber attaching — that message would never reach the UI
+        // (snapshot too early to include it, live stream too late to
+        // emit it). With the subscription open first the live flow
+        // catches it; we then dedup against the snapshot's messageIds.
+        val liveFlow = chatThreadEventPublisher.subscribe(conversationObjectId)
+        // SharedFlow.subscriptionCount only ticks once a collector starts
+        // collecting — wrapping the subscribe + dedup in a coroutineScope
+        // keeps the producer alive while the snapshot loads.
+
+        val snapshotDocs = chatMessageService.getAllMessages(conversationObjectId)
+        val filteredDocs = if (sinceObjectId == null) {
+            snapshotDocs
+        } else {
+            snapshotDocs.dropWhile { it.id <= sinceObjectId }
+        }
+        val snapshot = filteredDocs.map { it.toChatMessageDto(taskGraphExistsService) }
+        val seenIds = HashSet<String>(snapshot.size).apply { addAll(snapshot.mapNotNull { it.messageId }) }
+        emit(com.jervis.dto.chat.ChatThreadEvent.HistoryLoaded(snapshot))
+        logger.info {
+            "CHAT_THREAD_SUBSCRIBE | threadId=$threadId | snapshot=${snapshot.size} | " +
+                "since=${sinceMessageId ?: "<none>"}"
+        }
+
+        liveFlow.collect { msg ->
+            val id = msg.messageId
+            if (id != null && !seenIds.add(id)) {
+                // Dedup: snapshot already covered this message (race
+                // between load + first live emission).
+                return@collect
+            }
+            emit(com.jervis.dto.chat.ChatThreadEvent.MessageAdded(msg))
+        }
+    }
 
     /**
      * Shared loader for both task-scoped and session-scoped history.

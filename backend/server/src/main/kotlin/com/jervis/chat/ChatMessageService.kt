@@ -27,6 +27,7 @@ import java.time.Instant
 class ChatMessageService(
     private val chatMessageRepository: ChatMessageRepository,
     private val mongoTemplate: ReactiveMongoTemplate,
+    private val chatThreadEventPublisher: ChatThreadEventPublisher,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -84,6 +85,10 @@ class ChatMessageService(
             "MESSAGE_ADDED | conversationId=$conversationId | role=$role | sequence=$nextSequence | " +
                 "contentLength=${content.length} | correlationId=$correlationId"
         }
+
+        // Broadcast to subscribeChatThread listeners. No-op if nobody is
+        // currently subscribed to this conversationId.
+        chatThreadEventPublisher.broadcast(conversationId, saved.toDto())
 
         return saved
     }
@@ -227,10 +232,19 @@ class ChatMessageService(
         chatMessageRepository.findActionableBackground(conversationId)
 
     /**
-     * Save a chat message (update existing or insert new).
+     * Save a chat message (update existing or insert new) and broadcast
+     * to subscribeChatThread listeners on the same `conversationId`.
+     *
+     * Used by call sites that already built their own ChatMessageDocument
+     * (re-qualifier path, OrchestratorStatusHandler, UserTaskRpcImpl) —
+     * preferred over `chatMessageRepository.save` so the push channel
+     * fires consistently.
      */
-    suspend fun save(message: ChatMessageDocument): ChatMessageDocument =
-        chatMessageRepository.save(message)
+    suspend fun save(message: ChatMessageDocument): ChatMessageDocument {
+        val saved = chatMessageRepository.save(message)
+        chatThreadEventPublisher.broadcast(saved.conversationId, saved.toDto())
+        return saved
+    }
 
     /**
      * Load messages filtered to a specific role only (newest first, chronological order).

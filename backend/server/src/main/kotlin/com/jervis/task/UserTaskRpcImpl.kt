@@ -32,6 +32,7 @@ class UserTaskRpcImpl(
     private val taskService: TaskService,
     private val notificationRpc: NotificationRpcImpl,
     private val chatMessageRepository: com.jervis.chat.ChatMessageRepository,
+    private val chatMessageService: com.jervis.chat.ChatMessageService,
     private val taskRepository: com.jervis.task.TaskRepository,
     private val chatService: com.jervis.chat.ChatService,
     private val meetingAttendApprovalService: com.jervis.meeting.MeetingAttendApprovalService,
@@ -181,7 +182,7 @@ class UserTaskRpcImpl(
                             // USER role → requestTime is the domain timestamp.
                             requestTime = Instant.now(),
                         )
-                    chatMessageRepository.save(userMessage)
+                    chatMessageService.save(userMessage)
                     logger.info {
                         "USER_TASK_RESPONSE_SAVED | taskId=${task.id} | sequence=$messageSequence | processingMode=FOREGROUND | queuePosition=${updatedTask.queuePosition} | answeredQuestion=${task.pendingUserQuestion != null}"
                     }
@@ -216,7 +217,7 @@ class UserTaskRpcImpl(
                                 sequence = messageSequence,
                                 requestTime = Instant.now(),
                             )
-                        chatMessageRepository.save(userMessage)
+                        chatMessageService.save(userMessage)
                     }
 
                     logger.info { "USER_TASK_RETURNED_TO_BACKGROUND | taskId=${task.id} | processingMode=BACKGROUND" }
@@ -339,7 +340,7 @@ class UserTaskRpcImpl(
             sequence = messageSequence,
             requestTime = Instant.now(),
         )
-        chatMessageRepository.save(userMessage)
+        chatMessageService.save(userMessage)
 
         logger.info { "TASK_INLINE_RESPONSE | taskId=$taskId | state=INDEXING" }
 

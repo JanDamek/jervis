@@ -4,6 +4,7 @@ import com.jervis.dto.chat.AttachmentDto
 import com.jervis.dto.chat.ChatHistoryDto
 import com.jervis.dto.chat.ChatMessageDto
 import com.jervis.dto.chat.ChatResponseDto
+import com.jervis.dto.chat.ChatThreadEvent
 import com.jervis.dto.chat.SiriQueryResponse
 import com.jervis.dto.chat.TtsChunkEvent
 import com.jervis.dto.chat.VoiceAudioChunk
@@ -71,6 +72,31 @@ interface IChatService {
         filterProjectId: String? = null,
         filterGroupId: String? = null,
     ): ChatHistoryDto
+
+    /**
+     * Subscribe to a chat thread — push-only replacement for the
+     * `getChatHistory` polling pattern.
+     *
+     * First emission is always [ChatThreadEvent.HistoryLoaded] with the
+     * full chronological snapshot (or the slice newer than
+     * `sinceMessageId` on resume). Every subsequent emission is one
+     * [ChatThreadEvent.MessageAdded] as the server persists into
+     * `chat_messages` for this `threadId`. The flow stays open until
+     * the client cancels.
+     *
+     * `threadId` is the `conversationId` on `chat_messages` — for the
+     * Claude session manager this is `ChatSessionDocument._id`; for
+     * the LangGraph task path it is `TaskDocument._id`. UI passes
+     * whichever id the surface owns.
+     *
+     * Per `architecture-push-only-streams.md`: the bubble list is built
+     * by clearing on `HistoryLoaded` and appending on `MessageAdded`.
+     * No mutable in-place edits of existing rows.
+     */
+    fun subscribeChatThread(
+        threadId: String,
+        sinceMessageId: String? = null,
+    ): Flow<ChatThreadEvent>
 
     /**
      * Phase 5 chat-as-primary: load the message history of a single task's
