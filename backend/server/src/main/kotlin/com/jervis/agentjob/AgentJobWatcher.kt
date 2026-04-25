@@ -60,6 +60,7 @@ class AgentJobWatcher(
     private val agentJobRecordRepository: AgentJobRecordRepository,
     private val agentWorkspaceService: AgentWorkspaceService,
     private val projectRepository: com.jervis.project.ProjectRepository,
+    private val agentJobDispatcher: AgentJobDispatcher,
 ) {
     private val logger = KotlinLogging.logger {}
     private val supervisor = SupervisorJob()
@@ -111,22 +112,46 @@ class AgentJobWatcher(
         logger.info { "startup reconcile | ${nonTerminal.size} non-terminal records — sweeping" }
 
         val client = ensureClient()
-        for (record in nonTerminal.filter { it.state == AgentJobState.RUNNING }) {
-            val jobName = record.kubernetesJobName
-            val job = jobName?.let {
-                withContext(Dispatchers.IO) {
-                    client.batch().v1().jobs().inNamespace(NAMESPACE).withName(it).get()
+        for (record in nonTerminal) {
+            when (record.state) {
+                AgentJobState.RUNNING -> {
+                    val jobName = record.kubernetesJobName
+                    val job = jobName?.let {
+                        withContext(Dispatchers.IO) {
+                            client.batch().v1().jobs().inNamespace(NAMESPACE).withName(it).get()
+                        }
+                    }
+                    when {
+                        job == null -> markError(
+                            record,
+                            reason = "Orchestrator restart lost track of K8s Job '${jobName ?: "<none>"}'",
+                        )
+                        isComplete(job) -> finishSucceeded(record)
+                        isFailed(job) -> finishFailed(record, job)
+                        // Active / Pending / Suspended — the Watch will deliver the
+                        // subsequent transition; leave the record alone.
+                    }
                 }
-            }
-            when {
-                job == null -> markError(
-                    record,
-                    reason = "Orchestrator restart lost track of K8s Job '${jobName ?: "<none>"}'",
-                )
-                isComplete(job) -> finishSucceeded(record)
-                isFailed(job) -> finishFailed(record, job)
-                // Active / Pending / Suspended — the Watch will deliver the
-                // subsequent transition; leave the record alone.
+                AgentJobState.QUEUED -> {
+                    // QUEUED with no kubernetesJobName means dispatch crashed
+                    // before it could create the K8s Job. The record is
+                    // permanently stuck — no Watch event will ever fire.
+                    // QUEUED with kubernetesJobName means dispatch crashed
+                    // between Job create and state save; the Watch will
+                    // deliver the eventual terminal transition.
+                    if (record.kubernetesJobName.isNullOrBlank()) {
+                        markError(
+                            record,
+                            reason = "Stuck QUEUED on startup — dispatch never created K8s Job",
+                        )
+                    }
+                }
+                AgentJobState.WAITING_USER -> {
+                    // User must resolve via UI / approval flow. Leave alone.
+                }
+                else -> {
+                    // Terminal states excluded by the query filter; unreachable.
+                }
             }
         }
     }
@@ -217,7 +242,7 @@ class AgentJobWatcher(
                 artifacts = changedFiles,
                 completedAt = Instant.now(),
             )
-            agentJobRecordRepository.save(updated)
+            agentJobDispatcher.saveAndEmit(updated)
             logger.info { "terminal | job=${record.id} → DONE sha=${commitSha ?: "<none>"} (${changedFiles.size} files)" }
         } else {
             markError(
@@ -263,7 +288,7 @@ class AgentJobWatcher(
             errorMessage = reason,
             completedAt = Instant.now(),
         )
-        agentJobRecordRepository.save(updated)
+        agentJobDispatcher.saveAndEmit(updated)
         logger.warn { "terminal | job=${record.id} → ERROR: $reason" }
     }
 
