@@ -197,15 +197,83 @@ async def build_brief(
         "commits+pushes on `branch_name`, calls `report_done` when finished. Returns the `agentJobId`."
     )
     brief_parts.append(
-        "- `get_agent_job_status(agent_job_id)` — poll lifecycle (QUEUED / RUNNING / WAITING_USER / DONE / ERROR / CANCELLED) "
-        "+ K8s pod phase. Read this instead of assuming the job is still running."
+        "- `get_agent_job_status(agent_job_id)` — read lifecycle "
+        "(QUEUED / RUNNING / WAITING_USER / DONE / ERROR / CANCELLED) + K8s pod phase + result/error fields."
     )
     brief_parts.append(
         "- `abort_agent_job(agent_job_id, reason)` — cancel + release worktree if you no longer need the result."
     )
+    brief_parts.append("")
+    brief_parts.append("#### Tracking dispatched jobs — MANDATORY discipline")
+    brief_parts.append("")
     brief_parts.append(
-        "The user will merge the pushed branch manually; DO NOT open a pull request from your side. "
-        "A worktree is created per job so two agents can edit the same project concurrently without stepping on each other."
+        "After `dispatch_agent_job` returns an `agentJobId`, you OWN that job's "
+        "tracking until it reaches a terminal state (DONE / ERROR / CANCELLED). "
+        "Past sessions burned the user by reporting the initial RUNNING as proof "
+        "of ongoing success — actual jobs failed within ~90 s and the session "
+        "kept fabricating progress (\"agent is reading the code\") for minutes. "
+        "That ends now."
+    )
+    brief_parts.append("")
+    brief_parts.append("**Mandatory loop after every `dispatch_agent_job`:**")
+    brief_parts.append(
+        "1. Immediately call `get_agent_job_status(agentJobId)`. Report the "
+        "initial state (QUEUED / RUNNING) to the user verbatim — no embellishment."
+    )
+    brief_parts.append(
+        "2. Re-poll roughly every 30-60 s. Report any state change as it happens "
+        "(e.g. RUNNING → DONE or RUNNING → ERROR)."
+    )
+    brief_parts.append(
+        "3. Stop polling only when state is terminal (DONE / ERROR / CANCELLED) "
+        "or when the user explicitly tells you to."
+    )
+    brief_parts.append(
+        "4. On **DONE**: read `result_summary`, `git_commit_sha`, `artifacts` "
+        "(changed files) directly from the status response. Report those facts. "
+        "Don't paraphrase what the agent \"did\" — quote what `result_summary` says."
+    )
+    brief_parts.append(
+        "5. On **ERROR**: read `error_message` IN FULL. It typically contains "
+        "the failing pod's last log lines. Diagnose from those (e.g. "
+        "ENAMETOOLONG → entrypoint argv blow-up; PermissionError → fsGroup; "
+        "branch already exists → workspace prep). Propose a specific next "
+        "action: retry with different input, abort, escalate to user. NEVER "
+        "silently continue with another dispatch as if nothing happened."
+    )
+    brief_parts.append(
+        "6. On **CANCELLED**: report and stop. Don't auto-redispatch."
+    )
+    brief_parts.append("")
+    brief_parts.append("**Forbidden behaviours (these mislead the user):**")
+    brief_parts.append(
+        "- ❌ \"The agent is reading the code / implementing the feature / "
+        "running tests\" — you have NO visibility into what the agent is doing "
+        "internally. Only its lifecycle state and `result_summary` after DONE. "
+        "Don't speculate about progress."
+    )
+    brief_parts.append(
+        "- ❌ Treating one early `RUNNING` status as proof of ongoing success. "
+        "K8s Jobs can fail in seconds (image pull, MCP config, permission, "
+        "OOM, container crash)."
+    )
+    brief_parts.append(
+        "- ❌ Reporting \"agent is still working\" without a fresh "
+        "`get_agent_job_status` call less than ~90 s old."
+    )
+    brief_parts.append(
+        "- ❌ Reporting DONE without `state: DONE` in the status response."
+    )
+    brief_parts.append(
+        "- ❌ Re-dispatching the same task on a fresh branch after an ERROR "
+        "without first reading `error_message` and stating to the user what "
+        "you think went wrong + why the new attempt would do better."
+    )
+    brief_parts.append("")
+    brief_parts.append(
+        "The user will merge the pushed branch manually; DO NOT open a pull "
+        "request from your side. A worktree is created per job so two agents "
+        "can edit the same project concurrently without stepping on each other."
     )
     brief_parts.append("")
     brief_parts.append("### Scratchpad vs Thought Map vs AgentJobRecord — decision matrix")
