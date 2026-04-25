@@ -178,6 +178,9 @@ if [ "$CURRENT_BRANCH" != "$EXPECTED_BRANCH" ]; then
     write_result false "Workspace on wrong branch: '$CURRENT_BRANCH' (expected '$EXPECTED_BRANCH')"
     exit 1
 fi
+# Note: no pull/rebase here. Sub-task agents work in isolated worktrees;
+# merge of sub-branches → task branch is the server's responsibility post-DONE.
+# Any auto-rebase here would be destructive against another agent's local state.
 
 # ---- Brief + system prompt ----
 if [ ! -f "$BRIEF_FILE" ]; then

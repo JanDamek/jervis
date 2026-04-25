@@ -183,12 +183,47 @@ class AgentWorkspaceService(
         branchName: String,
         from: String,
     ) {
-        val command = listOf(
-            "git", "worktree", "add",
-            worktreePath.toString(),
-            "-b", branchName,
-            from,
-        )
+        // Prune stale `.git/worktrees/<name>` metadata left by a previous
+        // dispatch that crashed before `releaseWorktreeForJob` ran. Without
+        // this, `git worktree add` complains that the path is already
+        // registered even though the directory is gone.
+        withContext(Dispatchers.IO) {
+            gitRepositoryService.executeGitCommand(
+                command = listOf("git", "worktree", "prune"),
+                workingDir = baseDir,
+            )
+        }
+
+        // Reuse the branch if a previous dispatch already created it
+        // (locally or on origin). The agent picks up wherever the prior
+        // run left off — its first action is `git pull --rebase` so any
+        // upstream commits are folded in, then it works on top.
+        val branchExists = withContext(Dispatchers.IO) {
+            val local = gitRepositoryService.executeGitCommand(
+                command = listOf("git", "show-ref", "--verify", "--quiet", "refs/heads/$branchName"),
+                workingDir = baseDir,
+            )
+            if (local.success) return@withContext true
+            val remote = gitRepositoryService.executeGitCommand(
+                command = listOf("git", "show-ref", "--verify", "--quiet", "refs/remotes/origin/$branchName"),
+                workingDir = baseDir,
+            )
+            remote.success
+        }
+
+        val command = if (branchExists) {
+            logger.info {
+                "addWorktreeWithRetry | branch '$branchName' already exists — checking out existing"
+            }
+            // No -b flag: check out the existing branch into the worktree.
+            // Fast-forwards from origin will be picked up by the agent's
+            // initial pull --rebase in entrypoint-coding.sh.
+            listOf("git", "worktree", "add", worktreePath.toString(), branchName)
+        } else {
+            // Fresh branch off origin/<default>.
+            listOf("git", "worktree", "add", worktreePath.toString(), "-b", branchName, from)
+        }
+
         val maxAttempts = 5
         var attempt = 0
         while (true) {

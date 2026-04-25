@@ -3911,6 +3911,10 @@ async def dispatch_agent_job(
     ctx = types_pb2.RequestContext()
     prepare_context(ctx)
     try:
+        # No deadline: dispatch must run to completion (workspace prep +
+        # K8s Job create can take 30s+ when the base clone is cold or the
+        # server thread pool is busy). Project rule: no hard timeouts on
+        # operations — connect-level retry is handled by gRPC channel.
         resp = await server_agent_job_stub().DispatchAgentJob(
             agent_job_pb2.DispatchAgentJobRequest(
                 ctx=ctx,
@@ -3923,7 +3927,6 @@ async def dispatch_agent_job(
                 branch_name=branch_name,
                 dispatched_by=dispatched_by or "mcp:unknown",
             ),
-            timeout=60.0,
         )
     except Exception as e:
         return f"Error dispatching agent job: {str(e)[:300]}"
