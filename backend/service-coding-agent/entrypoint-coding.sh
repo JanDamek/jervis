@@ -222,7 +222,14 @@ fi
 # --append-system-prompt "$(cat …)" — passing 4 KB+ system prompt as
 # inline argv hit ENAMETOOLONG on Claude CLI 2.x, which appears to
 # interpret long values as file paths and call open() on them.
-CLAUDE_ARGS=(--dangerously-skip-permissions --print)
+#
+# --output-format stream-json emits JSONL events (one JSON / line) for
+# every assistant message, tool_use, tool_result, system event. Claude
+# CLI requires --verbose alongside stream-json. We tee output so the
+# pod stdout flows to fluent-bit → Kibana (operator archive) AND the
+# JSONL persists to .jervis/claude-stream.jsonl for the backend narrative
+# parser (AgentNarrativeEvent stream — Fáze J).
+CLAUDE_ARGS=(--dangerously-skip-permissions --print --output-format stream-json --verbose)
 if [ -f "$CLAUDE_MD" ]; then
     CLAUDE_ARGS+=(--append-system-prompt-file "$CLAUDE_MD")
 fi
@@ -230,9 +237,12 @@ if [ -f "$MCP_CONFIG_PATH" ]; then
     CLAUDE_ARGS+=(--mcp-config "$MCP_CONFIG_PATH")
 fi
 
+CLAUDE_STREAM_FILE="$WORKSPACE/.jervis/claude-stream.jsonl"
+: > "$CLAUDE_STREAM_FILE"
+
 set +e
-claude "${CLAUDE_ARGS[@]}" "$(cat "$BRIEF_FILE")"
-CLAUDE_EC=$?
+claude "${CLAUDE_ARGS[@]}" "$(cat "$BRIEF_FILE")" | tee "$CLAUDE_STREAM_FILE"
+CLAUDE_EC=${PIPESTATUS[0]}
 set -e
 
 if [ "$CLAUDE_EC" -eq 0 ]; then
