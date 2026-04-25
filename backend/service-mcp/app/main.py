@@ -2684,6 +2684,99 @@ async def get_pod_logs(namespace: str, pod_name: str, tail_lines: int = 100) -> 
 
 
 @mcp.tool
+async def kibana_search_logs(
+    app: str = "",
+    pod_name: str = "",
+    search_text: str = "",
+    since_minutes: int = 60,
+    size: int = 50,
+) -> str:
+    """Search Kubernetes pod logs across the cluster via Kibana / Elasticsearch.
+
+    Use when:
+      - Iterating on a deployment and need to debug why a pod failed.
+      - Checking historical errors that scrolled off `get_pod_logs` tail
+        window (default 100 lines).
+      - Cross-pod searches (e.g. all errors from any jervis-* app in last hour).
+
+    For live recent logs of a single running pod, prefer `get_pod_logs`.
+
+    Args:
+        app: Match `kubernetes.labels.app` exactly (e.g. "jervis-server").
+            Empty = no app filter.
+        pod_name: Substring match on `kubernetes.pod.name`. Empty = no
+            pod filter. Useful for K8s Jobs whose pod names share a prefix.
+        search_text: Free-text phrase to look for in the `log` field
+            (case-sensitive Elasticsearch `match_phrase`). Empty = no
+            content filter.
+        since_minutes: How far back to search. 1-1440 (1 minute to 24 hours).
+        size: Maximum number of hits to return. 1-200.
+    """
+    since_minutes = max(1, min(since_minutes, 1440))
+    size = max(1, min(size, 200))
+
+    must: list[dict] = [
+        {"range": {"@timestamp": {"gte": f"now-{since_minutes}m"}}},
+    ]
+    if app:
+        must.append({"term": {"kubernetes.labels.app": app}})
+    if pod_name:
+        must.append({"wildcard": {"kubernetes.pod.name": f"*{pod_name}*"}})
+    if search_text:
+        must.append({"match_phrase": {"log": search_text}})
+
+    body = {
+        "size": size,
+        "sort": [{"@timestamp": "asc"}],
+        "_source": ["@timestamp", "log", "kubernetes.labels.app", "kubernetes.pod.name"],
+        "query": {"bool": {"must": must}},
+    }
+
+    url = (
+        f"{settings.kibana_url.rstrip('/')}"
+        f"/api/console/proxy?path=k8s-logs-*%2F_search&method=POST"
+    )
+    headers = {"kbn-xsrf": "true", "Content-Type": "application/json"}
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(url, json=body, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPError as e:
+        return f"Error: kibana request failed: {str(e)[:300]}"
+    except Exception as e:
+        return f"Error: {str(e)[:300]}"
+
+    hits = data.get("hits", {}).get("hits", [])
+    if not hits:
+        return (
+            f"No matches in last {since_minutes}m "
+            f"(app='{app or '*'}', pod='{pod_name or '*'}', text='{search_text or '*'}')."
+        )
+
+    lines: list[str] = []
+    lines.append(
+        f"Found {len(hits)} of "
+        f"{data.get('hits', {}).get('total', {}).get('value', '?')} "
+        f"matches (last {since_minutes}m, app='{app or '*'}', "
+        f"pod='{pod_name or '*'}', text='{search_text or '*'}'):"
+    )
+    for h in hits:
+        src = h.get("_source", {})
+        ts = src.get("@timestamp", "?")
+        labels = src.get("kubernetes", {}).get("labels", {}) if isinstance(src.get("kubernetes"), dict) else {}
+        # _source flattening varies — handle both nested and flat keys.
+        app_label = labels.get("app") or src.get("kubernetes.labels.app", "?")
+        pod = src.get("kubernetes", {}).get("pod", {}).get("name") if isinstance(src.get("kubernetes"), dict) else None
+        if not pod:
+            pod = src.get("kubernetes.pod.name", "?")
+        log_line = (src.get("log") or "").rstrip()
+        lines.append(f"[{ts}] {app_label}/{pod}: {log_line}")
+    return "\n".join(lines)
+
+
+@mcp.tool
 async def get_deployment_status(namespace: str, name: str) -> str:
     """Get detailed status of a deployment including conditions and recent events.
 

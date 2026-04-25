@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     # O365 Gateway service – shared, no prefix
     o365_gateway_url: str = "http://jervis-o365-gateway:8080"
 
+    # Kibana / Elasticsearch (cluster log search) – shared, no prefix
+    # Default = in-cluster Service DNS in the `logging` namespace.
+    kibana_url: str = "http://kibana.logging.svc.cluster.local:5601"
+
     # Default tenant context (MCP-specific, keep MCP_ prefix)
     default_client_id: str = Field(default="", validation_alias="MCP_DEFAULT_CLIENT_ID")
     default_project_id: str = Field(default="", validation_alias="MCP_DEFAULT_PROJECT_ID")
