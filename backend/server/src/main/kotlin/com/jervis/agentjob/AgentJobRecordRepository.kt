@@ -75,4 +75,15 @@ interface AgentJobRecordRepository : CoroutineCrudRepository<AgentJobRecord, Age
     suspend fun countByClientIdAndState(clientId: ClientId, state: AgentJobState): Long
 
     suspend fun findByKubernetesJobName(kubernetesJobName: String): AgentJobRecord?
+
+    /**
+     * Recent terminal records — used by the sidebar Background section to
+     * surface DONE / ERROR / CANCELLED rows within the configured
+     * "include terminal for hours" window. Filtered + sorted server-side
+     * (DB-only filtering rule), no app-level reduction.
+     */
+    suspend fun findByStateInAndCompletedAtAfterOrderByCompletedAtDesc(
+        states: List<AgentJobState>,
+        completedAt: java.time.Instant,
+    ): Flow<AgentJobRecord>
 }

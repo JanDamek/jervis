@@ -211,6 +211,8 @@ object NetworkModule {
             timeTrackingService = rpcClient.withService<ITimeTrackingService>(),
             urgencyConfigService = rpcClient.withService<com.jervis.service.urgency.IUrgencyConfigRpc>(),
             ttsRuleService = rpcClient.withService<com.jervis.service.tts.ITtsRuleService>(),
+            agentJobService = rpcClient.withService<com.jervis.service.agentjob.IAgentJobService>(),
+            vncService = rpcClient.withService<com.jervis.service.vnc.IVncService>(),
         )
 
     /**
@@ -254,9 +256,11 @@ object NetworkModule {
         val timeTrackingService: ITimeTrackingService,
         val urgencyConfigService: com.jervis.service.urgency.IUrgencyConfigRpc,
         val ttsRuleService: com.jervis.service.tts.ITtsRuleService,
+        val agentJobService: com.jervis.service.agentjob.IAgentJobService,
+        val vncService: com.jervis.service.vnc.IVncService,
     ) {
         /** Number of service stubs in this container. */
-        fun countServices(): Int = 36
+        fun countServices(): Int = 38
 
         override fun toString() = "Services(${countServices()} stubs)"
     }

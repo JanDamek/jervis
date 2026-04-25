@@ -109,6 +109,8 @@ class JervisRepository private constructor(
     val timeTracking: ITimeTrackingService get() = servicesProvider().timeTrackingService
     val urgencyConfig: com.jervis.service.urgency.IUrgencyConfigRpc get() = servicesProvider().urgencyConfigService
     val ttsRules: com.jervis.service.tts.ITtsRuleService get() = servicesProvider().ttsRuleService
+    val agentJobs: com.jervis.service.agentjob.IAgentJobService get() = servicesProvider().agentJobService
+    val vnc: com.jervis.service.vnc.IVncService get() = servicesProvider().vncService
 
     // ─── Resilient call wrapper ─────────────────────────────────────
 
