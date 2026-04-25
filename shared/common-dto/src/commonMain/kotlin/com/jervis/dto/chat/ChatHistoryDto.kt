@@ -13,4 +13,10 @@ data class ChatHistoryDto(
     val activeGroupId: String? = null,
     val userTaskCount: Int = 0,
     val backgroundMessageCount: Int = 0,
+    /**
+     * Conversation thread id (= ChatMessageDocument.conversationId) — used by
+     * the UI to attach a `subscribeChatThread` Flow after the initial pull.
+     * Null when no session exists yet (fresh client, no message ever sent).
+     */
+    val sessionId: String? = null,
 )

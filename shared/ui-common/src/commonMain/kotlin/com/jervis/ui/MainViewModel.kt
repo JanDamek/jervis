@@ -310,6 +310,12 @@ class MainViewModel(
             is JervisEvent.MeetingHelperMessage -> { /* Handled by MeetingViewModel */ }
             is JervisEvent.MeetingRecordingTrigger -> { /* Handled by desktop ConnectionState */ }
             is JervisEvent.MeetingRecordingStop -> { /* Handled by desktop ConnectionState */ }
+            is JervisEvent.AgentJobStateChanged -> {
+                // Consumed by the sidebar Background section (Fáze K). The
+                // dedicated BackgroundViewModel collects subscribeToEvents
+                // independently and filters on this subclass; the global
+                // handler stays a no-op so we don't double-emit.
+            }
         }
     }
 

@@ -138,6 +138,16 @@ class ChatViewModel(
     val sidebarRemovedTaskIds: StateFlow<Set<String>> = _sidebarRemovedTaskIds.asStateFlow()
 
     /**
+     * Currently subscribed thread id (= chat_messages.conversationId).
+     * Updated from `applyHistory` whenever a snapshot is loaded; the
+     * `chatThreadJob` re-subscribes on every change so MessageAdded
+     * pushes flow into [_chatMessages] for whichever thread the UI is
+     * showing right now.
+     */
+    private val _chatSessionId = MutableStateFlow<String?>(null)
+    private var chatThreadJob: Job? = null
+
+    /**
      * Phase 5 — draft persistence: unsent text per conversation. Key = null
      * for main chat, taskId for task conversations. Saved to server via
      * chatService.saveDraft on every conversation switch. Loaded from server
@@ -1757,6 +1767,10 @@ class ChatViewModel(
         _chatMessages.value = newMessages + deduped
         _hasMore.value = history.hasMore
         oldestMessageId = history.oldestMessageId
+        // Whenever the snapshot tells us which thread it belongs to, swap
+        // the live MessageAdded subscription onto that conversationId.
+        // applySubscription is idempotent — same id → no-op.
+        history.sessionId?.let { applyChatThreadSubscription(it) }
         _compressionBoundaries.value = history.compressionBoundaries
 
         // Restore UI scope from chat session (persisted client/project/group)
@@ -1780,6 +1794,91 @@ class ChatViewModel(
                 _pendingMessageInfo.value = null
             }
         }
+    }
+
+    /**
+     * Wire (or rewire) the live `subscribeChatThread` collector. The
+     * snapshot from `getChatHistory` already populated `_chatMessages`,
+     * so `HistoryLoaded` events are dropped — only `MessageAdded` is
+     * applied (deduped by id against whatever is already in
+     * `_chatMessages`). Idempotent on same threadId.
+     *
+     * Per `architecture-push-only-streams.md` rule #9: live UI surfaces
+     * collect a single Flow for deltas after the initial snapshot.
+     * Pull paging (`loadMoreHistory`) stays on the unary path.
+     */
+    private fun applyChatThreadSubscription(threadId: String) {
+        if (threadId.isBlank()) return
+        if (_chatSessionId.value == threadId && chatThreadJob?.isActive == true) return
+        _chatSessionId.value = threadId
+        chatThreadJob?.cancel()
+        chatThreadJob = scope.launch {
+            try {
+                connectionManager.resilientFlow { services ->
+                    services.chatService.subscribeChatThread(
+                        threadId = threadId,
+                        sinceMessageId = null,
+                    )
+                }.collect { event ->
+                    when (event) {
+                        is com.jervis.dto.chat.ChatThreadEvent.HistoryLoaded -> {
+                            // Snapshot already covered by applyHistory; skip.
+                            // Re-subscribe on reconnect would otherwise replace
+                            // in-flight messages with the server's snapshot
+                            // (losing optimistic local state).
+                        }
+                        is com.jervis.dto.chat.ChatThreadEvent.MessageAdded -> {
+                            applyMessageAdded(event.message)
+                        }
+                    }
+                }
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (e: Exception) {
+                println("ChatViewModel: subscribeChatThread failed: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Append a single freshly-persisted message to the bubble list. Idempotent
+     * via messageId — if the bubble is already present (snapshot, optimistic
+     * insert, prior MessageAdded race) the call is a no-op.
+     */
+    private fun applyMessageAdded(dto: com.jervis.dto.chat.ChatMessageDto) {
+        val id = dto.messageId ?: return
+        val current = _chatMessages.value
+        if (current.any { it.id == id }) return
+
+        val projectId = selectedProjectId.value ?: ""
+        val sender = if (dto.role == ChatRole.USER) ChatMessage.Sender.Me else ChatMessage.Sender.Assistant
+        val msgType = when (dto.role) {
+            ChatRole.USER -> ChatMessage.MessageType.USER_MESSAGE
+            ChatRole.BACKGROUND -> {
+                if (dto.metadata["sender"] == "thinking_graph") {
+                    ChatMessage.MessageType.THINKING_GRAPH_UPDATE
+                } else {
+                    ChatMessage.MessageType.BACKGROUND_RESULT
+                }
+            }
+            ChatRole.ALERT -> ChatMessage.MessageType.URGENT_ALERT
+            else -> ChatMessage.MessageType.FINAL
+        }
+        val mapped = ChatMessage(
+            from = sender,
+            text = dto.content,
+            contextId = projectId,
+            messageType = msgType,
+            metadata = dto.metadata,
+            timestamp = dto.effectiveTimestamp,
+            workflowSteps = parseWorkflowSteps(dto.metadata),
+            sequence = dto.sequence,
+            id = id,
+            isOutOfScope = dto.isOutOfScope,
+            isDecomposed = dto.isDecomposed,
+            parentRequestId = dto.parentRequestId,
+        )
+        _chatMessages.value = current + mapped
     }
 
     private fun parseWorkflowSteps(metadata: Map<String, String>): List<ChatMessage.WorkflowStep> {

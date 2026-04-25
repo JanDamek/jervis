@@ -563,6 +563,7 @@ class ChatRpcImpl(
                 oldestMessageId = messages.firstOrNull()?.id?.toString(),
                 userTaskCount = userTaskCount,
                 backgroundMessageCount = 0,
+                sessionId = session.id.toString(),
             )
         }
 
@@ -574,6 +575,7 @@ class ChatRpcImpl(
                 oldestMessageId = null,
                 userTaskCount = userTaskCount,
                 backgroundMessageCount = 0,
+                sessionId = session.id.toString(),
             )
         }
 
@@ -585,6 +587,7 @@ class ChatRpcImpl(
             oldestMessageId = null,
             userTaskCount = userTaskCount,
             backgroundMessageCount = 0,
+            sessionId = session.id.toString(),
         )
     }
 
@@ -607,6 +610,7 @@ class ChatRpcImpl(
             activeGroupId = result.activeGroupId,
             userTaskCount = userTaskCount,
             backgroundMessageCount = result.backgroundMessageCount,
+            sessionId = session.id.toString(),
         )
     }
 
@@ -625,6 +629,7 @@ class ChatRpcImpl(
             oldestMessageId = result.oldestMessageId,
             userTaskCount = userTaskCount,
             backgroundMessageCount = result.backgroundMessageCount,
+            sessionId = session.id.toString(),
         )
     }
 
@@ -720,6 +725,7 @@ class ChatRpcImpl(
             oldestMessageId = docs.firstOrNull()?.id?.toString(),
             userTaskCount = 0,
             backgroundMessageCount = 0,
+            sessionId = conversationObjectId.toString(),
         )
     }
 
