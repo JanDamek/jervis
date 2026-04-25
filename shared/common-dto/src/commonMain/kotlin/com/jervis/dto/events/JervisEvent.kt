@@ -230,4 +230,37 @@ sealed class JervisEvent {
         val toLang: String = "",
         override val timestamp: String,
     ) : JervisEvent()
+
+    /**
+     * AgentJobRecord lifecycle transition. Emitted by `AgentJobDispatcher`
+     * (and the K8s watcher / report_agent_done path) on every state save —
+     * QUEUED → RUNNING → DONE / ERROR / CANCELLED / WAITING_USER.
+     *
+     * Replaces orchestrator-side polling of `get_agent_job_status`: the
+     * orchestrator session subscribes once on start and reacts to each
+     * transition as it lands, so the LLM context stays grounded in real
+     * cluster state instead of fabricating progress.
+     *
+     * Sidebar Background section (UI) consumes the same stream to keep
+     * the running / queued / recent groups live.
+     */
+    @Serializable
+    data class AgentJobStateChanged(
+        val agentJobId: String,
+        val flavor: String,
+        val state: String,                 // AgentJobState name
+        val title: String,
+        val clientId: String? = null,
+        val projectId: String? = null,
+        val resourceId: String? = null,
+        val gitBranch: String? = null,
+        val gitCommitSha: String? = null,
+        val resultSummary: String? = null,
+        val errorMessage: String? = null,
+        val artifacts: List<String> = emptyList(),
+        val transitionedAt: String,
+        val startedAt: String? = null,
+        val completedAt: String? = null,
+        override val timestamp: String,
+    ) : JervisEvent()
 }

@@ -299,4 +299,20 @@ class NotificationRpcImpl : INotificationService {
         eventStreams[clientId]?.emit(event)
     }
 
+    /**
+     * Emit an AgentJobStateChanged event. Coding agents are global background
+     * jobs (the sidebar Background section is global scope per spec), so we
+     * fan out to every connected client instead of routing by clientId. UIs
+     * can filter on the event's clientId/projectId fields to scope the
+     * sidebar group.
+     */
+    suspend fun emitAgentJobStateChanged(event: JervisEvent.AgentJobStateChanged) {
+        logger.debug {
+            "AgentJobStateChanged | agentJobId=${event.agentJobId} state=${event.state} " +
+                "client=${event.clientId} project=${event.projectId}"
+        }
+        eventStreams.keys().asSequence().forEach { id ->
+            emitEvent(id, event)
+        }
+    }
 }

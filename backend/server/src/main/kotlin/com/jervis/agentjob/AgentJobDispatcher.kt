@@ -11,6 +11,8 @@ import com.jervis.connection.ConnectionRepository
 import com.jervis.dto.agentjob.AgentJobFlavor
 import com.jervis.dto.agentjob.AgentJobState
 import com.jervis.dto.connection.AuthTypeEnum
+import com.jervis.dto.events.JervisEvent
+import com.jervis.rpc.NotificationRpcImpl
 import com.jervis.git.persistence.GpgCertificateDocument
 import com.jervis.git.persistence.GpgCertificateRepository
 import com.jervis.project.GitCommitConfig
@@ -74,10 +76,48 @@ class AgentJobDispatcher(
     private val clientRepository: ClientRepository,
     private val connectionRepository: ConnectionRepository,
     private val gpgCertificateRepository: GpgCertificateRepository,
+    private val notificationRpc: NotificationRpcImpl,
     @Value("\${jervis.mcp.url:http://jervis-mcp:8100}")
     private val mcpServerUrl: String,
 ) {
     private val logger = KotlinLogging.logger {}
+
+    /**
+     * Save an AgentJobRecord and immediately emit an AgentJobStateChanged
+     * push event derived from the saved row. This is the only correct
+     * way to persist a state transition — direct `agentJobRecordRepository.save`
+     * skips the push channel and leaves UI / orchestrator with stale state.
+     *
+     * Called from every transition point: dispatch (QUEUED), dispatchCoding
+     * (QUEUED → RUNNING), abort (→ CANCELLED), completeFromAgent (→ DONE
+     * or ERROR), fail (→ ERROR). [AgentJobWatcher] uses the same helper
+     * via the public extension below for symmetry.
+     */
+    suspend fun saveAndEmit(record: AgentJobRecord): AgentJobRecord {
+        val saved = agentJobRecordRepository.save(record)
+        val now = Instant.now()
+        notificationRpc.emitAgentJobStateChanged(
+            JervisEvent.AgentJobStateChanged(
+                agentJobId = saved.id.toString(),
+                flavor = saved.flavor.name,
+                state = saved.state.name,
+                title = saved.title,
+                clientId = saved.clientId?.toString(),
+                projectId = saved.projectId?.toString(),
+                resourceId = saved.resourceId,
+                gitBranch = saved.gitBranch,
+                gitCommitSha = saved.gitCommitSha,
+                resultSummary = saved.resultSummary,
+                errorMessage = saved.errorMessage,
+                artifacts = saved.artifacts,
+                transitionedAt = now.toString(),
+                startedAt = saved.startedAt?.toString(),
+                completedAt = saved.completedAt?.toString(),
+                timestamp = now.toString(),
+            ),
+        )
+        return saved
+    }
 
     companion object {
         // K8s deployment constants — mirror reference-k8s-deployment.md.
@@ -148,7 +188,7 @@ class AgentJobDispatcher(
             gitBranch = branchName,
             createdAt = Instant.now(),
         )
-        val saved = agentJobRecordRepository.save(initial)
+        val saved = saveAndEmit(initial)
         logger.info {
             "dispatch | job=$jobId flavor=$flavor client=$clientId project=$projectId " +
                 "resource=$resourceId branch=$branchName dispatchedBy=$dispatchedBy"
@@ -220,7 +260,7 @@ class AgentJobDispatcher(
             completedAt = Instant.now(),
         )
         logger.info { "abort | job=${record.id} → CANCELLED reason='$reason'" }
-        return agentJobRecordRepository.save(updated)
+        return saveAndEmit(updated)
     }
 
     /**
@@ -280,7 +320,7 @@ class AgentJobDispatcher(
                 completedAt = Instant.now(),
             )
         }
-        val saved = agentJobRecordRepository.save(updated)
+        val saved = saveAndEmit(updated)
         logger.info {
             "completeFromAgent | job=$jobId → ${saved.state} " +
                 "sha=${saved.gitCommitSha ?: "<none>"} files=${changedFiles.size}"
@@ -375,7 +415,7 @@ class AgentJobDispatcher(
                 kubernetesJobName = jobName,
                 startedAt = Instant.now(),
             )
-            agentJobRecordRepository.save(running)
+            saveAndEmit(running)
         } catch (e: Exception) {
             logger.error(e) { "dispatchCoding | K8s Job create failed for job=${record.id}" }
             // Leave the worktree in place for debug; the (upcoming) abort
@@ -747,6 +787,6 @@ class AgentJobDispatcher(
             completedAt = Instant.now(),
         )
         logger.warn { "dispatch rejected | job=${record.id} reason=$reason" }
-        return agentJobRecordRepository.save(updated)
+        return saveAndEmit(updated)
     }
 }
