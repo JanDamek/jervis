@@ -39,6 +39,9 @@ import uuid
 from dataclasses import dataclass, field
 from typing import AsyncIterator
 
+from bson import ObjectId as BsonObjectId
+
+from app.chat.context import chat_context_assembler
 from app.config import settings
 from app.sessions.client_brief_builder import build_brief
 from app.sessions.compact_store import save_compact, scope_for_client
@@ -325,7 +328,16 @@ class ClientSessionManager:
             session.stop_flag.set()
 
     async def _one_turn(self, session: ClientSession, message: str) -> AsyncIterator[dict]:
-        """Push one prompt to the session task and stream responses back."""
+        """Push one prompt to the session task and stream responses back.
+
+        Persistence model (Fáze B — immutable bubbles per natural break):
+        every assistant text block is accumulated into `bubble_buffer`.
+        On a natural break — sentence end (`. ! ? \\n\\n`), a tool_use
+        boundary, a ResultMessage / `_TURN_DONE`, or the buffer reaching
+        500 chars — the buffer is flushed as a fresh `chat_messages`
+        INSERT (never UPDATE). This way long generations create multiple
+        immutable bubbles instead of a single rolling document.
+        """
         sid = session.session_id
         # Drain anything left in out_queue from a previous turn that was
         # cancelled upstream (e.g. UI disconnected). Without this we'd
@@ -340,8 +352,51 @@ class ClientSessionManager:
         if drained:
             logger.info("one_turn: drained %d stale items | session=%s", drained, sid)
         logger.info("one_turn: dispatching query | session=%s msg_len=%d", sid, len(message))
+
+        # Persist the USER turn first so reload sees the prompt before
+        # any assistant chunk lands. Forces a sequence number bump.
+        try:
+            user_seq = await chat_context_assembler.get_next_sequence(sid)
+            await chat_context_assembler.save_message(
+                conversation_id=sid,
+                role="USER",
+                content=message,
+                correlation_id=str(BsonObjectId()),
+                sequence=user_seq,
+                metadata={},
+                client_id=session.client_id,
+                project_id=session.project_id,
+            )
+        except Exception:
+            logger.exception("one_turn: USER persist failed | session=%s", sid)
+
         await session.in_queue.put(message)
         yield {"type": "thinking", "content": "Zpracovávám dotaz...", "metadata": {}}
+
+        # Per-natural-break bubble buffer.
+        bubble_buffer: list[str] = []
+
+        async def _flush_bubble(reason: str) -> None:
+            if not bubble_buffer:
+                return
+            content = "".join(bubble_buffer).strip()
+            bubble_buffer.clear()
+            if not content:
+                return
+            try:
+                seq = await chat_context_assembler.get_next_sequence(sid)
+                await chat_context_assembler.save_message(
+                    conversation_id=sid,
+                    role="ASSISTANT",
+                    content=content,
+                    correlation_id=str(BsonObjectId()),
+                    sequence=seq,
+                    metadata={"chunkBoundary": reason},
+                    client_id=session.client_id,
+                    project_id=session.project_id,
+                )
+            except Exception:
+                logger.exception("one_turn: ASSISTANT persist failed | session=%s reason=%s", sid, reason)
 
         # No hard cap on total turn duration — project rule "NEVER hard
         # timeouts, stream + heartbeat". Loop until _TURN_DONE, __error__,
@@ -362,9 +417,12 @@ class ClientSessionManager:
                 continue
 
             if item is _TURN_DONE:
+                # Flush any unpersisted text before signalling done.
+                await _flush_bubble("turn_done")
                 yield {"type": "done", "content": "", "metadata": {}}
                 return
             if isinstance(item, tuple) and item and item[0] == "__error__":
+                await _flush_bubble("error")
                 yield {"type": "error", "content": f"claude: {item[1]}"[:500]}
                 return
 
@@ -377,10 +435,23 @@ class ClientSessionManager:
                 for block in getattr(sdk_msg, "content", []) or []:
                     text = getattr(block, "text", None)
                     if text:
+                        bubble_buffer.append(text)
+                        # Natural break — sentence end punctuation OR
+                        # accumulated chars over 500. Lets the UI see a
+                        # new immutable bubble at sane boundaries.
+                        joined = "".join(bubble_buffer)
+                        if joined.rstrip().endswith((".", "!", "?")) or "\n\n" in text:
+                            await _flush_bubble("sentence")
+                        elif len(joined) >= 500:
+                            await _flush_bubble("max_chars")
                         yield {"type": "token", "content": text, "metadata": {}}
                         continue
                     tool_name = getattr(block, "name", None)
                     if tool_name:
+                        # Tool call boundary: flush whatever text the
+                        # assistant emitted up to this point as its own
+                        # bubble before the tool call interrupts.
+                        await _flush_bubble("tool_use")
                         yield {
                             "type": "thinking",
                             "content": f"Volám nástroj: {tool_name}",
@@ -391,6 +462,7 @@ class ClientSessionManager:
                 is_err = getattr(sdk_msg, "is_error", False)
                 if is_err or subtype != "success":
                     result_text = getattr(sdk_msg, "result", "") or f"subtype={subtype}"
+                    await _flush_bubble("error_result")
                     yield {"type": "error", "content": str(result_text)[:500]}
                     # fall through to the pending _TURN_DONE sentinel
                 # ResultMessage is observed but the session task still
