@@ -103,6 +103,7 @@ private fun QueueModelEntryDto.toProto(): QueueModelEntryProto =
         .setInputPricePerMillion(inputPricePerMillion)
         .setOutputPricePerMillion(outputPricePerMillion)
         .setSupportsTools(supportsTools)
+        .setSupportsStreaming(supportsStreaming)
         .setProvider(provider)
         .setStats(stats.toProto())
         .build()

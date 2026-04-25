@@ -129,4 +129,16 @@ public interface QueueModelEntryOrBuilder extends
    * <code>.jervis.server.ModelCallStats stats = 11 [json_name = "stats"];</code>
    */
   com.jervis.contracts.server.ModelCallStatsOrBuilder getStatsOrBuilder();
+
+  /**
+   * <pre>
+   * Whether the model can produce token-by-token SSE / streaming output.
+   * Default true — set false for batch-only / hang-prone models so the
+   * router skips them on streaming paths (e.g. TTS normalize).
+   * </pre>
+   *
+   * <code>bool supports_streaming = 12 [json_name = "supportsStreaming"];</code>
+   * @return The supportsStreaming.
+   */
+  boolean getSupportsStreaming();
 }

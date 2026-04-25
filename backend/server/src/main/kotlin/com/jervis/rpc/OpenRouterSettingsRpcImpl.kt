@@ -368,6 +368,7 @@ class OpenRouterSettingsRpcImpl(
             inputPricePerMillion = this.inputPricePerMillion,
             outputPricePerMillion = this.outputPricePerMillion,
             supportsTools = this.supportsTools,
+            supportsStreaming = this.supportsStreaming,
             provider = this.provider,
             stats = ModelCallStatsDto(
                 callCount = this.stats.callCount,
@@ -397,6 +398,7 @@ class OpenRouterSettingsRpcImpl(
             inputPricePerMillion = this.inputPricePerMillion,
             outputPricePerMillion = this.outputPricePerMillion,
             supportsTools = this.supportsTools,
+            supportsStreaming = this.supportsStreaming,
             provider = this.provider,
             // stats are NOT overwritten from DTO — preserved in MongoDB
         )

@@ -126,7 +126,7 @@ public final class ServerOpenRouterSettingsProto extends com.google.protobuf.Gen
       "ns\022\022\n\004free\030\t \001(\010R\004free\"r\n\nModelQueue\022\022\n\004" +
       "name\030\001 \001(\tR\004name\0226\n\006models\030\002 \003(\0132\036.jervi" +
       "s.server.QueueModelEntryR\006models\022\030\n\007enab" +
-      "led\030\003 \001(\010R\007enabled\"\261\003\n\017QueueModelEntry\022\031" +
+      "led\030\003 \001(\010R\007enabled\"\340\003\n\017QueueModelEntry\022\031" +
       "\n\010model_id\030\001 \001(\tR\007modelId\022\031\n\010is_local\030\002 " +
       "\001(\010R\007isLocal\022,\n\022max_context_tokens\030\003 \001(\005" +
       "R\020maxContextTokens\022\030\n\007enabled\030\004 \001(\010R\007ena" +
@@ -137,28 +137,29 @@ public final class ServerOpenRouterSettingsProto extends com.google.protobuf.Gen
       "ricePerMillion\022%\n\016supports_tools\030\t \001(\010R\r" +
       "supportsTools\022\032\n\010provider\030\n \001(\tR\010provide" +
       "r\0223\n\005stats\030\013 \001(\0132\035.jervis.server.ModelCa" +
-      "llStatsR\005stats\"\356\001\n\016ModelCallStats\022\035\n\ncal" +
-      "l_count\030\001 \001(\005R\tcallCount\022 \n\014total_time_s" +
-      "\030\002 \001(\001R\ntotalTimeS\022,\n\022total_input_tokens" +
-      "\030\003 \001(\003R\020totalInputTokens\022.\n\023total_output" +
-      "_tokens\030\004 \001(\003R\021totalOutputTokens\022 \n\014toke" +
-      "ns_per_s\030\005 \001(\001R\ntokensPerS\022\033\n\tlast_call\030" +
-      "\006 \001(\001R\010lastCall\"\260\002\n\017ModelStatsEntry\022\031\n\010m" +
-      "odel_id\030\001 \001(\tR\007modelId\022\035\n\ncall_count\030\002 \001" +
-      "(\005R\tcallCount\022$\n\016avg_response_s\030\003 \001(\001R\014a" +
-      "vgResponseS\022 \n\014total_time_s\030\004 \001(\001R\ntotal" +
-      "TimeS\022,\n\022total_input_tokens\030\005 \001(\003R\020total" +
-      "InputTokens\022.\n\023total_output_tokens\030\006 \001(\003" +
-      "R\021totalOutputTokens\022 \n\014tokens_per_s\030\007 \001(" +
-      "\001R\ntokensPerS\022\033\n\tlast_call\030\010 \001(\001R\010lastCa" +
-      "ll2\350\001\n\037ServerOpenRouterSettingsService\022]" +
-      "\n\013GetSettings\022+.jervis.server.GetOpenRou" +
-      "terSettingsRequest\032!.jervis.server.OpenR" +
-      "outerSettings\022f\n\021PersistModelStats\022\'.jer" +
-      "vis.server.PersistModelStatsRequest\032(.je" +
-      "rvis.server.PersistModelStatsResponseB>\n" +
-      "\033com.jervis.contracts.serverB\035ServerOpen" +
-      "RouterSettingsProtoP\001b\006proto3"
+      "llStatsR\005stats\022-\n\022supports_streaming\030\014 \001" +
+      "(\010R\021supportsStreaming\"\356\001\n\016ModelCallStats" +
+      "\022\035\n\ncall_count\030\001 \001(\005R\tcallCount\022 \n\014total" +
+      "_time_s\030\002 \001(\001R\ntotalTimeS\022,\n\022total_input" +
+      "_tokens\030\003 \001(\003R\020totalInputTokens\022.\n\023total" +
+      "_output_tokens\030\004 \001(\003R\021totalOutputTokens\022" +
+      " \n\014tokens_per_s\030\005 \001(\001R\ntokensPerS\022\033\n\tlas" +
+      "t_call\030\006 \001(\001R\010lastCall\"\260\002\n\017ModelStatsEnt" +
+      "ry\022\031\n\010model_id\030\001 \001(\tR\007modelId\022\035\n\ncall_co" +
+      "unt\030\002 \001(\005R\tcallCount\022$\n\016avg_response_s\030\003" +
+      " \001(\001R\014avgResponseS\022 \n\014total_time_s\030\004 \001(\001" +
+      "R\ntotalTimeS\022,\n\022total_input_tokens\030\005 \001(\003" +
+      "R\020totalInputTokens\022.\n\023total_output_token" +
+      "s\030\006 \001(\003R\021totalOutputTokens\022 \n\014tokens_per" +
+      "_s\030\007 \001(\001R\ntokensPerS\022\033\n\tlast_call\030\010 \001(\001R" +
+      "\010lastCall2\350\001\n\037ServerOpenRouterSettingsSe" +
+      "rvice\022]\n\013GetSettings\022+.jervis.server.Get" +
+      "OpenRouterSettingsRequest\032!.jervis.serve" +
+      "r.OpenRouterSettings\022f\n\021PersistModelStat" +
+      "s\022\'.jervis.server.PersistModelStatsReque" +
+      "st\032(.jervis.server.PersistModelStatsResp" +
+      "onseB>\n\033com.jervis.contracts.serverB\035Ser" +
+      "verOpenRouterSettingsProtoP\001b\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
@@ -212,7 +213,7 @@ public final class ServerOpenRouterSettingsProto extends com.google.protobuf.Gen
     internal_static_jervis_server_QueueModelEntry_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_server_QueueModelEntry_descriptor,
-        new java.lang.String[] { "ModelId", "IsLocal", "MaxContextTokens", "Enabled", "Label", "Capabilities", "InputPricePerMillion", "OutputPricePerMillion", "SupportsTools", "Provider", "Stats", });
+        new java.lang.String[] { "ModelId", "IsLocal", "MaxContextTokens", "Enabled", "Label", "Capabilities", "InputPricePerMillion", "OutputPricePerMillion", "SupportsTools", "Provider", "Stats", "SupportsStreaming", });
     internal_static_jervis_server_ModelCallStats_descriptor =
       getDescriptor().getMessageType(8);
     internal_static_jervis_server_ModelCallStats_fieldAccessorTable = new

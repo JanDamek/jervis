@@ -308,6 +308,23 @@ private static final long serialVersionUID = 0L;
     return stats_ == null ? com.jervis.contracts.server.ModelCallStats.getDefaultInstance() : stats_;
   }
 
+  public static final int SUPPORTS_STREAMING_FIELD_NUMBER = 12;
+  private boolean supportsStreaming_ = false;
+  /**
+   * <pre>
+   * Whether the model can produce token-by-token SSE / streaming output.
+   * Default true — set false for batch-only / hang-prone models so the
+   * router skips them on streaming paths (e.g. TTS normalize).
+   * </pre>
+   *
+   * <code>bool supports_streaming = 12 [json_name = "supportsStreaming"];</code>
+   * @return The supportsStreaming.
+   */
+  @java.lang.Override
+  public boolean getSupportsStreaming() {
+    return supportsStreaming_;
+  }
+
   private byte memoizedIsInitialized = -1;
   @java.lang.Override
   public final boolean isInitialized() {
@@ -354,6 +371,9 @@ private static final long serialVersionUID = 0L;
     }
     if (((bitField0_ & 0x00000001) != 0)) {
       output.writeMessage(11, getStats());
+    }
+    if (supportsStreaming_ != false) {
+      output.writeBool(12, supportsStreaming_);
     }
     getUnknownFields().writeTo(output);
   }
@@ -409,6 +429,10 @@ private static final long serialVersionUID = 0L;
       size += com.google.protobuf.CodedOutputStream
         .computeMessageSize(11, getStats());
     }
+    if (supportsStreaming_ != false) {
+      size += com.google.protobuf.CodedOutputStream
+        .computeBoolSize(12, supportsStreaming_);
+    }
     size += getUnknownFields().getSerializedSize();
     memoizedSize = size;
     return size;
@@ -451,6 +475,8 @@ private static final long serialVersionUID = 0L;
       if (!getStats()
           .equals(other.getStats())) return false;
     }
+    if (getSupportsStreaming()
+        != other.getSupportsStreaming()) return false;
     if (!getUnknownFields().equals(other.getUnknownFields())) return false;
     return true;
   }
@@ -493,6 +519,9 @@ private static final long serialVersionUID = 0L;
       hash = (37 * hash) + STATS_FIELD_NUMBER;
       hash = (53 * hash) + getStats().hashCode();
     }
+    hash = (37 * hash) + SUPPORTS_STREAMING_FIELD_NUMBER;
+    hash = (53 * hash) + com.google.protobuf.Internal.hashBoolean(
+        getSupportsStreaming());
     hash = (29 * hash) + getUnknownFields().hashCode();
     memoizedHashCode = hash;
     return hash;
@@ -646,6 +675,7 @@ private static final long serialVersionUID = 0L;
         statsBuilder_.dispose();
         statsBuilder_ = null;
       }
+      supportsStreaming_ = false;
       return this;
     }
 
@@ -717,6 +747,9 @@ private static final long serialVersionUID = 0L;
             : statsBuilder_.build();
         to_bitField0_ |= 0x00000001;
       }
+      if (((from_bitField0_ & 0x00000800) != 0)) {
+        result.supportsStreaming_ = supportsStreaming_;
+      }
       result.bitField0_ |= to_bitField0_;
     }
 
@@ -777,6 +810,9 @@ private static final long serialVersionUID = 0L;
       }
       if (other.hasStats()) {
         mergeStats(other.getStats());
+      }
+      if (other.getSupportsStreaming() != false) {
+        setSupportsStreaming(other.getSupportsStreaming());
       }
       this.mergeUnknownFields(other.getUnknownFields());
       onChanged();
@@ -861,6 +897,11 @@ private static final long serialVersionUID = 0L;
               bitField0_ |= 0x00000400;
               break;
             } // case 90
+            case 96: {
+              supportsStreaming_ = input.readBool();
+              bitField0_ |= 0x00000800;
+              break;
+            } // case 96
             default: {
               if (!super.parseUnknownField(input, extensionRegistry, tag)) {
                 done = true; // was an endgroup tag
@@ -1540,6 +1581,56 @@ private static final long serialVersionUID = 0L;
         stats_ = null;
       }
       return statsBuilder_;
+    }
+
+    private boolean supportsStreaming_ ;
+    /**
+     * <pre>
+     * Whether the model can produce token-by-token SSE / streaming output.
+     * Default true — set false for batch-only / hang-prone models so the
+     * router skips them on streaming paths (e.g. TTS normalize).
+     * </pre>
+     *
+     * <code>bool supports_streaming = 12 [json_name = "supportsStreaming"];</code>
+     * @return The supportsStreaming.
+     */
+    @java.lang.Override
+    public boolean getSupportsStreaming() {
+      return supportsStreaming_;
+    }
+    /**
+     * <pre>
+     * Whether the model can produce token-by-token SSE / streaming output.
+     * Default true — set false for batch-only / hang-prone models so the
+     * router skips them on streaming paths (e.g. TTS normalize).
+     * </pre>
+     *
+     * <code>bool supports_streaming = 12 [json_name = "supportsStreaming"];</code>
+     * @param value The supportsStreaming to set.
+     * @return This builder for chaining.
+     */
+    public Builder setSupportsStreaming(boolean value) {
+
+      supportsStreaming_ = value;
+      bitField0_ |= 0x00000800;
+      onChanged();
+      return this;
+    }
+    /**
+     * <pre>
+     * Whether the model can produce token-by-token SSE / streaming output.
+     * Default true — set false for batch-only / hang-prone models so the
+     * router skips them on streaming paths (e.g. TTS normalize).
+     * </pre>
+     *
+     * <code>bool supports_streaming = 12 [json_name = "supportsStreaming"];</code>
+     * @return This builder for chaining.
+     */
+    public Builder clearSupportsStreaming() {
+      bitField0_ = (bitField0_ & ~0x00000800);
+      supportsStreaming_ = false;
+      onChanged();
+      return this;
     }
 
     // @@protoc_insertion_point(builder_scope:jervis.server.QueueModelEntry)

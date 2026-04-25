@@ -83,6 +83,11 @@ enum class SettingsCategory(
         Icons.Default.NotificationsActive,
         "Konfigurace reakčních deadlinů pro DM, @mention, reply-to-thread + presence násobiče.",
     ),
+    TTS_RULES(
+        "TTS Slovník",
+        Icons.Default.RecordVoiceOver,
+        "Pravidla normalizace textu pro hlasového syntezátora — zkratky (BMS → bé-em-es), mazání ID, náhrady.",
+    ),
 }
 
 @Composable
@@ -156,5 +161,6 @@ private fun SettingsContent(
         SettingsCategory.OPENROUTER -> OpenRouterSettings(repository)
         SettingsCategory.SPEAKERS -> SpeakerSettings(repository)
         SettingsCategory.URGENCY_DEADLINES -> UrgencySettings(repository)
+        SettingsCategory.TTS_RULES -> TtsRulesSettings(repository)
     }
 }

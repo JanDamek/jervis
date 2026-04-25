@@ -86,6 +86,10 @@ message QueueModelEntry {
   bool supports_tools = 9;
   string provider = 10;
   ModelCallStats stats = 11;
+  // Whether the model can produce token-by-token SSE / streaming output.
+  // Default true — set false for batch-only / hang-prone models so the
+  // router skips them on streaming paths (e.g. TTS normalize).
+  bool supports_streaming = 12;
 }
 
 message ModelCallStats {

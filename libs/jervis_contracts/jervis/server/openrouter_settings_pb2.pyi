@@ -102,7 +102,7 @@ class ModelQueue(_message.Message):
     def __init__(self, name: _Optional[str] = ..., models: _Optional[_Iterable[_Union[QueueModelEntry, _Mapping]]] = ..., enabled: bool = ...) -> None: ...
 
 class QueueModelEntry(_message.Message):
-    __slots__ = ("model_id", "is_local", "max_context_tokens", "enabled", "label", "capabilities", "input_price_per_million", "output_price_per_million", "supports_tools", "provider", "stats")
+    __slots__ = ("model_id", "is_local", "max_context_tokens", "enabled", "label", "capabilities", "input_price_per_million", "output_price_per_million", "supports_tools", "provider", "stats", "supports_streaming")
     MODEL_ID_FIELD_NUMBER: _ClassVar[int]
     IS_LOCAL_FIELD_NUMBER: _ClassVar[int]
     MAX_CONTEXT_TOKENS_FIELD_NUMBER: _ClassVar[int]
@@ -114,6 +114,7 @@ class QueueModelEntry(_message.Message):
     SUPPORTS_TOOLS_FIELD_NUMBER: _ClassVar[int]
     PROVIDER_FIELD_NUMBER: _ClassVar[int]
     STATS_FIELD_NUMBER: _ClassVar[int]
+    SUPPORTS_STREAMING_FIELD_NUMBER: _ClassVar[int]
     model_id: str
     is_local: bool
     max_context_tokens: int
@@ -125,7 +126,8 @@ class QueueModelEntry(_message.Message):
     supports_tools: bool
     provider: str
     stats: ModelCallStats
-    def __init__(self, model_id: _Optional[str] = ..., is_local: bool = ..., max_context_tokens: _Optional[int] = ..., enabled: bool = ..., label: _Optional[str] = ..., capabilities: _Optional[_Iterable[str]] = ..., input_price_per_million: _Optional[float] = ..., output_price_per_million: _Optional[float] = ..., supports_tools: bool = ..., provider: _Optional[str] = ..., stats: _Optional[_Union[ModelCallStats, _Mapping]] = ...) -> None: ...
+    supports_streaming: bool
+    def __init__(self, model_id: _Optional[str] = ..., is_local: bool = ..., max_context_tokens: _Optional[int] = ..., enabled: bool = ..., label: _Optional[str] = ..., capabilities: _Optional[_Iterable[str]] = ..., input_price_per_million: _Optional[float] = ..., output_price_per_million: _Optional[float] = ..., supports_tools: bool = ..., provider: _Optional[str] = ..., stats: _Optional[_Union[ModelCallStats, _Mapping]] = ..., supports_streaming: bool = ...) -> None: ...
 
 class ModelCallStats(_message.Message):
     __slots__ = ("call_count", "total_time_s", "total_input_tokens", "total_output_tokens", "tokens_per_s", "last_call")

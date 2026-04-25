@@ -230,6 +230,12 @@ data class QueueModelEntryDto(
     /** Whether the model supports tool/function calling */
     val supportsTools: Boolean = false,
 
+    /** Whether the model produces token-by-token SSE output reliably.
+     *  Default true. Set false for models that accept 200 OK but hang or
+     *  emit in a single burst — the router skips them on streaming paths
+     *  (TTS normalize, user-facing chat). */
+    val supportsStreaming: Boolean = true,
+
     /** Provider name (e.g. "nvidia", "stepfun", "openrouter") */
     val provider: String = "",
 
