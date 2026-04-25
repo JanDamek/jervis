@@ -399,7 +399,7 @@ def _filter_graph_for_client(graph: "AgentGraph", client_id: str) -> dict:
 # delegates to the existing _maintenance_phase{1,2} helpers below.
 
 
-async def _maintenance_phase1(agent_store) -> dict:
+async def _maintenance_phase1() -> dict:
     """Phase 1: CPU-only maintenance — idempotent, killable.
 
     Memory Graph cleanup and thinking-graph eviction steps were dropped
@@ -426,7 +426,7 @@ async def _maintenance_phase1(agent_store) -> dict:
     }
 
 
-async def _maintenance_phase2(agent_store, client_id: str) -> dict:
+async def _maintenance_phase2(client_id: str) -> dict:
     """Phase 2: GPU-light KB maintenance for one client."""
     findings = await _run_kb_dedup(client_id)
     summary = "; ".join(findings[:5]) if findings else "No issues found"

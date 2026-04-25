@@ -415,12 +415,12 @@ class OrchestratorGraphServicer(graph_pb2_grpc.OrchestratorGraphServiceServicer)
 
         try:
             if phase == 1:
-                result = await orch_main._maintenance_phase1(agent_store)
+                result = await orch_main._maintenance_phase1()
             elif phase == 2:
                 if not client_id:
                     await context.abort(grpc.StatusCode.INVALID_ARGUMENT,
                                         "client_id required for phase 2")
-                result = await orch_main._maintenance_phase2(agent_store, client_id)
+                result = await orch_main._maintenance_phase2(client_id)
             else:
                 await context.abort(grpc.StatusCode.INVALID_ARGUMENT,
                                     f"Unknown phase: {phase}")
