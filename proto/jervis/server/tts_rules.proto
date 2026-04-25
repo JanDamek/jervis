@@ -1,0 +1,110 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerTtsRulesProto";
+
+// ServerTtsRulesService — the Kotlin server owns the MongoDB collection
+// `ttsRules` (acronym / strip / replace). XTTS calls GetForScope before
+// each SpeakStream to fetch the applicable rules; orchestrator + MCP use
+// the mutating RPCs to let the user edit via chat.
+service ServerTtsRulesService {
+  // One-shot fetch of all rules that apply to (language, clientId?, projectId?).
+  // Returned list is already sorted PROJECT > CLIENT > GLOBAL so the caller
+  // can apply them in order.
+  rpc GetForScope(GetForScopeRequest) returns (TtsRuleList);
+
+  rpc List(ListTtsRulesRequest) returns (TtsRuleList);
+  rpc Add(TtsRule) returns (TtsRule);
+  rpc Update(TtsRule) returns (TtsRule);
+  rpc Delete(DeleteTtsRuleRequest) returns (DeleteTtsRuleResponse);
+
+  // Dry-run: apply all matching rules to `text` and return the output + the
+  // rule hits for UI preview.
+  rpc Preview(PreviewRequest) returns (PreviewResponse);
+}
+
+message GetForScopeRequest {
+  jervis.common.RequestContext ctx = 1;
+  string language = 2;            // "cs", "en", or "any"
+  string client_id = 3;           // empty = no client scope
+  string project_id = 4;          // empty = no project scope
+}
+
+message ListTtsRulesRequest {
+  jervis.common.RequestContext ctx = 1;
+}
+
+message DeleteTtsRuleRequest {
+  jervis.common.RequestContext ctx = 1;
+  string id = 2;
+}
+
+message DeleteTtsRuleResponse {
+  bool ok = 1;
+}
+
+message PreviewRequest {
+  jervis.common.RequestContext ctx = 1;
+  string text = 2;
+  string language = 3;
+  string client_id = 4;
+  string project_id = 5;
+}
+
+message PreviewResponse {
+  string output = 1;
+  repeated TtsRuleHit hits = 2;
+}
+
+message TtsRuleHit {
+  string rule_id = 1;
+  TtsRuleType type = 2;
+  int32 chars_removed = 3;
+}
+
+message TtsRuleList {
+  repeated TtsRule rules = 1;
+}
+
+message TtsRule {
+  string id = 1;                  // empty on Add
+  TtsRuleType type = 2;
+  string language = 3;            // "cs", "en", "any"
+  TtsRuleScope scope = 4;
+
+  // Populated for type = ACRONYM
+  string acronym = 5;
+  string pronunciation = 6;
+  repeated string aliases = 7;
+
+  // Populated for type = STRIP / REPLACE
+  string pattern = 8;
+  string description = 9;
+  bool strip_wrapping_parens = 10;  // STRIP only
+  string replacement = 11;          // REPLACE only
+}
+
+enum TtsRuleType {
+  TTS_RULE_TYPE_UNSPECIFIED = 0;
+  ACRONYM = 1;
+  STRIP = 2;
+  REPLACE = 3;
+}
+
+message TtsRuleScope {
+  TtsRuleScopeType type = 1;
+  string client_id = 2;           // populated for type = CLIENT
+  string project_id = 3;          // populated for type = PROJECT
+}
+
+enum TtsRuleScopeType {
+  TTS_RULE_SCOPE_UNSPECIFIED = 0;
+  GLOBAL = 1;
+  CLIENT = 2;
+  PROJECT = 3;
+}

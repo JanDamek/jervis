@@ -432,18 +432,19 @@ fun Routing.installVoiceChatApi(
                 sse("error", """{"text":"TTS client not wired"}""")
                 return@respondTextWriter
             }
-            // Pure proxy: XTTS does its own LLM normalization and streams
-            // PCM chunks back. We forward raw text + language and tunnel
-            // chunks through SSE. No sentence splitting, no pre-processing.
+            // Pure proxy: XTTS runs its rule-based normalizer on-box and
+            // streams PCM chunks back. We forward raw text + language +
+            // scope (if caller provided it) and tunnel chunks through SSE.
+            // Legacy SSE endpoint for watchOS / Siri; migration to kRPC
+            // tracked in memory/project-voice-endpoints-kRPC-migration.md.
             var totalPcm = 0
             try {
                 grpc.speakStream(
                     body.text,
                     speed = body.speed.toDouble(),
                     language = "cs",
-                    clientId = ttsProperties.normalizeClientId,
-                    projectId = ttsProperties.normalizeProjectId,
-                    maxTier = ttsProperties.normalizeMaxTier,
+                    clientId = body.clientId.orEmpty(),
+                    projectId = body.projectId.orEmpty(),
                 ).collect { chunk ->
                     val data = chunk.data.toByteArray()
                     if (data.isNotEmpty()) {
@@ -680,7 +681,14 @@ data class VoiceSessionRequest(
 )
 
 @Serializable
-data class TtsStreamRequest(val text: String, val speed: Float = 1.2f)
+data class TtsStreamRequest(
+    val text: String,
+    val speed: Float = 1.2f,
+    /** Optional scope — lets the XTTS normalizer load client/project-specific
+     *  acronym rules. Empty = global rules only. */
+    val clientId: String? = null,
+    val projectId: String? = null,
+)
 
 /** Escape JSON special chars for SSE data. */
 /** Map a typed VoiceStreamEvent into an SSE-friendly `(eventName, dataJson)` pair.

@@ -126,6 +126,7 @@ class KtorRpcServer(
     private val voiceGrpc: com.jervis.infrastructure.grpc.OrchestratorVoiceGrpcClient,
     private val ttsGrpc: com.jervis.infrastructure.grpc.TtsGrpcClient,
     private val meetingHelperGrpc: com.jervis.infrastructure.grpc.OrchestratorMeetingHelperGrpcClient,
+    private val ttsRuleRpcImpl: com.jervis.tts.TtsRuleRpcImpl,
 ) {
     private val logger = KotlinLogging.logger {}
     private var server: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
@@ -370,6 +371,7 @@ class KtorRpcServer(
                                 registerService<com.jervis.service.agent.IAgentQuestionService> { agentQuestionRpcImpl }
                                 registerService<com.jervis.service.agent.IAutoResponseSettingsService> { autoResponseSettingsRpcImpl }
                                 registerService<com.jervis.service.timetracking.ITimeTrackingService> { timeTrackingRpcImpl }
+                                registerService<com.jervis.service.tts.ITtsRuleService> { ttsRuleRpcImpl }
                             }
                         }
                     }
