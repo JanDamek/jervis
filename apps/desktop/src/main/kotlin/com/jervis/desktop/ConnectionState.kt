@@ -7,10 +7,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.jervis.desktop.meeting.DesktopMeetingRecorder
+import com.jervis.di.JervisRepository
 import com.jervis.di.RpcConnectionManager
 import com.jervis.di.RpcConnectionState
 import com.jervis.dto.events.JervisEvent
-import com.jervis.di.JervisRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -69,10 +69,11 @@ class ConnectionManager(
      * captures system audio loopback only — never auto-joins, never sends
      * messages into the meeting chat.
      */
-    private val meetingRecorder = DesktopMeetingRecorder(
-        repository = repository,
-        loopbackDeviceProvider = { localSettings.getAudioLoopbackDevice() },
-    )
+    private val meetingRecorder =
+        DesktopMeetingRecorder(
+            repository = repository,
+            loopbackDeviceProvider = { localSettings.getAudioLoopbackDevice() },
+        )
 
     /**
      * Initialize connection via RpcConnectionManager and observe its state.
@@ -165,9 +166,6 @@ class ConnectionManager(
             }
 
             is JervisEvent.QualificationProgress -> { // handled by MainViewModel
-            }
-
-            is JervisEvent.MemoryGraphChanged -> { // handled by MainViewModel
             }
 
             is JervisEvent.ApprovalRequired -> {
