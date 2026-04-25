@@ -207,5 +207,18 @@ fun MainScreen(
         showDoneInSidebar = viewModel.chat.showDoneInSidebar.collectAsState().value,
         onToggleShowDoneInSidebar = { viewModel.chat.toggleShowDoneInSidebar() },
         sidebarRemovedTaskIds = viewModel.chat.sidebarRemovedTaskIds.collectAsState().value,
+        sidebarBackgroundContent = {
+            // Fáze K — coding agents + VNC sessions section, global scope.
+            val agentJobs = viewModel.background.agentJobs.collectAsState().value
+            val vncSessions = viewModel.background.vncSessions.collectAsState().value
+            com.jervis.ui.sidebar.BackgroundSection(
+                snapshot = agentJobs,
+                vncSessions = vncSessions,
+                onAgentJobSelected = { snap ->
+                    viewModel.background.openNarrative(snap.id)
+                },
+                onVncSessionSelected = { /* TODO Fáze K detail panel: open viewer */ },
+            )
+        },
     )
 }

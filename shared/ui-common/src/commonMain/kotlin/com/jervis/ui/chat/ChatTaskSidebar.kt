@@ -59,6 +59,12 @@ fun ChatTaskSidebar(
     onTaskSelected: (PendingTaskDto) -> Unit,
     onMainChatSelected: () -> Unit,
     removedTaskIds: Set<String> = emptySet(),
+    /**
+     * Optional content rendered below the active-tasks list. Hosts that
+     * want the sidebar Background section (Fáze K — coding agents + VNC)
+     * pass it here. Empty by default so existing callers compile unchanged.
+     */
+    backgroundContent: @Composable () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val expandedSections = remember {
@@ -120,51 +126,57 @@ fun ChatTaskSidebar(
                 onClick = onMainChatSelected,
             )
 
-            when {
-                snapshot == null -> {
-                    Box(
-                        modifier = Modifier.fillMaxWidth().padding(24.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            Box(modifier = Modifier.weight(1f, fill = false)) {
+                when {
+                    snapshot == null -> {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(24.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        }
                     }
-                }
-                visibleTasks.isEmpty() -> {
-                    Text(
-                        text = if (showDone) "Zadne hotove ulohy." else "Zadne aktivni ulohy. JERVIS ceka na novy obsah.",
-                        modifier = Modifier.padding(12.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                else -> {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        for ((section, sectionTasks) in sections) {
-                            val isExpanded = expandedSections[section.name] != false
+                    visibleTasks.isEmpty() -> {
+                        Text(
+                            text = if (showDone) "Zadne hotove ulohy." else "Zadne aktivni ulohy. JERVIS ceka na novy obsah.",
+                            modifier = Modifier.padding(12.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    else -> {
+                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            for ((section, sectionTasks) in sections) {
+                                val isExpanded = expandedSections[section.name] != false
 
-                            item(key = "header-${section.name}") {
-                                SectionHeader(
-                                    title = section.label,
-                                    count = sectionTasks.size,
-                                    color = section.color,
-                                    isExpanded = isExpanded,
-                                    onClick = { expandedSections[section.name] = !isExpanded },
-                                )
-                            }
-
-                            if (isExpanded) {
-                                items(sectionTasks, key = { it.id }) { task ->
-                                    ChatSidebarTaskCard(
-                                        task = task,
-                                        isActive = task.id == activeTaskId,
-                                        onClick = { onTaskSelected(task) },
+                                item(key = "header-${section.name}") {
+                                    SectionHeader(
+                                        title = section.label,
+                                        count = sectionTasks.size,
+                                        color = section.color,
+                                        isExpanded = isExpanded,
+                                        onClick = { expandedSections[section.name] = !isExpanded },
                                     )
+                                }
+
+                                if (isExpanded) {
+                                    items(sectionTasks, key = { it.id }) { task ->
+                                        ChatSidebarTaskCard(
+                                            task = task,
+                                            isActive = task.id == activeTaskId,
+                                            onClick = { onTaskSelected(task) },
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
+
+            // Sidebar Background section (Fáze K) — shown below active tasks when host provides content.
+            HorizontalDivider()
+            backgroundContent()
         }
     }
 }

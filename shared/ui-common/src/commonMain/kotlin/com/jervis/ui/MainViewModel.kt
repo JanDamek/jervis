@@ -107,6 +107,8 @@ class MainViewModel(
 
     val pendingQuestions = com.jervis.ui.questions.PendingQuestionsViewModel(repository, _selectedClientId)
 
+    val background = com.jervis.ui.sidebar.BackgroundViewModel(repository, connectionManager).also { it.start() }
+
     val chat = ChatViewModel(
         repository = repository,
         connectionManager = connectionManager,

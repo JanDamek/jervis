@@ -154,6 +154,12 @@ fun MainScreenView(
     showDoneInSidebar: Boolean = false,
     onToggleShowDoneInSidebar: () -> Unit = {},
     sidebarRemovedTaskIds: Set<String> = emptySet(),
+    /**
+     * Optional Background section (coding agents + VNC) rendered below
+     * the active-tasks list inside ChatTaskSidebar. Hosts that don't
+     * mount BackgroundViewModel pass an empty lambda — default below.
+     */
+    sidebarBackgroundContent: @Composable () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize().imePadding()) {
@@ -404,6 +410,7 @@ fun MainScreenView(
                                     onTaskSelected = onChatTaskSelected,
                                     onMainChatSelected = onMainChatSelected,
                                     removedTaskIds = sidebarRemovedTaskIds,
+                                    backgroundContent = sidebarBackgroundContent,
                                     modifier = mod,
                                 )
                             },
@@ -435,6 +442,7 @@ fun MainScreenView(
                                             coroutineScope.launch { drawerState.close() }
                                         },
                                         removedTaskIds = sidebarRemovedTaskIds,
+                                        backgroundContent = sidebarBackgroundContent,
                                         modifier = Modifier.fillMaxSize(),
                                     )
                                 }
