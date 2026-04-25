@@ -528,6 +528,17 @@ class AgentJobDispatcher(
                     .endMetadata()
                     .withNewSpec()
                         .withRestartPolicy("Never")
+                        // PVC volume is owned root:root by default — server pod
+                        // (which writes .jervis/brief.md, CLAUDE.md) runs as
+                        // root, but the coding-agent container runs as uid 1000
+                        // (Claude CLI refuses --dangerously-skip-permissions as
+                        // root). Without fsGroup the agent can't write
+                        // .jervis/result.json. fsGroup=1000 makes K8s recursively
+                        // chgrp the volume on mount so uid 1000 inherits write
+                        // access via group membership.
+                        .withNewSecurityContext()
+                            .withFsGroup(1000L)
+                        .endSecurityContext()
                         .addNewContainer()
                             .withName("coding-agent")
                             .withImage(CODING_AGENT_IMAGE)

@@ -218,9 +218,13 @@ else
 fi
 
 # ---- Run Claude Code CLI headless ----
+# Use --append-system-prompt-file (file variant) instead of
+# --append-system-prompt "$(cat …)" — passing 4 KB+ system prompt as
+# inline argv hit ENAMETOOLONG on Claude CLI 2.x, which appears to
+# interpret long values as file paths and call open() on them.
 CLAUDE_ARGS=(--dangerously-skip-permissions --print)
 if [ -f "$CLAUDE_MD" ]; then
-    CLAUDE_ARGS+=(--append-system-prompt "$(cat "$CLAUDE_MD")")
+    CLAUDE_ARGS+=(--append-system-prompt-file "$CLAUDE_MD")
 fi
 if [ -f "$MCP_CONFIG_PATH" ]; then
     CLAUDE_ARGS+=(--mcp-config "$MCP_CONFIG_PATH")
