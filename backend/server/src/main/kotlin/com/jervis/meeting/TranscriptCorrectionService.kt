@@ -191,18 +191,32 @@ class TranscriptCorrectionService(
             }
             return corrected
         } catch (e: Exception) {
-            // Connection errors → reset to INDEXED for auto-retry (correction agent may be restarting)
+            // Connection errors → mark FAILED so the polling loop in
+            // MeetingContinuousIndexer.correctContinuously stops re-pulling
+            // the same meeting once per second. Previously this reset the
+            // state back to INDEXED, which created a tight retry storm
+            // when jervis-correction was unreachable (deployment 0/0,
+            // observed 2026-04-25) — server thread pool drained and
+            // unrelated dispatch_agent_job calls timed out as a side effect.
+            //
+            // User can re-trigger via the meeting UI once correction is
+            // available again. Long-term fix: replace this Python service
+            // with an agent-based correction flow (CODING_CORRECTION
+            // AgentJobFlavor) — see project-coding-agent-rules-and-git-boundary.md.
             if (isConnectionError(e)) {
-                logger.warn(e) { "Connection error during correction for meeting ${meeting.id}, resetting to INDEXED for retry" }
-                val retryable = meetingRepository.save(
+                logger.warn(e) {
+                    "Connection error during correction for meeting ${meeting.id}, marking FAILED " +
+                        "(correction service unreachable — retry manually once it is back)"
+                }
+                val failed = meetingRepository.save(
                     correcting.copy(
-                        state = MeetingStateEnum.INDEXED,
+                        state = MeetingStateEnum.FAILED,
                         stateChangedAt = java.time.Instant.now(),
-                        errorMessage = null,
+                        errorMessage = "Correction service unavailable: ${e.message}",
                     ),
                 )
-                notificationRpc.emitMeetingStateChanged(meetingIdStr, clientIdStr, MeetingStateEnum.INDEXED.name, meeting.title)
-                return retryable
+                notificationRpc.emitMeetingStateChanged(meetingIdStr, clientIdStr, MeetingStateEnum.FAILED.name, meeting.title)
+                return failed
             }
 
             logger.error(e) { "Correction failed for meeting ${meeting.id}" }
