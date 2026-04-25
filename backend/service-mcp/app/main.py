@@ -1534,6 +1534,12 @@ _MONGO_UPDATE_ALLOWED_COLLECTIONS = frozenset({
     "projects",
     "project_groups",
     "connections",
+    # agent_job_records is normally owned by Kotlin AgentJobDispatcher; we
+    # whitelist it for ad-hoc operational corrections (e.g. flipping a
+    # stuck QUEUED record to ERROR after the dispatcher crashed mid-flight,
+    # since AgentJobWatcher.reconcileOnStartup only sweeps RUNNING — see
+    # project-coding-agent-rules-and-git-boundary.md TODO).
+    "agent_job_records",
 })
 
 
