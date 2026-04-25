@@ -31,7 +31,7 @@ actual class AudioPlayer actual constructor() {
      *  cost is acceptable because the user is already waiting for the
      *  router + first LLM sentence. Real fix = TTS GPU preemption
      *  (mirror of WhisperNotify/Done) — separate task. */
-    private val prefillMs: Int = 10_000
+    private val prefillMs: Int = 2_000
 
     actual fun startStream(sampleRate: Int, sampleSizeInBits: Int, channels: Int) {
         stopStream()
