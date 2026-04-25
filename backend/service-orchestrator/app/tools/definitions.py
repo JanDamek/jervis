@@ -2595,5 +2595,174 @@ URGENCY_TOOLS: list[dict] = [
     TOOL_GET_USER_PRESENCE,
 ]
 
+# ============================================================
+# TTS normalization dictionary — user-editable acronym / strip / replace
+# rules that the XTTS normalizer applies before synthesis. SSOT:
+# `docs/tts-normalization.md`.
+# ============================================================
+
+TOOL_TTS_RULE_ADD_ACRONYM: dict = {
+    "type": "function",
+    "function": {
+        "name": "tts_rule_add_acronym",
+        "description": (
+            "Add an acronym expansion to the TTS dictionary. Applies when "
+            "the audio synthesizer encounters the acronym in text — e.g. "
+            "'BMS' → 'bé-em-es'. Use when the user asks Jervis to remember "
+            "how to pronounce a term."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "acronym": {"type": "string", "description": "The form as written in text (case-sensitive base)."},
+                "pronunciation": {"type": "string", "description": "The spelled-out phonetic form the synthesizer should say."},
+                "language": {
+                    "type": "string",
+                    "description": "'cs', 'en', or 'any' (default 'cs' for Jervis's Czech-first usage).",
+                    "default": "cs",
+                },
+                "aliases": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Case variants (e.g. ['bms', 'Bms']) — all matched case-insensitively.",
+                    "default": [],
+                },
+                "scope_type": {
+                    "type": "string",
+                    "enum": ["global", "client", "project"],
+                    "description": "GLOBAL = applies everywhere; CLIENT / PROJECT narrow by active scope.",
+                    "default": "global",
+                },
+                "client_id": {"type": "string", "description": "Required when scope_type='client'."},
+                "project_id": {"type": "string", "description": "Required when scope_type='project'."},
+            },
+            "required": ["acronym", "pronunciation"],
+        },
+    },
+}
+
+TOOL_TTS_RULE_ADD_STRIP: dict = {
+    "type": "function",
+    "function": {
+        "name": "tts_rule_add_strip",
+        "description": (
+            "Add a regex pattern whose matches are deleted from TTS input. "
+            "Use for IDs, hashes, UUIDs, or anything the listener shouldn't "
+            "hear. `strip_wrapping_parens=true` also removes the surrounding "
+            "() group in one go."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "pattern": {"type": "string", "description": "Python-compatible regex (validated before save)."},
+                "description": {"type": "string", "description": "Human-readable label for the rule."},
+                "language": {"type": "string", "description": "'cs', 'en', or 'any' (default 'any').", "default": "any"},
+                "strip_wrapping_parens": {
+                    "type": "boolean",
+                    "description": "If true, also remove the surrounding `(...)` group when the match is inside parens.",
+                    "default": False,
+                },
+                "scope_type": {
+                    "type": "string",
+                    "enum": ["global", "client", "project"],
+                    "default": "global",
+                },
+                "client_id": {"type": "string"},
+                "project_id": {"type": "string"},
+            },
+            "required": ["pattern", "description"],
+        },
+    },
+}
+
+TOOL_TTS_RULE_ADD_REPLACE: dict = {
+    "type": "function",
+    "function": {
+        "name": "tts_rule_add_replace",
+        "description": (
+            "Add a regex pattern whose matches are replaced with a word in "
+            "the TTS input. Use for URLs → 'odkaz', emails → 'e-mail', etc."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "pattern": {"type": "string", "description": "Python-compatible regex (validated before save)."},
+                "replacement": {"type": "string", "description": "Text to substitute."},
+                "description": {"type": "string", "description": "Human-readable label for the rule."},
+                "language": {"type": "string", "default": "any"},
+                "scope_type": {
+                    "type": "string",
+                    "enum": ["global", "client", "project"],
+                    "default": "global",
+                },
+                "client_id": {"type": "string"},
+                "project_id": {"type": "string"},
+            },
+            "required": ["pattern", "replacement", "description"],
+        },
+    },
+}
+
+TOOL_TTS_RULE_LIST: dict = {
+    "type": "function",
+    "function": {
+        "name": "tts_rule_list",
+        "description": "List all TTS normalization rules currently stored.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+TOOL_TTS_RULE_DELETE: dict = {
+    "type": "function",
+    "function": {
+        "name": "tts_rule_delete",
+        "description": "Delete a TTS normalization rule by id. The id comes from tts_rule_list.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string", "description": "Mongo ObjectId hex string."},
+            },
+            "required": ["id"],
+        },
+    },
+}
+
+TOOL_TTS_RULE_TEST: dict = {
+    "type": "function",
+    "function": {
+        "name": "tts_rule_test",
+        "description": (
+            "Dry-run: apply all rules matching (language, client_id, project_id) "
+            "to `text` and return the normalized output plus a list of which "
+            "rules hit. Use before saving a new rule to preview its effect."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string"},
+                "language": {"type": "string", "default": "any"},
+                "client_id": {"type": "string"},
+                "project_id": {"type": "string"},
+            },
+            "required": ["text"],
+        },
+    },
+}
+
+TTS_RULE_TOOLS: list[dict] = [
+    TOOL_TTS_RULE_ADD_ACRONYM,
+    TOOL_TTS_RULE_ADD_STRIP,
+    TOOL_TTS_RULE_ADD_REPLACE,
+    TOOL_TTS_RULE_LIST,
+    TOOL_TTS_RULE_DELETE,
+    TOOL_TTS_RULE_TEST,
+]
+
+# Expose TTS rule tools in the full agent tool set so the orchestrator can
+# edit the dictionary via chat ("zapiš BMS jako bé-em-es"). No separate
+# agent — the main respond node handles it.
+ALL_RESPOND_TOOLS_FULL = ALL_RESPOND_TOOLS_FULL + TTS_RULE_TOOLS
+ALL_AGENT_TOOLS = ALL_RESPOND_TOOLS_FULL
+
 # Backward compatibility alias
 LEGACY_AGENT_TOOLS: list[dict] = ALL_AGENT_TOOLS

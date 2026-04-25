@@ -317,6 +317,10 @@ metadata:
   name: jervis-server
   namespace: jervis
 spec:
+  # NodePort exposes gRPC :5501 to off-cluster pods (XTTS on the VD GPU VM,
+  # Whisper on the same VM) so they can call TtsRulesService / Whisper
+  # callbacks without in-cluster DNS. Same pattern as jervis-ollama-router.
+  type: NodePort
   selector:
     app: jervis-server
   ports:
@@ -326,3 +330,4 @@ spec:
     - name: grpc
       port: 5501
       targetPort: 5501
+      nodePort: 30500

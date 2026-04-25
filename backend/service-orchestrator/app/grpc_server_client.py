@@ -34,6 +34,7 @@ from jervis.server import (
     project_management_pb2_grpc,
     task_api_pb2_grpc,
     time_tracking_pb2_grpc,
+    tts_rules_pb2_grpc,
     urgency_pb2_grpc,
 )
 
@@ -112,6 +113,16 @@ def server_urgency_stub() -> urgency_pb2_grpc.ServerUrgencyServiceStub:
     if _urgency_stub is None:
         _urgency_stub = urgency_pb2_grpc.ServerUrgencyServiceStub(_get_channel())
     return _urgency_stub
+
+
+_tts_rules_stub: Optional[tts_rules_pb2_grpc.ServerTtsRulesServiceStub] = None
+
+
+def server_tts_rules_stub() -> tts_rules_pb2_grpc.ServerTtsRulesServiceStub:
+    global _tts_rules_stub
+    if _tts_rules_stub is None:
+        _tts_rules_stub = tts_rules_pb2_grpc.ServerTtsRulesServiceStub(_get_channel())
+    return _tts_rules_stub
 
 
 def server_chat_context_stub() -> chat_context_pb2_grpc.ServerChatContextServiceStub:

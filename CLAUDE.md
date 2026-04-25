@@ -25,6 +25,7 @@
 | `docs/orchestrator-detailed.md` | **Orchestrator detailed reference** – complete technical description of all nodes, LLM, K8s Jobs, communication, state, approval flow |
 | `docs/thought-map-spec.md` | **Thought Map spec** – navigation layer over KB graph, spreading activation, ThoughtNodes/Edges/Anchors, maintenance, cold start |
 | `docs/inter-service-contracts.md` | **SSOT** for pod-to-pod APIs – Protobuf + Buf + gRPC over h2c, grpc-kotlin + grpcio codegen, RequestContext payload (no X-* headers), CI drift/breaking enforcement |
+| `docs/tts-normalization.md` | **SSOT** for XTTS normalization – rule-based dictionary in MongoDB (`ttsRules`), acronym/strip/replace types, scope precedence PROJECT>CLIENT>GLOBAL, CPU pipeline, no LLM |
 
 ## Workflow Rules
 
@@ -78,7 +79,7 @@ SSOT: `docs/ui-design.md` §12 + `docs/structures.md` "UI Data Streams".
 > Below are only the most critical paths needed for everyday decisions.
 
 **Backend server** (`backend/server/src/main/kotlin/com/jervis/`):
-- **Domain-driven packages** — each domain has its own package containing entities, repositories, services, mappers, and RPC impls together: `agent/`, `chat/`, `meeting/`, `task/`, `environment/`, `git/`, `calendar/`, `teams/`, `slack/`, `discord/`, `client/`, `project/`, `projectgroup/`, `filtering/`, `deadline/`, `maintenance/`, `preferences/`, etc.
+- **Domain-driven packages** — each domain has its own package containing entities, repositories, services, mappers, and RPC impls together: `agent/`, `chat/`, `meeting/`, `task/`, `environment/`, `git/`, `calendar/`, `teams/`, `slack/`, `discord/`, `client/`, `project/`, `projectgroup/`, `filtering/`, `deadline/`, `maintenance/`, `preferences/`, `tts/` (normalization rules), etc.
 - `infrastructure/` — cross-cutting: `config/`, `http/`, `polling/`, `storage/`, `indexing/`, `notification/`, `llm/`, `oauth2/`, `text/`, `error/`, `debug/`
 - `rpc/` — bootstrap only: `KtorRpcServer`, `BaseRpcImpl`, `internal/*Routing`
 - `domain/` — shared types: atlassian, sender, gateway
