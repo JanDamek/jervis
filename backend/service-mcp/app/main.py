@@ -1521,6 +1521,97 @@ async def mongo_query(
     return "\n---\n".join(docs) if docs else "No documents found."
 
 
+# Whitelist of collections writable via mongo_update. Excludes system /
+# admin collections (e.g. claude_sessions, agent_job_records, kb_chunks
+# managed by their own services) so Claude can't bypass the schema /
+# lifecycle owned by Kotlin or Python services. Operational data
+# corrections (meeting state reset, task field fix) are the intended use.
+_MONGO_UPDATE_ALLOWED_COLLECTIONS = frozenset({
+    "meetings",
+    "tasks",
+    "chat_messages",
+    "clients",
+    "projects",
+    "project_groups",
+    "connections",
+})
+
+
+@mcp.tool
+async def mongo_update(
+    collection: str,
+    filter_json: str,
+    update_json: str,
+    mode: str = "update_one",
+) -> str:
+    """Execute a custom MongoDB update on a whitelisted collection.
+
+    Symmetric to `mongo_query` but writes. Use for ad-hoc operational
+    corrections that don't have a dedicated tool yet (e.g. resetting a
+    batch of meetings stuck in FAILED back to INDEXED).
+
+    Safety:
+    - Whitelisted collections only (meetings, tasks, chat_messages,
+      clients, projects, project_groups, connections). Other
+      collections are blocked.
+    - `mode` is required and explicit ("update_one" / "update_many") to
+      prevent accidental mass updates from a typo'd `update_one`.
+    - Update operators must be explicit ($set / $unset / $inc /
+      $push / $pull / $addToSet). A document without an operator
+      (replace mode) is rejected — replacing whole docs through MCP
+      would break schema invariants enforced by Kotlin entities.
+    - Delete is NOT supported — destructive ops require admin shell.
+
+    Args:
+        collection: Whitelisted collection name.
+        filter_json: MongoDB filter as JSON (e.g., '{"state":"FAILED"}').
+        update_json: MongoDB update document as JSON. Must start with
+            an operator ('{"$set":{"state":"INDEXED"}}'). Plain replace
+            documents are rejected.
+        mode: "update_one" or "update_many". Required.
+
+    Returns:
+        Human-readable summary: matched, modified, mode.
+    """
+    if collection not in _MONGO_UPDATE_ALLOWED_COLLECTIONS:
+        return (
+            f"Collection '{collection}' is not whitelisted for mongo_update. "
+            f"Allowed: {', '.join(sorted(_MONGO_UPDATE_ALLOWED_COLLECTIONS))}."
+        )
+    if mode not in ("update_one", "update_many"):
+        return f"Invalid mode '{mode}'. Use 'update_one' or 'update_many'."
+
+    try:
+        filt = json.loads(filter_json)
+        upd = json.loads(update_json)
+    except json.JSONDecodeError as e:
+        return f"Invalid JSON: {e}"
+
+    if not isinstance(upd, dict) or not upd:
+        return "update_json must be a non-empty JSON object."
+    if not all(k.startswith("$") for k in upd.keys()):
+        return (
+            "update_json must use update operators (e.g. $set, $unset, $inc). "
+            "Plain replace documents are rejected — they bypass schema "
+            "invariants. Wrap your fields in $set."
+        )
+
+    db = await get_db()
+    coll = db[collection]
+    try:
+        if mode == "update_one":
+            result = await coll.update_one(filt, upd)
+        else:
+            result = await coll.update_many(filt, upd)
+    except Exception as e:
+        return f"Update failed: {type(e).__name__}: {e}"
+
+    return (
+        f"mongo_update OK | collection={collection} mode={mode} "
+        f"matched={result.matched_count} modified={result.modified_count}"
+    )
+
+
 # ── Orchestrator Tools ───────────────────────────────────────────────────
 
 # orchestrator_health removed — K8s probes (tcpSocket :5501 / httpGet /health)
