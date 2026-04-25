@@ -132,6 +132,7 @@ class RequestQueue:
         # Fast path — a slot is free right now.
         backend = self._find_slot(request)
         if backend:
+            self._pre_claim_slot(backend, request)
             return await self._dispatch_to_backend(backend, request)
 
         # Slow path — queue and wait for the dispatcher.
@@ -211,6 +212,14 @@ class RequestQueue:
 
                     backend = self._find_slot(entry.request)
                     if backend:
+                        # Claim the slot synchronously BEFORE scheduling
+                        # the dispatch task. Otherwise the next _find_slot
+                        # call in this tight loop still sees
+                        # active_requests as empty (the task hasn't run
+                        # yet) and dispatches the whole queue into the
+                        # same GPU. Critical for CASCADE absolute
+                        # priority — TTS must be the only LLM on the GPU.
+                        self._pre_claim_slot(backend, entry.request)
                         asyncio.create_task(self._resolve_queued(backend, entry))
                         continue
 
@@ -224,6 +233,27 @@ class RequestQueue:
             except Exception as e:
                 logger.error("Dispatcher group=%s error: %s", group.value, e)
                 await asyncio.sleep(1)
+
+    def _pre_claim_slot(self, backend: str, request: TrackedRequest) -> None:
+        """Mark the backend as occupied by `request` synchronously.
+
+        `_dispatch_to_backend` does the same on its own, but it runs
+        inside an `asyncio.create_task`, so there's a window where the
+        dispatcher loop calls `_find_slot` again and still sees the
+        slot as free. For CASCADE + `max_concurrent_llm=1` this means
+        we dispatch the whole queue into one GPU in a single tick.
+        Claiming here closes the window.
+        """
+        if not backend.startswith("gpu:"):
+            return
+        name = backend[4:]
+        gpu = next((g for g in self.gpu_pool.healthy_backends if g.name == name), None)
+        if gpu is None:
+            return
+        request.target_gpu = gpu.name
+        gpu.active_requests[request.request_id] = request
+        if request.priority <= Priority.CRITICAL:
+            self._router.notify_critical_activity(gpu.name)
 
     async def _resolve_queued(self, backend: str, entry: QueueEntry) -> None:
         wait_time = time.monotonic() - entry.queued_at
@@ -403,30 +433,17 @@ class RequestQueue:
             if gpu.has_model(request.model):
                 return gpu
 
-            # Ensure VRAM coordination on the VLM GPU. Either whisper or
-            # XTTS being active keeps Ollama off the card — user policy.
-            # Exception: tts_normalize requests MUST run on VLM_GPU
-            # alongside XTTS (same card owns audio). The preempt carve-out
-            # guarantees qwen3:14b stays loaded, so normalize has a warm
-            # model to hit; blocking it here would route it elsewhere
-            # (swap to p40-1 / qwen3-coder-tool:30b) and defeat the whole
-            # "one audio GPU" layout.
-            is_tts_normalize = getattr(request, "intent", "") == "tts_normalize"
-            if gpu.name == VLM_GPU and request.model not in EMBEDDING_MODELS and not is_tts_normalize:
+            # VRAM coordination on the VLM GPU. Whisper has an exclusive
+            # GPU contract — block Ollama model loads on p40-2 while it
+            # runs. TTS used to share the same contract but was retired
+            # (XTTS coexists with bge-m3 on p40-2 within the VRAM budget).
+            if gpu.name == VLM_GPU and request.model not in EMBEDDING_MODELS:
                 if self._router.check_whisper_busy():
                     logger.info(
                         "VLM_WAIT_WHISPER: whisper active, waiting before loading %s",
                         request.model,
                     )
                     await self._router.wait_for_whisper_done(
-                        timeout=settings.whisper_gpu_acquire_timeout_s,
-                    )
-                if self._router.check_tts_busy():
-                    logger.info(
-                        "VLM_WAIT_TTS: xtts active, waiting before loading %s",
-                        request.model,
-                    )
-                    await self._router.wait_for_tts_done(
                         timeout=settings.whisper_gpu_acquire_timeout_s,
                     )
                 await self._release_whisper_gpu()

@@ -160,6 +160,15 @@ async def stream_openrouter(
     openai_body["stream"] = True
 
     start = time.monotonic()
+    # Counters help diagnose silent 200-OK streams (cloud accepted but
+    # produced nothing / only keepalives / only error events).
+    first_chunk_at: float | None = None
+    chunks_with_content = 0
+    keepalive_count = 0
+    non_data_lines = 0
+    error_payloads = 0
+    total_content_bytes = 0
+    finish_reason: str | None = None
     client = httpx.AsyncClient(
         timeout=httpx.Timeout(connect=10, read=None, write=10, pool=30),
     )
@@ -190,21 +199,92 @@ async def stream_openrouter(
                     rate_limit_scope=scope,
                 )
 
+            logger.info(
+                "OPENROUTER_PROXY: %s connected model=%s (200 OK, waiting for stream)",
+                request_id, cloud_model,
+            )
             async for line in upstream.aiter_lines():
+                # Warn once if we've been connected 15s without any content
+                # chunk — means cloud accepted but produced nothing so far.
+                if first_chunk_at is None and time.monotonic() - start > 15.0 and chunks_with_content == 0:
+                    logger.warning(
+                        "OPENROUTER_SILENT: %s model=%s no content chunk in %.1fs "
+                        "(keepalives=%d non_data=%d)",
+                        request_id, cloud_model, time.monotonic() - start,
+                        keepalive_count, non_data_lines,
+                    )
+                raw = line
                 line = line.strip()
-                if not line or line == "data: [DONE]":
+                if not line:
+                    # Blank SSE separator between events — routine, skip silently.
+                    continue
+                if line == "data: [DONE]":
+                    # Normal end-of-stream marker.
+                    continue
+                # SSE comment line (e.g. `: OPENROUTER PROCESSING` keepalive).
+                if line.startswith(":"):
+                    keepalive_count += 1
+                    if keepalive_count <= 3 or keepalive_count % 20 == 0:
+                        logger.info(
+                            "OPENROUTER_KEEPALIVE: %s n=%d t=%.1fs line=%r",
+                            request_id, keepalive_count,
+                            time.monotonic() - start, raw[:200],
+                        )
                     continue
                 if not line.startswith("data: "):
+                    # Anything else — provider-specific preamble, error text,
+                    # rate-limit notice, etc. Log so we can see what arrived.
+                    non_data_lines += 1
+                    logger.warning(
+                        "OPENROUTER_NON_DATA_LINE: %s t=%.1fs line=%r",
+                        request_id, time.monotonic() - start, raw[:300],
+                    )
                     continue
                 try:
                     chunk_data = json.loads(line[6:])
                 except json.JSONDecodeError:
+                    non_data_lines += 1
+                    logger.warning(
+                        "OPENROUTER_BAD_JSON: %s t=%.1fs line=%r",
+                        request_id, time.monotonic() - start, raw[:300],
+                    )
+                    continue
+                # OpenRouter sometimes returns {"error": {...}} inside a
+                # 200 OK stream (rate-limit burst, provider downstream error).
+                if isinstance(chunk_data, dict) and chunk_data.get("error"):
+                    error_payloads += 1
+                    logger.warning(
+                        "OPENROUTER_STREAM_ERROR: %s t=%.1fs error=%r",
+                        request_id, time.monotonic() - start,
+                        chunk_data.get("error"),
+                    )
                     continue
                 choices = chunk_data.get("choices") or [{}]
                 delta = choices[0].get("delta") or {}
                 finish = choices[0].get("finish_reason")
                 content = delta.get("content", "") or ""
                 tool_calls = delta.get("tool_calls") or []
+
+                if content or tool_calls:
+                    if first_chunk_at is None:
+                        first_chunk_at = time.monotonic()
+                        logger.info(
+                            "OPENROUTER_FIRST_CHUNK: %s model=%s ttft=%.2fs "
+                            "content_preview=%r",
+                            request_id, cloud_model,
+                            first_chunk_at - start, content[:80],
+                        )
+                    chunks_with_content += 1
+                    total_content_bytes += len(content)
+                if finish:
+                    finish_reason = finish
+                    logger.info(
+                        "OPENROUTER_FINISH: %s model=%s finish=%s chunks=%d "
+                        "bytes=%d t=%.2fs",
+                        request_id, cloud_model, finish,
+                        chunks_with_content, total_content_bytes,
+                        time.monotonic() - start,
+                    )
 
                 out: dict = {
                     "model": cloud_model,
@@ -219,8 +299,11 @@ async def stream_openrouter(
 
         duration = time.monotonic() - start
         logger.info(
-            "OPENROUTER_PROXY: %s completed in %.2fs (model=%s)",
-            request_id, duration, cloud_model,
+            "OPENROUTER_PROXY: %s completed in %.2fs model=%s chunks=%d "
+            "bytes=%d keepalives=%d non_data=%d errors=%d finish=%s",
+            request_id, duration, cloud_model, chunks_with_content,
+            total_content_bytes, keepalive_count, non_data_lines,
+            error_payloads, finish_reason,
         )
     finally:
         await client.aclose()

@@ -28,7 +28,7 @@ from jervis.router import admin_pb2, admin_pb2_grpc, inference_pb2, inference_pb
 from jervis.common import enums_pb2
 from jervis_contracts.interceptors import ServerContextInterceptor
 
-from .proxy import PreemptedByWhisperError, ProxyError
+from .proxy import PreemptedByCriticalError, PreemptedByWhisperError, ProxyError
 from .request_queue import QueueCancelled
 
 logger = logging.getLogger("ollama-router.grpc")
@@ -285,28 +285,9 @@ class RouterAdminServicer(admin_pb2_grpc.RouterAdminServiceServicer):
         self._router.notify_whisper_done()
         return admin_pb2.WhisperDoneResponse(released=True)
 
-    async def TtsNotify(
-        self, request: admin_pb2.TtsNotifyRequest, context: grpc.aio.ServicerContext
-    ) -> admin_pb2.TtsNotifyResponse:
-        """XTTS wants exclusive GPU — same active preempt flow as whisper.
-        Ollama queue is held until TtsDone fires."""
-        timeout = request.preempt_timeout_s if request.preempt_timeout_s > 0 else 30
-        granted, preempted, unloaded = await self._router.notify_tts_wants_gpu(
-            preempt_timeout_s=timeout,
-        )
-        return admin_pb2.TtsNotifyResponse(
-            granted=granted,
-            preempted_count=preempted,
-            unloaded_models=unloaded,
-        )
-
-    async def TtsDone(
-        self, request: admin_pb2.TtsDoneRequest, context: grpc.aio.ServicerContext
-    ) -> admin_pb2.TtsDoneResponse:
-        """XTTS finished synthesis — dispatcher resumes (unless whisper
-        is still active)."""
-        self._router.notify_tts_done()
-        return admin_pb2.TtsDoneResponse(released=True)
+    # TtsNotify / TtsDone handlers were removed together with the
+    # LLM-based text normalization path. XTTS coexists with bge-m3 on
+    # p40-2 within VRAM budget; no dispatcher hold is required.
 
 
 class RouterInferenceServicer(inference_pb2_grpc.RouterInferenceServiceServicer):
@@ -417,7 +398,9 @@ class RouterInferenceServicer(inference_pb2_grpc.RouterInferenceServiceServicer)
         # the retries so a stuck whisper semaphore can't spin forever.
         MAX_WHISPER_RETRIES = 3
         WHISPER_WAIT_S = 600  # whisper transcriptions rarely exceed 10 min
+        MAX_CRITICAL_RETRIES = 5  # a kb-extract may get preempted several times in a burst
         retries = 0
+        critical_retries = 0
         while True:
             try:
                 result = await self._router.dispatch_inference(
@@ -448,6 +431,26 @@ class RouterInferenceServicer(inference_pb2_grpc.RouterInferenceServiceServicer)
                     e.emitted_chunks, retries, MAX_WHISPER_RETRIES,
                 )
                 await self._router.wait_for_whisper_done(timeout=WHISPER_WAIT_S)
+                continue
+            except PreemptedByCriticalError as e:
+                critical_retries += 1
+                if critical_retries > MAX_CRITICAL_RETRIES:
+                    logger.error(
+                        "DISPATCH: critical preemption retry budget exhausted (%d)",
+                        critical_retries,
+                    )
+                    await context.abort(
+                        grpc.StatusCode.UNAVAILABLE,
+                        "higher-priority traffic kept preempting after 5 retries",
+                    )
+                    return
+                logger.warning(
+                    "DISPATCH: preempted by critical (emitted=%d), retry %d/%d — "
+                    "re-queueing at original priority",
+                    e.emitted_chunks, critical_retries, MAX_CRITICAL_RETRIES,
+                )
+                # No wait — re-submit immediately. The priority queue will
+                # hold this behind the critical burst until the GPU frees.
                 continue
             except ProxyError as e:
                 await _abort_from_proxy_error(context, e)
@@ -487,6 +490,23 @@ class RouterInferenceServicer(inference_pb2_grpc.RouterInferenceServiceServicer)
                 )
                 await self._router.wait_for_whisper_done(timeout=WHISPER_WAIT_S)
                 # loop back to dispatch_inference for a fresh run.
+            except PreemptedByCriticalError as e:
+                critical_retries += 1
+                if critical_retries > MAX_CRITICAL_RETRIES:
+                    logger.error(
+                        "DISPATCH: critical preemption retry budget exhausted mid-stream (%d)",
+                        critical_retries,
+                    )
+                    await context.abort(
+                        grpc.StatusCode.UNAVAILABLE,
+                        "higher-priority traffic kept preempting mid-stream",
+                    )
+                    return
+                logger.warning(
+                    "DISPATCH: mid-stream preempted by critical (emitted=%d), retry %d/%d",
+                    e.emitted_chunks, critical_retries, MAX_CRITICAL_RETRIES,
+                )
+                # loop back for a fresh run — request goes back into queue.
 
 
 # ── Proto ↔ Ollama dict helpers ────────────────────────────────────────

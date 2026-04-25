@@ -360,68 +360,6 @@ public final class RouterAdminServiceGrpc {
     return getWhisperDoneMethod;
   }
 
-  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.router.TtsNotifyRequest,
-      com.jervis.contracts.router.TtsNotifyResponse> getTtsNotifyMethod;
-
-  @io.grpc.stub.annotations.RpcMethod(
-      fullMethodName = SERVICE_NAME + '/' + "TtsNotify",
-      requestType = com.jervis.contracts.router.TtsNotifyRequest.class,
-      responseType = com.jervis.contracts.router.TtsNotifyResponse.class,
-      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<com.jervis.contracts.router.TtsNotifyRequest,
-      com.jervis.contracts.router.TtsNotifyResponse> getTtsNotifyMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.router.TtsNotifyRequest, com.jervis.contracts.router.TtsNotifyResponse> getTtsNotifyMethod;
-    if ((getTtsNotifyMethod = RouterAdminServiceGrpc.getTtsNotifyMethod) == null) {
-      synchronized (RouterAdminServiceGrpc.class) {
-        if ((getTtsNotifyMethod = RouterAdminServiceGrpc.getTtsNotifyMethod) == null) {
-          RouterAdminServiceGrpc.getTtsNotifyMethod = getTtsNotifyMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.router.TtsNotifyRequest, com.jervis.contracts.router.TtsNotifyResponse>newBuilder()
-              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
-              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "TtsNotify"))
-              .setSampledToLocalTracing(true)
-              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.router.TtsNotifyRequest.getDefaultInstance()))
-              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.router.TtsNotifyResponse.getDefaultInstance()))
-              .setSchemaDescriptor(new RouterAdminServiceMethodDescriptorSupplier("TtsNotify"))
-              .build();
-        }
-      }
-    }
-    return getTtsNotifyMethod;
-  }
-
-  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.router.TtsDoneRequest,
-      com.jervis.contracts.router.TtsDoneResponse> getTtsDoneMethod;
-
-  @io.grpc.stub.annotations.RpcMethod(
-      fullMethodName = SERVICE_NAME + '/' + "TtsDone",
-      requestType = com.jervis.contracts.router.TtsDoneRequest.class,
-      responseType = com.jervis.contracts.router.TtsDoneResponse.class,
-      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<com.jervis.contracts.router.TtsDoneRequest,
-      com.jervis.contracts.router.TtsDoneResponse> getTtsDoneMethod() {
-    io.grpc.MethodDescriptor<com.jervis.contracts.router.TtsDoneRequest, com.jervis.contracts.router.TtsDoneResponse> getTtsDoneMethod;
-    if ((getTtsDoneMethod = RouterAdminServiceGrpc.getTtsDoneMethod) == null) {
-      synchronized (RouterAdminServiceGrpc.class) {
-        if ((getTtsDoneMethod = RouterAdminServiceGrpc.getTtsDoneMethod) == null) {
-          RouterAdminServiceGrpc.getTtsDoneMethod = getTtsDoneMethod =
-              io.grpc.MethodDescriptor.<com.jervis.contracts.router.TtsDoneRequest, com.jervis.contracts.router.TtsDoneResponse>newBuilder()
-              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
-              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "TtsDone"))
-              .setSampledToLocalTracing(true)
-              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.router.TtsDoneRequest.getDefaultInstance()))
-              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  com.jervis.contracts.router.TtsDoneResponse.getDefaultInstance()))
-              .setSchemaDescriptor(new RouterAdminServiceMethodDescriptorSupplier("TtsDone"))
-              .build();
-        }
-      }
-    }
-    return getTtsDoneMethod;
-  }
-
   /**
    * Creates a new async stub that supports all call types for the service
    */
@@ -610,33 +548,6 @@ public final class RouterAdminServiceGrpc {
         io.grpc.stub.StreamObserver<com.jervis.contracts.router.WhisperDoneResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getWhisperDoneMethod(), responseObserver);
     }
-
-    /**
-     * <pre>
-     * XTTS on VD signals it wants exclusive GPU for synthesis. Same active
-     * preemption flow as WhisperNotify: cancel Ollama LLM/VLM, unload
-     * their models, block until quiet. User contract:
-     *   "during whisper streaming AND during XTTS generation nothing else
-     *    runs on the GPU"
-     * Embeddings are also dropped here — the caller is a user-facing audio
-     * stream, every idle millisecond shows up as an audible gap.
-     * </pre>
-     */
-    default void ttsNotify(com.jervis.contracts.router.TtsNotifyRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.router.TtsNotifyResponse> responseObserver) {
-      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getTtsNotifyMethod(), responseObserver);
-    }
-
-    /**
-     * <pre>
-     * XTTS signals synthesis finished — router clears the semaphore and
-     * Ollama dispatcher resumes.
-     * </pre>
-     */
-    default void ttsDone(com.jervis.contracts.router.TtsDoneRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.router.TtsDoneResponse> responseObserver) {
-      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getTtsDoneMethod(), responseObserver);
-    }
   }
 
   /**
@@ -809,35 +720,6 @@ public final class RouterAdminServiceGrpc {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getWhisperDoneMethod(), getCallOptions()), request, responseObserver);
     }
-
-    /**
-     * <pre>
-     * XTTS on VD signals it wants exclusive GPU for synthesis. Same active
-     * preemption flow as WhisperNotify: cancel Ollama LLM/VLM, unload
-     * their models, block until quiet. User contract:
-     *   "during whisper streaming AND during XTTS generation nothing else
-     *    runs on the GPU"
-     * Embeddings are also dropped here — the caller is a user-facing audio
-     * stream, every idle millisecond shows up as an audible gap.
-     * </pre>
-     */
-    public void ttsNotify(com.jervis.contracts.router.TtsNotifyRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.router.TtsNotifyResponse> responseObserver) {
-      io.grpc.stub.ClientCalls.asyncUnaryCall(
-          getChannel().newCall(getTtsNotifyMethod(), getCallOptions()), request, responseObserver);
-    }
-
-    /**
-     * <pre>
-     * XTTS signals synthesis finished — router clears the semaphore and
-     * Ollama dispatcher resumes.
-     * </pre>
-     */
-    public void ttsDone(com.jervis.contracts.router.TtsDoneRequest request,
-        io.grpc.stub.StreamObserver<com.jervis.contracts.router.TtsDoneResponse> responseObserver) {
-      io.grpc.stub.ClientCalls.asyncUnaryCall(
-          getChannel().newCall(getTtsDoneMethod(), getCallOptions()), request, responseObserver);
-    }
   }
 
   /**
@@ -981,33 +863,6 @@ public final class RouterAdminServiceGrpc {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getWhisperDoneMethod(), getCallOptions(), request);
     }
-
-    /**
-     * <pre>
-     * XTTS on VD signals it wants exclusive GPU for synthesis. Same active
-     * preemption flow as WhisperNotify: cancel Ollama LLM/VLM, unload
-     * their models, block until quiet. User contract:
-     *   "during whisper streaming AND during XTTS generation nothing else
-     *    runs on the GPU"
-     * Embeddings are also dropped here — the caller is a user-facing audio
-     * stream, every idle millisecond shows up as an audible gap.
-     * </pre>
-     */
-    public com.jervis.contracts.router.TtsNotifyResponse ttsNotify(com.jervis.contracts.router.TtsNotifyRequest request) throws io.grpc.StatusException {
-      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
-          getChannel(), getTtsNotifyMethod(), getCallOptions(), request);
-    }
-
-    /**
-     * <pre>
-     * XTTS signals synthesis finished — router clears the semaphore and
-     * Ollama dispatcher resumes.
-     * </pre>
-     */
-    public com.jervis.contracts.router.TtsDoneResponse ttsDone(com.jervis.contracts.router.TtsDoneRequest request) throws io.grpc.StatusException {
-      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
-          getChannel(), getTtsDoneMethod(), getCallOptions(), request);
-    }
   }
 
   /**
@@ -1150,33 +1005,6 @@ public final class RouterAdminServiceGrpc {
     public com.jervis.contracts.router.WhisperDoneResponse whisperDone(com.jervis.contracts.router.WhisperDoneRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getWhisperDoneMethod(), getCallOptions(), request);
-    }
-
-    /**
-     * <pre>
-     * XTTS on VD signals it wants exclusive GPU for synthesis. Same active
-     * preemption flow as WhisperNotify: cancel Ollama LLM/VLM, unload
-     * their models, block until quiet. User contract:
-     *   "during whisper streaming AND during XTTS generation nothing else
-     *    runs on the GPU"
-     * Embeddings are also dropped here — the caller is a user-facing audio
-     * stream, every idle millisecond shows up as an audible gap.
-     * </pre>
-     */
-    public com.jervis.contracts.router.TtsNotifyResponse ttsNotify(com.jervis.contracts.router.TtsNotifyRequest request) {
-      return io.grpc.stub.ClientCalls.blockingUnaryCall(
-          getChannel(), getTtsNotifyMethod(), getCallOptions(), request);
-    }
-
-    /**
-     * <pre>
-     * XTTS signals synthesis finished — router clears the semaphore and
-     * Ollama dispatcher resumes.
-     * </pre>
-     */
-    public com.jervis.contracts.router.TtsDoneResponse ttsDone(com.jervis.contracts.router.TtsDoneRequest request) {
-      return io.grpc.stub.ClientCalls.blockingUnaryCall(
-          getChannel(), getTtsDoneMethod(), getCallOptions(), request);
     }
   }
 
@@ -1332,35 +1160,6 @@ public final class RouterAdminServiceGrpc {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getWhisperDoneMethod(), getCallOptions()), request);
     }
-
-    /**
-     * <pre>
-     * XTTS on VD signals it wants exclusive GPU for synthesis. Same active
-     * preemption flow as WhisperNotify: cancel Ollama LLM/VLM, unload
-     * their models, block until quiet. User contract:
-     *   "during whisper streaming AND during XTTS generation nothing else
-     *    runs on the GPU"
-     * Embeddings are also dropped here — the caller is a user-facing audio
-     * stream, every idle millisecond shows up as an audible gap.
-     * </pre>
-     */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.router.TtsNotifyResponse> ttsNotify(
-        com.jervis.contracts.router.TtsNotifyRequest request) {
-      return io.grpc.stub.ClientCalls.futureUnaryCall(
-          getChannel().newCall(getTtsNotifyMethod(), getCallOptions()), request);
-    }
-
-    /**
-     * <pre>
-     * XTTS signals synthesis finished — router clears the semaphore and
-     * Ollama dispatcher resumes.
-     * </pre>
-     */
-    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.router.TtsDoneResponse> ttsDone(
-        com.jervis.contracts.router.TtsDoneRequest request) {
-      return io.grpc.stub.ClientCalls.futureUnaryCall(
-          getChannel().newCall(getTtsDoneMethod(), getCallOptions()), request);
-    }
   }
 
   private static final int METHODID_GET_MAX_CONTEXT = 0;
@@ -1374,8 +1173,6 @@ public final class RouterAdminServiceGrpc {
   private static final int METHODID_INVALIDATE_CLIENT_TIER = 8;
   private static final int METHODID_WHISPER_NOTIFY = 9;
   private static final int METHODID_WHISPER_DONE = 10;
-  private static final int METHODID_TTS_NOTIFY = 11;
-  private static final int METHODID_TTS_DONE = 12;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -1437,14 +1234,6 @@ public final class RouterAdminServiceGrpc {
         case METHODID_WHISPER_DONE:
           serviceImpl.whisperDone((com.jervis.contracts.router.WhisperDoneRequest) request,
               (io.grpc.stub.StreamObserver<com.jervis.contracts.router.WhisperDoneResponse>) responseObserver);
-          break;
-        case METHODID_TTS_NOTIFY:
-          serviceImpl.ttsNotify((com.jervis.contracts.router.TtsNotifyRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.router.TtsNotifyResponse>) responseObserver);
-          break;
-        case METHODID_TTS_DONE:
-          serviceImpl.ttsDone((com.jervis.contracts.router.TtsDoneRequest) request,
-              (io.grpc.stub.StreamObserver<com.jervis.contracts.router.TtsDoneResponse>) responseObserver);
           break;
         default:
           throw new AssertionError();
@@ -1541,20 +1330,6 @@ public final class RouterAdminServiceGrpc {
               com.jervis.contracts.router.WhisperDoneRequest,
               com.jervis.contracts.router.WhisperDoneResponse>(
                 service, METHODID_WHISPER_DONE)))
-        .addMethod(
-          getTtsNotifyMethod(),
-          io.grpc.stub.ServerCalls.asyncUnaryCall(
-            new MethodHandlers<
-              com.jervis.contracts.router.TtsNotifyRequest,
-              com.jervis.contracts.router.TtsNotifyResponse>(
-                service, METHODID_TTS_NOTIFY)))
-        .addMethod(
-          getTtsDoneMethod(),
-          io.grpc.stub.ServerCalls.asyncUnaryCall(
-            new MethodHandlers<
-              com.jervis.contracts.router.TtsDoneRequest,
-              com.jervis.contracts.router.TtsDoneResponse>(
-                service, METHODID_TTS_DONE)))
         .build();
   }
 
@@ -1614,8 +1389,6 @@ public final class RouterAdminServiceGrpc {
               .addMethod(getInvalidateClientTierMethod())
               .addMethod(getWhisperNotifyMethod())
               .addMethod(getWhisperDoneMethod())
-              .addMethod(getTtsNotifyMethod())
-              .addMethod(getTtsDoneMethod())
               .build();
         }
       }

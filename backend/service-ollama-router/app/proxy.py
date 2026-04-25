@@ -69,6 +69,20 @@ class PreemptedByWhisperError(RuntimeError):
         self.emitted_chunks = emitted_chunks
 
 
+class PreemptedByCriticalError(RuntimeError):
+    """Raised when proxy stream was cut by a higher-priority request
+    (TTS normalize / user-facing chat) taking the GPU. The gRPC servicer
+    re-submits the original request — it goes back into the priority
+    queue at its original priority, so it runs again once the critical
+    burst clears. Same no-resume caveat as whisper: partial output is
+    discarded, Ollama has no offset.
+    """
+
+    def __init__(self, emitted_chunks: int) -> None:
+        super().__init__("preempted_by_critical")
+        self.emitted_chunks = emitted_chunks
+
+
 def _build_timeout() -> httpx.Timeout:
     return httpx.Timeout(
         connect=settings.proxy_connect_timeout_s,
@@ -95,6 +109,13 @@ async def proxy_streaming(
     client = httpx.AsyncClient(timeout=_build_timeout())
     preempted = False
     emitted = 0
+
+    def _raise_preempt_or_return(emitted_count: int):
+        """Pick the right exception for whoever set cancel_event."""
+        if request.state == RequestState.PREEMPTED_BY_WHISPER:
+            return PreemptedByWhisperError(emitted_count)
+        return PreemptedByCriticalError(emitted_count)
+
     try:
         async with client.stream(
             "POST",
@@ -108,23 +129,56 @@ async def proxy_streaming(
                     status_code=upstream.status_code,
                     message=body[:500],
                 )
-            async for line in upstream.aiter_lines():
-                if request.cancel_event.is_set():
-                    preempted = True
-                    logger.warning(
-                        "PROXY_STREAM: id=%s PREEMPTED state=%s emitted=%d",
-                        request.request_id, request.state, emitted,
+
+            # Race each incoming line against cancel_event. aiter_lines()
+            # blocks on a socket read, and httpx Response.aclose() does
+            # NOT actually cancel the in-flight read — so relying on
+            # cancel_event inside `async for` was too slow / never
+            # fired when Ollama stalled. Instead we drive the iterator
+            # manually with asyncio.wait, so when cancel_event fires we
+            # cancel the pending next-line read and exit immediately.
+            line_iter = upstream.aiter_lines()
+            cancel_task = asyncio.create_task(request.cancel_event.wait())
+            try:
+                while True:
+                    next_task = asyncio.create_task(line_iter.__anext__())
+                    done, pending = await asyncio.wait(
+                        {next_task, cancel_task},
+                        return_when=asyncio.FIRST_COMPLETED,
                     )
-                    if request.state == RequestState.PREEMPTED_BY_WHISPER:
-                        raise PreemptedByWhisperError(emitted)
-                    return
-                if not line.strip():
-                    continue
-                try:
-                    yield json.loads(line)
-                    emitted += 1
-                except json.JSONDecodeError:
-                    logger.debug("PROXY_STREAM: non-JSON line: %s", line[:120])
+                    if cancel_task in done:
+                        if not next_task.done():
+                            next_task.cancel()
+                            try:
+                                await next_task
+                            except (asyncio.CancelledError, Exception):
+                                pass
+                        preempted = True
+                        logger.warning(
+                            "PROXY_STREAM: id=%s PREEMPTED state=%s emitted=%d",
+                            request.request_id, request.state, emitted,
+                        )
+                        raise _raise_preempt_or_return(emitted)
+                    # next_task completed — get its result or break on
+                    # stream end.
+                    try:
+                        line = next_task.result()
+                    except StopAsyncIteration:
+                        break
+                    if not line.strip():
+                        continue
+                    try:
+                        yield json.loads(line)
+                        emitted += 1
+                    except json.JSONDecodeError:
+                        logger.debug("PROXY_STREAM: non-JSON line: %s", line[:120])
+            finally:
+                if not cancel_task.done():
+                    cancel_task.cancel()
+                    try:
+                        await cancel_task
+                    except (asyncio.CancelledError, Exception):
+                        pass
             logger.info("PROXY_STREAM: id=%s completed (emitted=%d)", request.request_id, emitted)
     except httpx.RemoteProtocolError:
         if request.cancel_event.is_set():

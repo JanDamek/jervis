@@ -235,33 +235,3 @@ class WhisperDoneResponse(_message.Message):
     RELEASED_FIELD_NUMBER: _ClassVar[int]
     released: bool
     def __init__(self, released: bool = ...) -> None: ...
-
-class TtsNotifyRequest(_message.Message):
-    __slots__ = ("ctx", "preempt_timeout_s")
-    CTX_FIELD_NUMBER: _ClassVar[int]
-    PREEMPT_TIMEOUT_S_FIELD_NUMBER: _ClassVar[int]
-    ctx: _types_pb2.RequestContext
-    preempt_timeout_s: int
-    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., preempt_timeout_s: _Optional[int] = ...) -> None: ...
-
-class TtsNotifyResponse(_message.Message):
-    __slots__ = ("granted", "preempted_count", "unloaded_models")
-    GRANTED_FIELD_NUMBER: _ClassVar[int]
-    PREEMPTED_COUNT_FIELD_NUMBER: _ClassVar[int]
-    UNLOADED_MODELS_FIELD_NUMBER: _ClassVar[int]
-    granted: bool
-    preempted_count: int
-    unloaded_models: int
-    def __init__(self, granted: bool = ..., preempted_count: _Optional[int] = ..., unloaded_models: _Optional[int] = ...) -> None: ...
-
-class TtsDoneRequest(_message.Message):
-    __slots__ = ("ctx",)
-    CTX_FIELD_NUMBER: _ClassVar[int]
-    ctx: _types_pb2.RequestContext
-    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ...) -> None: ...
-
-class TtsDoneResponse(_message.Message):
-    __slots__ = ("released",)
-    RELEASED_FIELD_NUMBER: _ClassVar[int]
-    released: bool
-    def __init__(self, released: bool = ...) -> None: ...

@@ -158,6 +158,7 @@ def _settings_to_dict(s) -> dict:
                         "inputPricePerMillion": qm.input_price_per_million,
                         "outputPricePerMillion": qm.output_price_per_million,
                         "supportsTools": qm.supports_tools,
+                        "supportsStreaming": qm.supports_streaming,
                         "provider": qm.provider,
                         "stats": {
                             "callCount": qm.stats.call_count,
@@ -234,6 +235,7 @@ async def find_cloud_model_for_context(
     estimated_tokens: int, tier_level: int, skip_models: list[str] | None = None,
     capability: str | None = None,
     require_tools: bool = False,
+    require_streaming: bool = False,
 ) -> str | None:
     """Find best cloud model that fits the context, iterating queues by tier.
 
@@ -241,22 +243,23 @@ async def find_cloud_model_for_context(
     PREMIUM -> PAID -> FREE order ensures best quality when higher tier is allowed.
     capability: if set, only models with matching capability (or empty capabilities = all).
     require_tools: if True, only models with supportsTools=True are eligible.
+    require_streaming: if True, only models with supportsStreaming=True are eligible.
     skip_models: model IDs to skip (already tried and failed in this request).
     Returns modelId or None.
     """
     # Try highest tier first for best quality, fall back to lower tiers
     if tier_level >= TIER_LEVELS["PREMIUM"]:
-        cloud_model = await _first_cloud_model("PREMIUM", estimated_tokens, skip_models, capability, require_tools)
+        cloud_model = await _first_cloud_model("PREMIUM", estimated_tokens, skip_models, capability, require_tools, require_streaming)
         if cloud_model:
             return cloud_model
 
     if tier_level >= TIER_LEVELS["PAID"]:
-        cloud_model = await _first_cloud_model("PAID", estimated_tokens, skip_models, capability, require_tools)
+        cloud_model = await _first_cloud_model("PAID", estimated_tokens, skip_models, capability, require_tools, require_streaming)
         if cloud_model:
             return cloud_model
 
     if tier_level >= TIER_LEVELS["FREE"]:
-        cloud_model = await _first_cloud_model("FREE", estimated_tokens, skip_models, capability, require_tools)
+        cloud_model = await _first_cloud_model("FREE", estimated_tokens, skip_models, capability, require_tools, require_streaming)
         if cloud_model:
             return cloud_model
 
@@ -267,6 +270,7 @@ async def _first_cloud_model(
     queue_name: str, estimated_tokens: int, skip_models: list[str] | None = None,
     capability: str | None = None,
     require_tools: bool = False,
+    require_streaming: bool = False,
 ) -> str | None:
     """Get the highest-priority available cloud model from a queue.
 
@@ -294,6 +298,13 @@ async def _first_cloud_model(
             continue
         if require_tools and not entry.get("supportsTools", False):
             logger.debug("Skipping model %s (require_tools=True but supportsTools=False)", model_id)
+            continue
+        if require_streaming and not entry.get("supportsStreaming", True):
+            # Streaming unreliable for this model — skip on streaming paths.
+            logger.info(
+                "Skipping model %s (require_streaming=True but supportsStreaming=False)",
+                model_id,
+            )
             continue
         if capability:
             cap_norm = _normalize_capability(capability)

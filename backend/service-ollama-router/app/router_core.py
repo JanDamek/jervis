@@ -161,14 +161,6 @@ class OllamaRouter:
         self._whisper_done_event = asyncio.Event()
         self._whisper_done_event.set()  # Initially idle
 
-        # XTTS GPU coordination (same flag-based contract as whisper). User
-        # policy: during whisper streaming AND during XTTS generation nothing
-        # else may run on the GPU, so Ollama dispatcher waits on either flag.
-        self._tts_active = False
-        self._tts_active_since: float = 0
-        self._tts_done_event = asyncio.Event()
-        self._tts_done_event.set()
-
     async def startup(self) -> None:
         """Initialize router state on startup."""
         self._mgmt_client = httpx.AsyncClient(timeout=httpx.Timeout(30.0))
@@ -282,6 +274,7 @@ class OllamaRouter:
         require_tools: bool = False,
         max_tier_override: str | None = None,
         intent: str = "",
+        require_streaming: bool = False,
     ) -> dict:
         """Router's single routing decision. Caller sends only `capability`
         and `client_id`; everything else — tier, model, retries, cooldowns —
@@ -331,6 +324,7 @@ class OllamaRouter:
             cloud_model = await find_cloud_model_for_context(
                 estimated_tokens, tier_level, None,
                 capability=cap_lower, require_tools=require_tools,
+                require_streaming=require_streaming,
             )
             if not cloud_model:
                 return None
@@ -358,7 +352,7 @@ class OllamaRouter:
         # 3. VLM — local VLM GPU preferred; escalate to cloud when blocked.
         _VLM_CAPS = ("visual", "vision", "vlm")
         if cap_lower in _VLM_CAPS:
-            audio_busy = self.check_whisper_busy() or self.check_tts_busy()
+            audio_busy = self.check_whisper_busy()
             vlm_gpu_blocked = audio_busy or any(
                 b.name == VLM_GPU and (
                     not b.healthy
@@ -396,7 +390,7 @@ class OllamaRouter:
         #    escalate to cloud on busy or oversize.
         _LOCAL_CTX_SAFE_BUDGET = 40_000
         target_model = local_fallback["model"]
-        audio_busy = self.check_whisper_busy() or self.check_tts_busy()
+        audio_busy = self.check_whisper_busy()
         qdepth = self._queue.queue_depth if self._queue else {}
         total_queued = sum(v for v in qdepth.values() if isinstance(v, int))
         gpu_free = (total_queued == 0) and any(
@@ -448,6 +442,12 @@ class OllamaRouter:
         if not capability:
             capability = detect_capability_from_body(api_path, body)
         require_tools = bool(body.get("tools"))
+        # Streaming path means the caller will iterate token-by-token.
+        # Models known to hang (supports_streaming=False in settings) must
+        # be skipped here — otherwise they'd burn a cascade slot.
+        require_streaming = (
+            is_streaming_request(body) and api_path not in EMBEDDING_PATHS
+        )
 
         estimated_tokens = self._estimate_tokens(body)
 
@@ -480,6 +480,7 @@ class OllamaRouter:
                 require_tools=require_tools,
                 max_tier_override=tier_for_attempt,
                 intent=intent,
+                require_streaming=require_streaming,
             )
 
             if decision.get("target") == "openrouter":
@@ -588,7 +589,7 @@ class OllamaRouter:
         if len(candidates) == 1:
             return candidates[0]
 
-        audio_busy = self.check_whisper_busy() or self.check_tts_busy()
+        audio_busy = self.check_whisper_busy()
         for model in candidates:
             for backend in self.gpu_pool.all_backends:
                 if model in GPU_MODEL_SETS.get(backend.name, []):
@@ -1122,135 +1123,11 @@ class OllamaRouter:
         if self._queue:
             self._queue.notify_slot_freed(None)
 
-    # ── TTS GPU coordination ────────────────────────────────────────────
-    # Mirror of the whisper flow: XTTS wants exclusive GPU, we preempt
-    # Ollama + unload its models. Both flags (whisper, tts) guard the
-    # dispatcher so they compose — either one being active keeps Ollama
-    # blocked.
-
-    def check_tts_busy(self) -> bool:
-        """Check if XTTS is actively synthesizing (based on notify/done)."""
-        if not self._tts_active:
-            return False
-        # Stale safety: auto-reset after 2h (crash resilience).
-        if time.monotonic() - self._tts_active_since > 7200:
-            logger.warning("TTS_STALE: active for >2h, auto-resetting")
-            self._tts_active = False
-            self._tts_done_event.set()
-            return False
-        return True
-
-    async def wait_for_tts_done(self, timeout: float = 3600) -> bool:
-        if not self.check_tts_busy():
-            return True
-        logger.info("TTS_WAIT: waiting for tts-done event (timeout=%ds)", timeout)
-        try:
-            await asyncio.wait_for(self._tts_done_event.wait(), timeout=timeout)
-            logger.info("TTS_WAIT: tts done, GPU available")
-            return True
-        except asyncio.TimeoutError:
-            logger.warning("TTS_WAIT: timeout after %ds", timeout)
-            return False
-
-    async def notify_tts_wants_gpu(self, preempt_timeout_s: int = 30) -> tuple[bool, int, int]:
-        """XTTS demands GPU. Same preempt flow as whisper, with one
-        difference: XTTS itself calls `RouterInferenceService.Chat`
-        (intent=`tts_normalize`) for per-sentence text rewriting while
-        synthesis is running. We MUST keep those requests — and the
-        chat model they loaded — alive so the XTTS sentence pump doesn't
-        stall. Everything else (qualifier, kb-extract, VLM work) gets
-        preempted + unloaded as usual.
-        """
-        from .models import RequestState
-
-        self._tts_active = True
-        self._tts_active_since = time.monotonic()
-        self._tts_done_event.clear()
-
-        # Preempt only the VLM GPU (p40-2) — that's where XTTS lives.
-        # Normalize LLM (qwen3:14b) lives on the SAME card by design:
-        # XTTS owns the GPU during synthesis, normalize runs in-process
-        # on the same GPU so there's no inter-pod round-trip and no
-        # cloud dependency. So two carve-outs compared to whisper:
-        #   * tts_normalize requests are NOT cancelled
-        #   * the normalize model is NOT unloaded from VRAM
-        TTS_NORMALIZE_MODEL = "qwen3:14b"
-        preempted: list[TrackedRequest] = []
-        for gpu in self.gpu_pool.healthy_backends:
-            if gpu.name != VLM_GPU:
-                continue
-            for req_id, req in list(gpu.active_requests.items()):
-                if getattr(req, "intent", None) == "tts_normalize":
-                    continue  # our own normalize path
-                if req.state == RequestState.PREEMPTED:
-                    continue
-                logger.warning(
-                    "TTS_PREEMPT: cancel id=%s model=%s gpu=%s",
-                    req_id, req.model, gpu.name,
-                )
-                req.cancel_event.set()
-                req.state = RequestState.PREEMPTED_BY_WHISPER  # reuses whisper retry path
-                preempted.append(req)
-
-        unloaded_models = 0
-        if self._mgmt_client:
-            unload_tasks: list[asyncio.Task] = []
-            for gpu in self.gpu_pool.healthy_backends:
-                if gpu.name != VLM_GPU:
-                    continue
-                for model_id in list(gpu.loaded_models.keys()):
-                    if model_id == TTS_NORMALIZE_MODEL:
-                        continue  # keep normalize model resident
-                    unload_tasks.append(asyncio.create_task(
-                        self.gpu_pool.unload_model(gpu, model_id, self._mgmt_client)
-                    ))
-            if unload_tasks:
-                done, pending = await asyncio.wait(
-                    unload_tasks, timeout=max(5, preempt_timeout_s - 2),
-                )
-                for t in pending:
-                    t.cancel()
-                for t in done:
-                    try:
-                        if t.result():
-                            unloaded_models += 1
-                    except Exception:
-                        pass
-
-        def _still_busy() -> bool:
-            # Normalize requests share the card on purpose — they're
-            # not contention from our point of view.
-            for gpu in self.gpu_pool.healthy_backends:
-                if gpu.name != VLM_GPU:
-                    continue
-                for req in gpu.active_requests.values():
-                    if getattr(req, "intent", None) == "tts_normalize":
-                        continue
-                    return True
-            return False
-
-        deadline = time.monotonic() + preempt_timeout_s
-        while time.monotonic() < deadline:
-            if not _still_busy():
-                break
-            await asyncio.sleep(0.2)
-
-        granted = not _still_busy()
-        logger.info(
-            "TTS_NOTIFY: granted=%s preempted=%d unloaded=%d",
-            granted, len(preempted), unloaded_models,
-        )
-        return granted, len(preempted), unloaded_models
-
-    def notify_tts_done(self) -> None:
-        """XTTS finished synthesis. Dispatcher wakes up and queued Ollama
-        work resumes — unless whisper is still active, in which case the
-        dispatcher gate stays closed via check_whisper_busy."""
-        self._tts_active = False
-        self._tts_done_event.set()
-        logger.info("TTS_DONE: flag cleared, dispatcher resumed")
-        if self._queue:
-            self._queue.notify_slot_freed(None)
+    # TTS GPU coordination used to live here — XTTS called TtsNotify to
+    # force Ollama off p40-2 and keep the dispatcher blocked until
+    # TtsDone. Retired together with the LLM normalize path: XTTS now
+    # normalizes on CPU and shares p40-2 VRAM with bge-m3 (about 5 GB
+    # combined of 24 GB), so there is no contention to arbitrate.
 
     # ── Helpers ─────────────────────────────────────────────────────────
 
