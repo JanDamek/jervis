@@ -204,45 +204,55 @@ async def build_brief(
         "- `abort_agent_job(agent_job_id, reason)` — cancel + release worktree if you no longer need the result."
     )
     brief_parts.append("")
-    brief_parts.append("#### Tracking dispatched jobs — MANDATORY discipline")
+    brief_parts.append("#### Tracking dispatched jobs — discrete checks, never fabricate")
     brief_parts.append("")
     brief_parts.append(
-        "After `dispatch_agent_job` returns an `agentJobId`, you OWN that job's "
-        "tracking until it reaches a terminal state (DONE / ERROR / CANCELLED). "
-        "Past sessions burned the user by reporting the initial RUNNING as proof "
-        "of ongoing success — actual jobs failed within ~90 s and the session "
-        "kept fabricating progress (\"agent is reading the code\") for minutes. "
-        "That ends now."
+        "After `dispatch_agent_job` returns an `agentJobId`, the job runs as a "
+        "K8s Job whose state you cannot watch directly. The previous mandatory "
+        "polling loop was removed — the system now treats agent jobs as fire-"
+        "and-confirm-on-checkpoint, not fire-and-narrate. Past sessions used "
+        "the polling loop to fabricate progress (\"agent is reading the code\") "
+        "between status snapshots; that pattern is forbidden."
     )
     brief_parts.append("")
-    brief_parts.append("**Mandatory loop after every `dispatch_agent_job`:**")
+    brief_parts.append("**Discrete tracking protocol:**")
     brief_parts.append(
-        "1. Immediately call `get_agent_job_status(agentJobId)`. Report the "
-        "initial state (QUEUED / RUNNING) to the user verbatim — no embellishment."
+        "1. Immediately after dispatch, call `get_agent_job_status(agentJobId)` "
+        "ONCE. Report the initial state (QUEUED / RUNNING) verbatim — no "
+        "embellishment, no progress narration."
     )
     brief_parts.append(
-        "2. Re-poll roughly every 30-60 s. Report any state change as it happens "
-        "(e.g. RUNNING → DONE or RUNNING → ERROR)."
+        "2. Do NOT loop. The job runs in the background; quiet does not mean "
+        "stuck. The user is free to ask \"what's the status now\" — only then "
+        "do another `get_agent_job_status` and report its fields."
     )
     brief_parts.append(
-        "3. Stop polling only when state is terminal (DONE / ERROR / CANCELLED) "
-        "or when the user explicitly tells you to."
+        "3. On **DONE** (when checked or asked): read `result_summary`, "
+        "`git_commit_sha`, `artifacts` (changed files) directly from the "
+        "status response. Quote `result_summary` verbatim — don't paraphrase "
+        "what the agent \"did\"."
     )
     brief_parts.append(
-        "4. On **DONE**: read `result_summary`, `git_commit_sha`, `artifacts` "
-        "(changed files) directly from the status response. Report those facts. "
-        "Don't paraphrase what the agent \"did\" — quote what `result_summary` says."
+        "4. On **ERROR**: read `error_message` IN FULL — it typically contains "
+        "the failing pod's last log lines. Diagnose from those (ENAMETOOLONG "
+        "→ entrypoint argv blow-up; PermissionError → fsGroup; branch already "
+        "exists → workspace prep). Propose a specific next action: retry with "
+        "different input, abort, escalate to user. NEVER silently re-dispatch "
+        "as if nothing happened."
     )
     brief_parts.append(
-        "5. On **ERROR**: read `error_message` IN FULL. It typically contains "
-        "the failing pod's last log lines. Diagnose from those (e.g. "
-        "ENAMETOOLONG → entrypoint argv blow-up; PermissionError → fsGroup; "
-        "branch already exists → workspace prep). Propose a specific next "
-        "action: retry with different input, abort, escalate to user. NEVER "
-        "silently continue with another dispatch as if nothing happened."
+        "5. On **CANCELLED**: report and stop. Don't auto-redispatch."
     )
+    brief_parts.append("")
     brief_parts.append(
-        "6. On **CANCELLED**: report and stop. Don't auto-redispatch."
+        "**Push channel (planned, not yet wired):** the server emits a "
+        "`JervisEvent.AgentJobStateChanged` push event on every state save "
+        "(commit `96257ee1e`). When the orchestrator subscribes to that "
+        "channel — Fáze H gRPC handoff — you will see system messages "
+        "`[agent-update] <agentJobId> \"<title>\" → <state>: <summary|error>` "
+        "appear automatically between turns. Until that lands you only see "
+        "what `get_agent_job_status` returns when explicitly invoked. Don't "
+        "claim \"the system will notify me\" — it doesn't yet."
     )
     brief_parts.append("")
     brief_parts.append("**Forbidden behaviours (these mislead the user):**")
@@ -255,11 +265,12 @@ async def build_brief(
     brief_parts.append(
         "- ❌ Treating one early `RUNNING` status as proof of ongoing success. "
         "K8s Jobs can fail in seconds (image pull, MCP config, permission, "
-        "OOM, container crash)."
+        "OOM, container crash). Quiet is not success."
     )
     brief_parts.append(
         "- ❌ Reporting \"agent is still working\" without a fresh "
-        "`get_agent_job_status` call less than ~90 s old."
+        "`get_agent_job_status` call. Either you have a recent status, or you "
+        "say nothing about progress."
     )
     brief_parts.append(
         "- ❌ Reporting DONE without `state: DONE` in the status response."
@@ -268,6 +279,12 @@ async def build_brief(
         "- ❌ Re-dispatching the same task on a fresh branch after an ERROR "
         "without first reading `error_message` and stating to the user what "
         "you think went wrong + why the new attempt would do better."
+    )
+    brief_parts.append(
+        "- ❌ Implementing your own polling loop with sleeps. The orchestrator "
+        "does not run on a background thread for you between turns; there is "
+        "no \"keep checking\" mode. Either the user asks, or you wait for the "
+        "(future) push event."
     )
     brief_parts.append("")
     brief_parts.append(
