@@ -26,27 +26,24 @@ spec:
                 - |
                   ES_URL="http://elasticsearch.logging.svc.cluster.local:9200"
                   RETENTION_DAYS=7
-                  echo "Checking indices older than ${RETENTION_DAYS} days..."
-
-                  # Get all k8s-logs indices
-                  INDICES=$(curl -s "${ES_URL}/_cat/indices/k8s-logs-*?h=index,creation.date.string" 2>/dev/null)
-                  if [ -z "$INDICES" ]; then
-                    echo "No indices found or Elasticsearch unreachable"
-                    exit 0
-                  fi
-
-                  # Calculate cutoff date
                   CUTOFF=$(date -u -d "-${RETENTION_DAYS} days" +%Y.%m.%d 2>/dev/null || date -u -v-${RETENTION_DAYS}d +%Y.%m.%d)
-                  echo "Cutoff date: k8s-logs-${CUTOFF}"
+                  echo "Cutoff date: ${CUTOFF} (retention=${RETENTION_DAYS}d)"
 
-                  echo "$INDICES" | while read -r line; do
-                    INDEX=$(echo "$line" | awk '{print $1}')
-                    # Extract date from index name: k8s-logs-YYYY.MM.DD
-                    INDEX_DATE=$(echo "$INDEX" | sed 's/k8s-logs-//')
-                    if [ "$INDEX_DATE" \< "$CUTOFF" ]; then
-                      echo "Deleting old index: $INDEX (date=$INDEX_DATE < cutoff=$CUTOFF)"
-                      curl -s -X DELETE "${ES_URL}/${INDEX}"
-                      echo ""
+                  for PREFIX in k8s-logs unifi-syslog unifi-controller; do
+                    echo "--- Scanning ${PREFIX}-* ---"
+                    INDICES=$(curl -s "${ES_URL}/_cat/indices/${PREFIX}-*?h=index" 2>/dev/null)
+                    if [ -z "$INDICES" ]; then
+                      echo "No ${PREFIX}-* indices found"
+                      continue
                     fi
+                    echo "$INDICES" | while read -r line; do
+                      INDEX=$(echo "$line" | awk '{print $1}')
+                      INDEX_DATE=$(echo "$INDEX" | sed "s/${PREFIX}-//")
+                      if [ "$INDEX_DATE" \< "$CUTOFF" ]; then
+                        echo "Deleting ${INDEX} (date=${INDEX_DATE} < cutoff=${CUTOFF})"
+                        curl -s -X DELETE "${ES_URL}/${INDEX}"
+                        echo ""
+                      fi
+                    done
                   done
                   echo "Retention cleanup complete"

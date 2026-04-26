@@ -1,0 +1,173 @@
+# =============================================================================
+# Fluent Bit aggregator — receives:
+#   - syslog (UDP/514) from UniFi devices (USG, AP, switches) via controller
+#   - forward (TCP/24224) from RPi sidecar tailing unifi-controller logs
+# Writes to Elasticsearch (logging ns), distinct indices per source
+# =============================================================================
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fluent-bit-aggregator-config
+  namespace: logging
+data:
+  fluent-bit.conf: |
+    [SERVICE]
+        Flush         5
+        Log_Level     info
+        Daemon        off
+        Parsers_File  parsers.conf
+        HTTP_Server   On
+        HTTP_Listen   0.0.0.0
+        HTTP_Port     2020
+
+    [INPUT]
+        Name    syslog
+        Tag     unifi.syslog
+        Mode    udp
+        Listen  0.0.0.0
+        Port    5514
+        Parser  syslog-rfc3164
+
+    [INPUT]
+        Name          forward
+        Tag           unifi.controller
+        Listen        0.0.0.0
+        Port          24224
+        Buffer_Chunk_Size  1M
+        Buffer_Max_Size    6M
+
+    [FILTER]
+        Name   modify
+        Match  unifi.syslog
+        Add    source unifi-device
+
+    [FILTER]
+        Name   modify
+        Match  unifi.controller.*
+        Add    source unifi-controller
+
+    [OUTPUT]
+        Name               es
+        Match              unifi.syslog
+        Host               elasticsearch.logging.svc.cluster.local
+        Port               9200
+        Logstash_Format    On
+        Logstash_Prefix    unifi-syslog
+        Type               _doc
+        Retry_Limit        3
+        Suppress_Type_Name On
+
+    [OUTPUT]
+        Name               es
+        Match              unifi.controller.*
+        Host               elasticsearch.logging.svc.cluster.local
+        Port               9200
+        Logstash_Format    On
+        Logstash_Prefix    unifi-controller
+        Type               _doc
+        Retry_Limit        3
+        Suppress_Type_Name On
+
+  parsers.conf: |
+    [PARSER]
+        Name        syslog-rfc3164
+        Format      regex
+        Regex       ^\<(?<pri>[0-9]+)\>(?<time>[^ ]* {1,2}[^ ]* [^ ]*) (?<host>[^ ]*) (?<ident>[a-zA-Z0-9_\/\.\-]*)(?:\[(?<pid>[0-9]+)\])?(?:[^\:]*\:)? *(?<message>.*)$
+        Time_Key    time
+        Time_Format %b %d %H:%M:%S
+        Time_Keep   On
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fluent-bit-aggregator
+  namespace: logging
+  labels:
+    app: fluent-bit-aggregator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fluent-bit-aggregator
+  template:
+    metadata:
+      labels:
+        app: fluent-bit-aggregator
+    spec:
+      containers:
+        - name: fluent-bit
+          image: fluent/fluent-bit:2.2.3
+          ports:
+            - containerPort: 5514
+              name: syslog-udp
+              protocol: UDP
+            - containerPort: 24224
+              name: forward
+              protocol: TCP
+            - containerPort: 2020
+              name: metrics
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: config
+              mountPath: /fluent-bit/etc/
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 2020
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: config
+          configMap:
+            name: fluent-bit-aggregator-config
+---
+# UDP/514 syslog endpoint for UniFi devices (USG, APs, switches).
+# MetalLB assigns LAN IP from the configured pool; wire DNS afterwards.
+apiVersion: v1
+kind: Service
+metadata:
+  name: fluent-bit-syslog
+  namespace: logging
+  labels:
+    app: fluent-bit-aggregator
+  annotations:
+    metallb.universe.tf/allow-shared-ip: "fluent-bit-aggregator"
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Cluster
+  selector:
+    app: fluent-bit-aggregator
+  ports:
+    - name: syslog
+      port: 514
+      targetPort: 5514
+      protocol: UDP
+---
+# TCP/24224 forward endpoint for the RPi sidecar shipper.
+apiVersion: v1
+kind: Service
+metadata:
+  name: fluent-bit-forward
+  namespace: logging
+  labels:
+    app: fluent-bit-aggregator
+  annotations:
+    metallb.universe.tf/allow-shared-ip: "fluent-bit-aggregator"
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Cluster
+  selector:
+    app: fluent-bit-aggregator
+  ports:
+    - name: forward
+      port: 24224
+      targetPort: 24224
+      protocol: TCP

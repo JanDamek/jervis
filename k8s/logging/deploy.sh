@@ -35,21 +35,27 @@ kubectl apply -f "$SCRIPT_DIR/kibana.yaml"
 echo "--- Deploying Fluent Bit..."
 kubectl apply -f "$SCRIPT_DIR/fluent-bit.yaml"
 
-# 6. Log retention CronJob
+# 6. Fluent Bit aggregator (UDP/514 syslog from UniFi devices, TCP/24224 forward from RPi sidecar)
+echo "--- Deploying Fluent Bit aggregator..."
+kubectl apply -f "$SCRIPT_DIR/unifi-aggregator.yaml"
+
+# 7. Log retention CronJob
 echo "--- Deploying log retention CronJob..."
 kubectl apply -f "$SCRIPT_DIR/retention-cronjob.yaml"
 
-# 7. Ingress
+# 8. Ingress
 echo "--- Deploying Kibana ingress..."
 kubectl apply -f "$SCRIPT_DIR/ingress.yaml"
 
 echo ""
 echo "=== EFK logging stack deployed ==="
 echo "  Elasticsearch: elasticsearch.logging.svc.cluster.local:9200"
-echo "  Kibana:        kibana.damek-soft.eu (after DNS + TLS setup)"
-echo "  Fluent Bit:    DaemonSet on all nodes"
-echo "  Retention:     7 days (CronJob at 02:00 daily)"
+echo "  Kibana:        kibana.lan.mazlusek.com"
+echo "  Fluent Bit:    DaemonSet on all nodes (k8s-logs-*)"
+echo "  Aggregator:    UDP/514 syslog + TCP/24224 forward (unifi-syslog-*, unifi-controller-*)"
+echo "  Retention:     7 days (CronJob at 02:00 daily, all *-logs / unifi-* indices)"
 echo ""
 echo "Check status:"
 echo "  kubectl get all -n logging"
-echo "  kubectl logs -n logging -l app=fluent-bit --tail=20"
+echo "  kubectl get svc -n logging fluent-bit-syslog fluent-bit-forward  # MetalLB EXTERNAL-IP"
+echo "  kubectl logs -n logging -l app=fluent-bit-aggregator --tail=20"
