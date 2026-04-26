@@ -241,7 +241,13 @@ CLAUDE_STREAM_FILE="$WORKSPACE/.jervis/claude-stream.jsonl"
 : > "$CLAUDE_STREAM_FILE"
 
 set +e
-claude "${CLAUDE_ARGS[@]}" "$(cat "$BRIEF_FILE")" | tee "$CLAUDE_STREAM_FILE"
+# Brief flows via stdin, NOT as positional argv. Claude CLI 2.x has a
+# quirk where long positional prompt arguments are interpreted as
+# relative file paths (open() with cwd prefix → ENAMETOOLONG when the
+# "filename" exceeds 255 bytes). Stdin avoids the argv parser entirely.
+# Same family of quirks as --append-system-prompt → --append-system-prompt-file
+# (commit ff4556e15) and the .jervis/ tee permission fix (commit c9511e9a0).
+claude "${CLAUDE_ARGS[@]}" < "$BRIEF_FILE" | tee "$CLAUDE_STREAM_FILE"
 CLAUDE_EC=${PIPESTATUS[0]}
 set -e
 
