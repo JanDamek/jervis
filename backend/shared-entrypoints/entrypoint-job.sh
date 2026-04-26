@@ -19,6 +19,11 @@
 #
 set -euo pipefail
 
+# Group-writable defaults: new files 0664, new dirs 0775. Required so the
+# shared `jervis` group (gid 1000) can read/write everything any service
+# writes to the shared PVC, regardless of which per-service uid wrote it.
+umask 002
+
 WORKSPACE="${WORKSPACE:?WORKSPACE env is required}"
 TASK_ID="${TASK_ID:?TASK_ID env is required}"
 AGENT_TYPE="${AGENT_TYPE:?AGENT_TYPE env is required}"

@@ -90,4 +90,4 @@ ENV PORT=3200 \
     DOCKER_HOST=tcp://localhost:2375
 EXPOSE 3200
 
-ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} -jar /opt/jervis/coding-engine/jervis-coding-engine.jar"]
+ENTRYPOINT ["sh", "-c", "umask 002 && java ${JAVA_OPTS} -jar /opt/jervis/coding-engine/jervis-coding-engine.jar"]

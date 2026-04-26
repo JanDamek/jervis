@@ -39,4 +39,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:8000/health || exit 1
 
 # Run with uvicorn (gRPC server boots in FastAPI lifespan on port 5501)
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "info"]
+CMD ["sh", "-c", "umask 002 && uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level info"]

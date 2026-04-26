@@ -167,4 +167,4 @@ ENV PORT=3400 \
     JAVA_OPTS="-Xmx1g -Xms256m"
 EXPOSE 3400
 
-ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} -jar /opt/jervis/claude/claude.jar"]
+ENTRYPOINT ["sh", "-c", "umask 002 && java ${JAVA_OPTS} -jar /opt/jervis/claude/claude.jar"]

@@ -20,4 +20,4 @@ USER server
 ENV JAVA_OPTS="-Xmx4g -Xms1g"
 EXPOSE 5500
 VOLUME ["/opt/jervis/data"]
-ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} -jar /opt/jervis/server/server.jar --spring.config.additional-location=optional:file:/opt/jervis/server/config/"]
+ENTRYPOINT ["sh", "-c", "umask 002 && java ${JAVA_OPTS} -jar /opt/jervis/server/server.jar --spring.config.additional-location=optional:file:/opt/jervis/server/config/"]
