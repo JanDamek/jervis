@@ -66,4 +66,11 @@ RUN useradd -m -s /bin/bash -u 1000 jervis && \
     mkdir -p /opt/jervis && \
     chown -R jervis:jervis /opt/jervis
 
+# Activate the non-root user as the container default. Without this
+# directive, Kubernetes still runs the container as UID 0 unless a Pod
+# securityContext.runAsUser is set — and that hadn't been set on the
+# coding-agent Job, so Claude CLI refused with
+# "--dangerously-skip-permissions cannot be used with root/sudo privileges".
+USER jervis
+
 ENTRYPOINT ["/opt/jervis/entrypoint-coding.sh"]

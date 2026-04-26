@@ -605,7 +605,15 @@ class AgentJobDispatcher(
                         // .jervis/result.json. fsGroup=1000 makes K8s recursively
                         // chgrp the volume on mount so uid 1000 inherits write
                         // access via group membership.
+                        // runAsUser/runAsGroup belt-and-suspenders alongside the
+                        // Dockerfile USER directive — explicit at the K8s level
+                        // so a future image rebuild that drops USER jervis
+                        // doesn't silently regress the agent back to root
+                        // (Claude CLI refuses --dangerously-skip-permissions as
+                        // root). fsGroup keeps PVC mount group-writable to 1000.
                         .withNewSecurityContext()
+                            .withRunAsUser(1000L)
+                            .withRunAsGroup(1000L)
                             .withFsGroup(1000L)
                         .endSecurityContext()
                         .addNewContainer()
