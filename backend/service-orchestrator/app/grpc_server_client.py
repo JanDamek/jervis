@@ -16,6 +16,7 @@ import grpc.aio
 from app.config import settings
 from jervis.common import types_pb2
 from jervis.server import (
+    agent_job_events_pb2_grpc,
     bug_tracker_pb2_grpc,
     cache_pb2_grpc,
     chat_approval_pb2_grpc,
@@ -65,6 +66,9 @@ _orchestrator_progress_stub: Optional[
 _git_stub: Optional[git_pb2_grpc.ServerGitServiceStub] = None
 _meeting_helper_callbacks_stub: Optional[
     meeting_helper_callbacks_pb2_grpc.ServerMeetingHelperCallbacksServiceStub
+] = None
+_agent_job_events_stub: Optional[
+    agent_job_events_pb2_grpc.AgentJobEventsServiceStub
 ] = None
 
 
@@ -254,6 +258,23 @@ def server_meeting_helper_callbacks_stub() -> (
             )
         )
     return _meeting_helper_callbacks_stub
+
+
+def server_agent_job_events_stub() -> agent_job_events_pb2_grpc.AgentJobEventsServiceStub:
+    """Server-streaming stub for AgentJobStateChanged push subscriptions.
+
+    Used by `ClientSessionManager._consume_agent_job_events` — one
+    long-lived `Subscribe` call per active client session, reconnecting
+    with exponential backoff on transport drops. The cached stub is
+    fine across reconnects; the channel underneath is shared with all
+    other Kotlin server stubs.
+    """
+    global _agent_job_events_stub
+    if _agent_job_events_stub is None:
+        _agent_job_events_stub = agent_job_events_pb2_grpc.AgentJobEventsServiceStub(
+            _get_channel()
+        )
+    return _agent_job_events_stub
 
 
 def build_request_context() -> types_pb2.RequestContext:

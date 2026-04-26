@@ -245,14 +245,18 @@ async def build_brief(
     )
     brief_parts.append("")
     brief_parts.append(
-        "**Push channel (planned, not yet wired):** the server emits a "
-        "`JervisEvent.AgentJobStateChanged` push event on every state save "
-        "(commit `96257ee1e`). When the orchestrator subscribes to that "
-        "channel — Fáze H gRPC handoff — you will see system messages "
-        "`[agent-update] <agentJobId> \"<title>\" → <state>: <summary|error>` "
-        "appear automatically between turns. Until that lands you only see "
-        "what `get_agent_job_status` returns when explicitly invoked. Don't "
-        "claim \"the system will notify me\" — it doesn't yet."
+        "**Push channel (live):** the server emits an "
+        "`AgentJobStateChanged` push on every state save and the "
+        "orchestrator subscribes to it via gRPC for the lifetime of "
+        "this session. You will see system messages of the form\n"
+        "    `[agent-update] Job <id> \"<title>\" → <state>: <summary|error>`\n"
+        "appear automatically in the next LLM turn after each transition "
+        "(QUEUED → RUNNING → DONE/ERROR/CANCELLED). React to each push "
+        "as it arrives — report progress to the user, propose next "
+        "action on ERROR (always quote the error message verbatim, do "
+        "not paraphrase). You do NOT need to poll `get_agent_job_status` "
+        "proactively; use it only if a user explicitly asks \"what's the "
+        "status now\" mid-conversation."
     )
     brief_parts.append("")
     brief_parts.append("**Forbidden behaviours (these mislead the user):**")

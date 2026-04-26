@@ -93,6 +93,11 @@ class ClientSession:
     # Periodic-compact background loop — owned by ClientSessionManager,
     # cancelled at teardown.
     compact_task: asyncio.Task | None = None
+    # Long-lived gRPC subscriber for AgentJobStateChanged push events.
+    # Injects [agent-update] system messages into out_queue so the LLM
+    # session sees state transitions in the next turn without polling.
+    # Cancelled at teardown together with the SDK task.
+    agent_event_subscription: asyncio.Task | None = None
 
 
 class ClientSessionManager:
@@ -243,6 +248,15 @@ class ClientSessionManager:
         session.compact_task = asyncio.create_task(
             self._periodic_compact_loop(session),
             name=f"periodic-compact-{session_id}",
+        )
+
+        # Subscribe to AgentJobStateChanged push events so the LLM sees
+        # background coding agents progress without polling
+        # get_agent_job_status. Each push lands as a system message in
+        # out_queue and surfaces on the next LLM turn boundary.
+        session.agent_event_subscription = asyncio.create_task(
+            self._consume_agent_job_events(session),
+            name=f"agent-events-{session_id}",
         )
 
         logger.info(
@@ -613,6 +627,84 @@ class ClientSessionManager:
         finally:
             logger.info("periodic compact loop exiting | session=%s", sid)
 
+    async def _consume_agent_job_events(self, session: ClientSession) -> None:
+        """Long-lived gRPC subscriber to AgentJobStateChanged push events.
+
+        Filters server-side by client_id (per scope) so cross-client
+        traffic doesn't reach this session. Per arrived event, formats a
+        compact `[agent-update] ...` system message and enqueues it on
+        out_queue — the chat handler picks it up between SDK messages
+        and surfaces it to the next LLM turn.
+
+        Reconnects with exponential backoff (1s → 30s cap) on transport
+        drops. No polling fallback — push channel is the only source of
+        truth (per Fáze H acceptance + brief).
+        """
+        from jervis.common import types_pb2
+        from jervis.server import agent_job_events_pb2
+        from jervis_contracts.interceptors import prepare_context
+
+        from app.grpc_server_client import server_agent_job_events_stub
+
+        sid = session.session_id
+        cid = session.client_id
+        backoff = 1.0
+        while not session.stop_flag.is_set():
+            try:
+                ctx = types_pb2.RequestContext()
+                prepare_context(ctx)
+                stub = server_agent_job_events_stub()
+                req = agent_job_events_pb2.AgentJobEventsSubscribeRequest(
+                    ctx=ctx, client_id=cid,
+                )
+                logger.info("agent events subscription open | session=%s client=%s", sid, cid)
+                async for evt in stub.Subscribe(req):
+                    if session.stop_flag.is_set():
+                        break
+                    msg = self._format_agent_update(evt)
+                    await session.out_queue.put({
+                        "type": "system",
+                        "content": msg,
+                        "metadata": {
+                            "kind": "agent_update",
+                            "agentJobId": evt.agent_job_id,
+                            "state": evt.state,
+                        },
+                    })
+                    logger.debug(
+                        "agent_update injected | session=%s job=%s state=%s",
+                        sid, evt.agent_job_id, evt.state,
+                    )
+                # Stream completed cleanly (server closed) — reset backoff
+                # and reconnect.
+                backoff = 1.0
+            except asyncio.CancelledError:
+                logger.info("agent events subscription cancelled | session=%s", sid)
+                return
+            except Exception as e:
+                logger.warning(
+                    "agent events subscription error | session=%s err=%s retry=%.1fs",
+                    sid, e, backoff,
+                )
+                try:
+                    await asyncio.sleep(backoff)
+                except asyncio.CancelledError:
+                    return
+                backoff = min(backoff * 2, 30.0)
+
+    @staticmethod
+    def _format_agent_update(evt) -> str:
+        title = evt.title or "(no title)"
+        base = f"[agent-update] Job {evt.agent_job_id} \"{title}\" → {evt.state}"
+        if evt.state == "DONE" and evt.result_summary:
+            return f"{base}: {evt.result_summary}"
+        if evt.state == "ERROR" and evt.error_message:
+            # Truncate noisy stack traces — agent only needs the first line
+            # to react. Full message stays in agent_job_records.errorMessage.
+            err = evt.error_message[:300]
+            return f"{base}: ERROR: {err}"
+        return base
+
     async def _teardown(self, session: ClientSession) -> None:
         session.stop_flag.set()
         # Stop the periodic-compact loop before the SDK task so the loop
@@ -632,6 +724,24 @@ class ClientSessionManager:
                     session.session_id,
                 )
         session.compact_task = None
+
+        # Stop the AgentJobStateChanged gRPC subscriber. The reconnect
+        # loop respects stop_flag and CancelledError, so cancel() is
+        # enough; we still await briefly to give the underlying gRPC
+        # call a chance to close cleanly.
+        agent_sub = session.agent_event_subscription
+        if agent_sub and not agent_sub.done():
+            agent_sub.cancel()
+            try:
+                await asyncio.wait_for(agent_sub, timeout=5.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
+            except Exception:
+                logger.exception(
+                    "agent events subscription exit raised | session=%s",
+                    session.session_id,
+                )
+        session.agent_event_subscription = None
 
         try:
             session.in_queue.put_nowait(_STOP)

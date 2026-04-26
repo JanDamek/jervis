@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerAgentJobEventsProto";
+
+// AgentJobEventsService — server-streaming push of AgentJobRecord state
+// changes. Subscribers (typically the Python orchestrator's per-client
+// session loops) receive one message per state transition emitted by
+// `AgentJobDispatcher.saveAndEmit` / `AgentJobWatcher`. The orchestrator
+// then injects `[agent-update] ...` system messages into the LLM session
+// queue so the chat model sees state changes without polling.
+//
+// Pairs with NotificationRpcImpl.subscribeToEvents (kRPC, UI-side) —
+// the gRPC bridge filters that broadcast for AgentJobStateChanged events
+// only and re-emits them as proto messages.
+service AgentJobEventsService {
+  // Long-lived server stream. The server sends one message per emit,
+  // and never completes the call from its side. Clients reconnect with
+  // exponential backoff on transport drops (no polling fallback).
+  rpc Subscribe(AgentJobEventsSubscribeRequest) returns (stream AgentJobStateChangedEvent);
+}
+
+message AgentJobEventsSubscribeRequest {
+  jervis.common.RequestContext ctx = 1;
+  // Optional scope filter. Empty string means "all clients" (used by
+  // global maintenance views). Per-client orchestrator sessions pass
+  // their `active_client_id` so cross-client noise doesn't reach a
+  // single chat session.
+  string client_id = 2;
+}
+
+message AgentJobStateChangedEvent {
+  // 24-char hex ObjectId — same shape as AgentJobRecord.id.
+  string agent_job_id = 1;
+  // Matches com.jervis.dto.agentjob.AgentJobFlavor.name().
+  string flavor = 2;
+  // Matches com.jervis.dto.agentjob.AgentJobState.name() —
+  // QUEUED / RUNNING / WAITING_USER / DONE / ERROR / CANCELLED.
+  string state = 3;
+  string title = 4;
+  string client_id = 5;
+  string project_id = 6;
+  string resource_id = 7;
+  string git_branch = 8;
+  string git_commit_sha = 9;
+  // Populated on terminal DONE.
+  string result_summary = 10;
+  // Populated on terminal ERROR.
+  string error_message = 11;
+  repeated string artifacts = 12;
+  // ISO-8601 instant — when this state transition was persisted.
+  string transitioned_at = 13;
+  // ISO-8601 — first RUNNING transition; empty until then.
+  string started_at = 14;
+  // ISO-8601 — terminal transition; empty until DONE/ERROR/CANCELLED.
+  string completed_at = 15;
+}
