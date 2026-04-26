@@ -38,9 +38,9 @@ COPY backend/service-orchestrator/app/ app/
 
 # Per uid-map.md: shared gid 1000 jervis + per-service uid 1020.
 RUN groupadd -g 1000 jervis && \
-    useradd -u 1020 -g jervis -m -s /bin/bash jervis-orchestrator && \
-    chown -R jervis-orchestrator:jervis /app
-USER jervis-orchestrator
+    useradd -u 1020 -g jervis -m -s /bin/bash orchestrator && \
+    chown -R orchestrator:jervis /app
+USER orchestrator
 
 EXPOSE 8090
 

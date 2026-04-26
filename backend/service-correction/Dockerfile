@@ -28,9 +28,9 @@ COPY backend/service-correction/app/ ./app/
 
 # Per uid-map.md: shared gid 1000 jervis + per-service uid 1060.
 RUN groupadd -g 1000 jervis && \
-    useradd -u 1060 -g jervis -m -s /bin/bash jervis-correction && \
-    chown -R jervis-correction:jervis /app
-USER jervis-correction
+    useradd -u 1060 -g jervis -m -s /bin/bash correction && \
+    chown -R correction:jervis /app
+USER correction
 
 EXPOSE 8000 5501
 

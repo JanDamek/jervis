@@ -11,9 +11,9 @@ COPY backend/service-o365-gateway/build/libs/service-o365-gateway-*.jar service-
 
 # Per uid-map.md: shared gid 1000 jervis + per-service uid 1090.
 RUN groupadd -g 1000 jervis && \
-    useradd -u 1090 -g jervis -m -s /bin/bash jervis-o365-gateway && \
-    chown -R jervis-o365-gateway:jervis /opt/jervis
-USER jervis-o365-gateway
+    useradd -u 1090 -g jervis -m -s /bin/bash o365-gateway && \
+    chown -R o365-gateway:jervis /opt/jervis
+USER o365-gateway
 
 EXPOSE 8080
 

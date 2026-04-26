@@ -59,9 +59,9 @@ WORKDIR /opt/jervis/xtts
 # user so bind-mounts stay read-write.
 # Per uid-map.md: shared gid 1000 jervis + per-service uid 1070 (TTS).
 RUN groupadd -g 1000 jervis && \
-    useradd -u 1070 -g jervis -m -s /bin/bash jervis-tts && \
-    chown -R jervis-tts:jervis /opt/jervis
-USER jervis-tts
+    useradd -u 1070 -g jervis -m -s /bin/bash tts && \
+    chown -R tts:jervis /opt/jervis
+USER tts
 
 # Model cache + voice samples come in via bind-mount at runtime:
 #   /opt/jervis/data/tts        ← ro-ish voice reference wavs

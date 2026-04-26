@@ -17,9 +17,9 @@ COPY backend/service-ollama-router/app/ app/
 
 # Per uid-map.md: shared gid 1000 jervis + per-service uid 1080.
 RUN groupadd -g 1000 jervis && \
-    useradd -u 1080 -g jervis -m -s /bin/bash jervis-ollama-router && \
-    chown -R jervis-ollama-router:jervis /app
-USER jervis-ollama-router
+    useradd -u 1080 -g jervis -m -s /bin/bash ollama-router && \
+    chown -R ollama-router:jervis /app
+USER ollama-router
 
 EXPOSE 11430 5501
 

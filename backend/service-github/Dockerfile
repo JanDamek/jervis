@@ -11,9 +11,9 @@ COPY backend/service-github/build/libs/service-github-*.jar service-github.jar
 
 # Per uid-map.md: shared gid 1000 jervis + per-service uid 1101.
 RUN groupadd -g 1000 jervis && \
-    useradd -u 1101 -g jervis -m -s /bin/bash jervis-github && \
-    chown -R jervis-github:jervis /opt/jervis
-USER jervis-github
+    useradd -u 1101 -g jervis -m -s /bin/bash github && \
+    chown -R github:jervis /opt/jervis
+USER github
 
 EXPOSE 8085
 

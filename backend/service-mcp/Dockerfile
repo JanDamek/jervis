@@ -18,9 +18,9 @@ COPY backend/service-mcp/app/ app/
 
 # Per uid-map.md: shared gid 1000 jervis + per-service uid 1030.
 RUN groupadd -g 1000 jervis && \
-    useradd -u 1030 -g jervis -m -s /bin/bash jervis-mcp && \
-    chown -R jervis-mcp:jervis /app
-USER jervis-mcp
+    useradd -u 1030 -g jervis -m -s /bin/bash mcp && \
+    chown -R mcp:jervis /app
+USER mcp
 
 EXPOSE 8100
 

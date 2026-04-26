@@ -21,9 +21,9 @@ COPY backend/service-knowledgebase/ .
 # Expose port 8080 (matching the Kotlin service port if possible, or standard 8080)
 # Per uid-map.md: shared gid 1000 jervis + per-service uid 1050.
 RUN groupadd -g 1000 jervis && \
-    useradd -u 1050 -g jervis -m -s /bin/bash jervis-knowledgebase && \
-    chown -R jervis-knowledgebase:jervis /app
-USER jervis-knowledgebase
+    useradd -u 1050 -g jervis -m -s /bin/bash knowledgebase && \
+    chown -R knowledgebase:jervis /app
+USER knowledgebase
 
 EXPOSE 8080
 

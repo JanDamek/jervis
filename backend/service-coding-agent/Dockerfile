@@ -65,11 +65,11 @@ RUN chmod +x /opt/jervis/entrypoint-coding.sh
 #     --dangerously-skip-permissions as root). Shared gid 1000 jervis
 #     + per-service uid 1040.
 RUN groupadd -g 1000 jervis && \
-    useradd -u 1040 -g jervis -m -s /bin/bash jervis-coding-agent && \
+    useradd -u 1040 -g jervis -m -s /bin/bash coding-agent && \
     mkdir -p /opt/jervis && \
-    chown -R jervis-coding-agent:jervis /opt/jervis
+    chown -R coding-agent:jervis /opt/jervis
 
 # Activate the non-root user as the container default.
-USER jervis-coding-agent
+USER coding-agent
 
 ENTRYPOINT ["/opt/jervis/entrypoint-coding.sh"]

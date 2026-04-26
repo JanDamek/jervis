@@ -1,15 +1,15 @@
 # =============================================================================
-# jervis-whisper-gpu — faster-whisper STT + pyannote diarization on VD GPU VM.
+# whisper-gpu — faster-whisper STT + pyannote diarization on VD GPU VM.
 #
 # Runs on `ollama.lan.mazlusek.com` (p40-2) as a Docker container with
 # --gpus all. Replaces the previous systemd user unit
-# (`jervis-whisper.service`) so all three GPU services (XTTS, Whisper,
+# (`whisper.service`) so all three GPU services (XTTS, Whisper,
 # Ollama) share the same docker-run deploy pattern.
 #
 # Build from the repo root:
 #   docker buildx build --platform linux/amd64 \
 #     -f backend/service-whisper/Dockerfile.gpu \
-#     -t registry.damek-soft.eu/jandamek/jervis-whisper-gpu:latest .
+#     -t registry.damek-soft.eu/jandamek/whisper-gpu:latest .
 # =============================================================================
 
 FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
@@ -57,9 +57,9 @@ WORKDIR /opt/jervis/whisper
 # stay read-write.
 # Per uid-map.md: shared gid 1000 jervis + per-service uid 1071 (Whisper).
 RUN groupadd -g 1000 jervis && \
-    useradd -u 1071 -g jervis -m -s /bin/bash jervis-whisper && \
-    chown -R jervis-whisper:jervis /opt/jervis
-USER jervis-whisper
+    useradd -u 1071 -g jervis -m -s /bin/bash whisper && \
+    chown -R whisper:jervis /opt/jervis
+USER whisper
 
 # HuggingFace model cache comes in via bind-mount at runtime
 # (/opt/jervis/hf-cache on the VD — shared with XTTS for a single

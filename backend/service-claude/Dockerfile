@@ -148,7 +148,7 @@ COPY backend/service-joern-mcp/server.py /opt/jervis/mcp/joern-server.py
 
 # === Application JAR ===
 WORKDIR /opt/jervis/claude
-COPY backend/service-claude/build/libs/service-claude-*.jar jervis-claude.jar
+COPY backend/service-claude/build/libs/service-claude-*.jar claude.jar
 COPY backend/shared-entrypoints/entrypoint-job.sh /opt/jervis/entrypoint-job.sh
 COPY backend/shared-entrypoints/entrypoint-companion.sh /opt/jervis/entrypoint-companion.sh
 RUN chmod +x /opt/jervis/entrypoint-job.sh /opt/jervis/entrypoint-companion.sh
@@ -157,14 +157,14 @@ COPY backend/service-claude/companion_sdk_runner.py /opt/jervis/companion_sdk_ru
 
 # === Non-root user per uid-map.md (Claude CLI refuses
 #     --dangerously-skip-permissions as root). Shared gid 1000 jervis
-#     + per-service uid 1041 (claude / jervis-claude image).
+#     + per-service uid 1041 (claude / claude image).
 RUN groupadd -g 1000 jervis && \
-    useradd -u 1041 -g jervis -m -s /bin/bash jervis-claude && \
-    chown -R jervis-claude:jervis /opt/jervis /opt/venv
-USER jervis-claude
+    useradd -u 1041 -g jervis -m -s /bin/bash claude && \
+    chown -R claude:jervis /opt/jervis /opt/venv
+USER claude
 
 ENV PORT=3400 \
     JAVA_OPTS="-Xmx1g -Xms256m"
 EXPOSE 3400
 
-ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} -jar /opt/jervis/claude/jervis-claude.jar"]
+ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} -jar /opt/jervis/claude/claude.jar"]

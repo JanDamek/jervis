@@ -9,9 +9,9 @@ sdílená skupina umožní R/W napříč služebními kontejnery.
 Všechny služby Jervis stacku jsou ve **stejné skupině** `jervis` (gid
 1000). To umožní:
 - PVC `jervis-data-pvc` mount s `fsGroup: 1000` recurse-uje group=1000
-- soubory napsané jednou službou (např. `jervis-server` zapíše
+- soubory napsané jednou službou (např. `server` zapíše
   `.jervis/brief.md`) jsou čitelné a zapisovatelné jinou službou
-  (`jervis-coding-agent`) přes group permission bits (`g+rwX`)
+  (`coding-agent`) přes group permission bits (`g+rwX`)
 
 ## UID per service
 
@@ -20,28 +20,28 @@ Každá služba má **vlastní uid** ve sdílené skupině 1000. Audit
 
 | Service | UID | Notes |
 |---|---|---|
-| `jervis-server` | 1010 | Kotlin server, hlavní API |
-| `jervis-orchestrator` | 1020 | Python LangGraph + Claude SDK |
-| `jervis-mcp` | 1030 | MCP server (FastMCP) |
-| `jervis-coding-agent` | 1040 | Job-only image, Claude CLI |
-| `jervis-claude` | 1041 | Job-only image, alias / legacy |
-| `jervis-companion` | 1042 | Job-only image, Claude companion |
-| `jervis-kilo` | 1043 | Job-only image, OpenRouter free coding |
-| `jervis-knowledgebase-read` | 1050 | KB read |
-| `jervis-knowledgebase-write` | 1051 | KB write (singleton) |
-| `jervis-correction` | 1060 | Transcript correction (Python + Ollama) |
-| `jervis-tts` | 1070 | XTTS — VD GPU VM (Docker container) |
-| `jervis-whisper` | 1071 | Faster-whisper — VD GPU VM |
-| `jervis-ollama-router` | 1080 | Ollama proxy |
-| `jervis-o365-gateway` | 1090 | O365 Graph API gateway |
-| `jervis-o365-browser-pool` | 1091 | O365 browser scrape per-account pods |
-| `jervis-atlassian` | 1100 | Atlassian connector |
-| `jervis-github` | 1101 | GitHub connector |
-| `jervis-gitlab` | 1102 | GitLab connector |
-| `jervis-document-extraction` | 1110 | Doc parser |
-| `jervis-visual-capture` | 1120 | OCR / vision |
-| `jervis-vnc-router` | 1130 | nginx VNC router |
-| `jervis-whatsapp-browser` | 1140 | WhatsApp scrape |
+| `server` | 1010 | Kotlin server, hlavní API |
+| `orchestrator` | 1020 | Python LangGraph + Claude SDK |
+| `mcp` | 1030 | MCP server (FastMCP) |
+| `coding-agent` | 1040 | Job-only image, Claude CLI |
+| `claude` | 1041 | Job-only image, alias / legacy |
+| `companion` | 1042 | Job-only image, Claude companion |
+| `kilo` | 1043 | Job-only image, OpenRouter free coding |
+| `knowledgebase-read` | 1050 | KB read |
+| `knowledgebase-write` | 1051 | KB write (singleton) |
+| `correction` | 1060 | Transcript correction (Python + Ollama) |
+| `tts` | 1070 | XTTS — VD GPU VM (Docker container) |
+| `whisper` | 1071 | Faster-whisper — VD GPU VM |
+| `ollama-router` | 1080 | Ollama proxy |
+| `o365-gateway` | 1090 | O365 Graph API gateway |
+| `o365-browser-pool` | 1091 | O365 browser scrape per-account pods |
+| `atlassian` | 1100 | Atlassian connector |
+| `github` | 1101 | GitHub connector |
+| `gitlab` | 1102 | GitLab connector |
+| `document-extraction` | 1110 | Doc parser |
+| `visual-capture` | 1120 | OCR / vision |
+| `vnc-router` | 1130 | nginx VNC router |
+| `whatsapp-browser` | 1140 | WhatsApp scrape |
 
 **Convention**: skupiny po **10** s rezervou pro budoucí varianty
 (read/write split, sub-services). Job-only images začínají od **1040**
@@ -52,24 +52,23 @@ a v rámci skupiny `coding agents` číslují postupně.
 ```dockerfile
 # At the bottom, before ENTRYPOINT:
 RUN groupadd -g 1000 jervis && \
-    useradd -u <SERVICE_UID> -g jervis -m -s /bin/bash <service-name> && \
+    useradd -u <SERVICE_UID> -g jervis -m -s /bin/bash <short-name> && \
     mkdir -p /opt/jervis && \
-    chown -R <service-name>:jervis /opt/jervis
+    chown -R <short-name>:jervis /opt/jervis
 
-USER <service-name>
+USER <short-name>
 
 ENTRYPOINT [...]
 ```
 
-Příklad pro `jervis-server`:
+Příklad pro `server`:
 
 ```dockerfile
 RUN groupadd -g 1000 jervis && \
-    useradd -u 1010 -g jervis -m -s /bin/bash jervis-server && \
-    mkdir -p /opt/jervis && \
-    chown -R jervis-server:jervis /opt/jervis
+    useradd -u 1010 -g jervis -m -s /bin/bash server && \
+    chown -R server:jervis /opt/jervis
 
-USER jervis-server
+USER server
 ```
 
 ## K8s manifest pattern (Deployment / Job)
@@ -108,11 +107,11 @@ V Kotlin fabric8 (např. `AgentJobDispatcher.kt`):
 
 ```
 $ ls -la /opt/jervis/data/clients/<id>/projects/<id>/agent-jobs/<id>/.jervis/
-drwxrwxr-x jervis-server      jervis  4096 Apr 26 10:00 .
--rw-rw-r-- jervis-server      jervis  2914 Apr 26 10:00 brief.md
--rw-rw-r-- jervis-server      jervis  3500 Apr 26 10:00 CLAUDE.md
--rw-rw-r-- jervis-coding-agent jervis 12000 Apr 26 10:05 claude-stream.jsonl
--rw-rw-r-- jervis-coding-agent jervis   400 Apr 26 10:05 result.json
+drwxrwxr-x server             jervis  4096 Apr 26 10:00 .
+-rw-rw-r-- server             jervis  2914 Apr 26 10:00 brief.md
+-rw-rw-r-- server             jervis  3500 Apr 26 10:00 CLAUDE.md
+-rw-rw-r-- coding-agent       jervis 12000 Apr 26 10:05 claude-stream.jsonl
+-rw-rw-r-- coding-agent       jervis   400 Apr 26 10:05 result.json
 ```
 
 → vidíš okamžitě že `brief.md` napsal server, `result.json` napsal agent.

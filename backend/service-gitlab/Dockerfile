@@ -11,9 +11,9 @@ COPY backend/service-gitlab/build/libs/service-gitlab-*.jar service-gitlab.jar
 
 # Per uid-map.md: shared gid 1000 jervis + per-service uid 1102.
 RUN groupadd -g 1000 jervis && \
-    useradd -u 1102 -g jervis -m -s /bin/bash jervis-gitlab && \
-    chown -R jervis-gitlab:jervis /opt/jervis
-USER jervis-gitlab
+    useradd -u 1102 -g jervis -m -s /bin/bash gitlab && \
+    chown -R gitlab:jervis /opt/jervis
+USER gitlab
 
 EXPOSE 8086
 
