@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Icon
@@ -65,7 +66,8 @@ fun BackgroundSection(
     snapshot: AgentJobListSnapshot?,
     vncSessions: List<VncSessionSnapshot>,
     onAgentJobSelected: (AgentJobSnapshot) -> Unit,
-    onVncSessionSelected: (VncSessionSnapshot) -> Unit,
+    onVncSessionEmbed: (VncSessionSnapshot) -> Unit,
+    onVncSessionExternal: (VncSessionSnapshot) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(true) }
@@ -146,9 +148,13 @@ fun BackgroundSection(
             if (vncCount > 0) {
                 SubGroupHeader("VNC sessions", vncCount, showVnc) { showVnc = !showVnc }
                 if (showVnc) {
-                    LazyColumn(modifier = Modifier.heightIn(max = 160.dp)) {
-                        items(vncSessions, key = { it.tokenId }) { session ->
-                            VncSessionRow(session, onClick = { onVncSessionSelected(session) })
+                    LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) {
+                        items(vncSessions, key = { it.podName }) { session ->
+                            VncSessionRow(
+                                session = session,
+                                onClickRow = { onVncSessionEmbed(session) },
+                                onClickExternal = { onVncSessionExternal(session) },
+                            )
                         }
                     }
                 }
@@ -227,17 +233,25 @@ private fun AgentJobRow(snapshot: AgentJobSnapshot, onClick: () -> Unit) {
 }
 
 @Composable
-private fun VncSessionRow(session: VncSessionSnapshot, onClick: () -> Unit) {
+private fun VncSessionRow(
+    session: VncSessionSnapshot,
+    onClickRow: () -> Unit,
+    onClickExternal: () -> Unit,
+) {
+    val placeholder = !session.requiresMint
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .then(
+                if (placeholder) Modifier
+                else Modifier.clickable(onClick = onClickRow),
+            )
             .padding(horizontal = 20.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("🖥️", style = MaterialTheme.typography.bodyMedium)
+        Text(if (placeholder) "🚧" else "🖥️", style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.width(8.dp))
-        Column(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = session.connectionLabel,
                 style = MaterialTheme.typography.bodyMedium,
@@ -245,11 +259,27 @@ private fun VncSessionRow(session: VncSessionSnapshot, onClick: () -> Unit) {
                 maxLines = 1,
             )
             Text(
-                text = session.podName,
+                text = session.note ?: session.podName,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
+                maxLines = 2,
             )
+        }
+        if (!placeholder) {
+            // Secondary action: open the VNC URL in the user's default
+            // browser instead of embedding. Useful for mobile / share /
+            // multi-monitor flows. Same `getBrowserSessionStatus` mint
+            // path either way.
+            androidx.compose.material3.IconButton(
+                onClick = onClickExternal,
+                modifier = Modifier.size(28.dp),
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.OpenInNew,
+                    contentDescription = "Otevřít v prohlížeči",
+                    modifier = Modifier.size(16.dp),
+                )
+            }
         }
     }
 }

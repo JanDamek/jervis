@@ -70,6 +70,15 @@ if (System.getenv("DOCKER_BUILD") != "true") {
                 // Markdown rendering
                 implementation("com.mikepenz:multiplatform-markdown-renderer:0.38.0")
                 implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.38.0")
+
+                // Compose Multiplatform WebView — used by sidebar VNC embed.
+                // Backed by KCEF on Desktop (JCEF wrapper, ~10-20 MB runtime
+                // download at first launch, cached afterwards), AndroidView
+                // wrap of WebView on Android, UIKitView wrap of WKWebView on
+                // iOS. Single dependency vs three custom expect/actual impls
+                // per `feedback-no-quickfix` (max use of existing libs).
+                // SSOT: docs/vnc-sidebar-discovery.md.
+                implementation("io.github.kevinnzou:compose-webview-multiplatform:1.9.40")
             }
 
             jvmMain.dependencies {

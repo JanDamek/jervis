@@ -214,11 +214,40 @@ fun MainScreen(
             com.jervis.ui.sidebar.BackgroundSection(
                 snapshot = agentJobs,
                 vncSessions = vncSessions,
-                onAgentJobSelected = { snap ->
-                    viewModel.background.openNarrative(snap.id)
-                },
-                onVncSessionSelected = { /* TODO Fáze K detail panel: open viewer */ },
+                onAgentJobSelected = { snap -> viewModel.background.openNarrative(snap) },
+                onVncSessionEmbed = { snap -> viewModel.background.openVncEmbed(snap) },
+                onVncSessionExternal = { snap -> viewModel.background.openVncExternal(snap) },
             )
+        },
+        chatAreaOverride = run {
+            // Chat content area is shared between the chat itself, the
+            // VNC embed, and the agent-narrative detail panel. Both
+            // sidebar overlays are mutually exclusive — see
+            // BackgroundViewModel.openVncEmbed / openNarrative which
+            // clear the other when set.
+            val activeVnc = viewModel.background.activeVnc.collectAsState().value
+            val activeJob = viewModel.background.activeJobSnapshot.collectAsState().value
+            val activeNarrative = viewModel.background.activeNarrative.collectAsState().value
+            when {
+                activeVnc != null -> {
+                    {
+                        com.jervis.ui.sidebar.VncEmbedPanel(
+                            active = activeVnc,
+                            onClose = { viewModel.background.closeVncEmbed() },
+                        )
+                    }
+                }
+                activeJob != null -> {
+                    {
+                        com.jervis.ui.sidebar.AgentNarrativeDetailPanel(
+                            snapshot = activeJob,
+                            narrative = activeNarrative,
+                            onClose = { viewModel.background.closeNarrative() },
+                        )
+                    }
+                }
+                else -> null
+            }
         },
     )
 }

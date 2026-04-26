@@ -160,6 +160,13 @@ fun MainScreenView(
      * mount BackgroundViewModel pass an empty lambda — default below.
      */
     sidebarBackgroundContent: @Composable () -> Unit = {},
+    /**
+     * Optional override for the chat content area. When non-null, the
+     * chat surface is replaced by this composable (Background sidebar
+     * VNC embed or agent-narrative detail panel). Defaults to null →
+     * normal ChatContent renders.
+     */
+    chatAreaOverride: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize().imePadding()) {
@@ -329,7 +336,7 @@ fun MainScreenView(
             // the full-screen chat as before — sidebar comes via overlay
             // later.
             else -> {
-                val chatComposable: @Composable () -> Unit = {
+                val chatComposable: @Composable () -> Unit = chatAreaOverride ?: {
                     ChatContent(
                         selectedClientId = selectedClientId,
                         selectedProjectId = selectedProjectId,
