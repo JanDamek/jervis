@@ -44,6 +44,25 @@ class KnowledgeService:
         self.extraction_queue = extraction_queue  # Async LLM extraction queue
         self._arango_db = get_arango_db()
         self._ensure_crawl_schema()
+
+    @property
+    def thought_service(self):
+        """Proxy to ThoughtService — attached to graph_service in main.py
+        via `graph_service.set_thought_service(...)`. gRPC server (and
+        anyone else holding the KnowledgeService singleton) reaches the
+        ThoughtService through this proxy: `service.thought_service.<call>`.
+
+        Raises RuntimeError if main.py hasn't wired the service yet —
+        previously this code path returned an AttributeError mid-RPC,
+        which the gRPC layer surfaced as an opaque INTERNAL.
+        """
+        ts = getattr(self.graph_service, "_thought_service", None)
+        if ts is None:
+            raise RuntimeError(
+                "ThoughtService not initialized — main.py must call "
+                "graph_service.set_thought_service(...) on startup",
+            )
+        return ts
         # Direct httpx for LLM calls with priority headers — žádný read timeout (LLM trvá jak trvá)
         import httpx
         self._llm_http = httpx.AsyncClient(timeout=httpx.Timeout(connect=10.0, read=None, write=10.0, pool=30.0))
