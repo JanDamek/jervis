@@ -25,7 +25,7 @@ spec:
         app: jervis-o365-gateway
     spec:
       securityContext:
-        runAsUser: 1000
+        runAsUser: 1090
         runAsGroup: 1000
         fsGroup: 1000
       containers:

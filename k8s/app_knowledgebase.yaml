@@ -18,7 +18,8 @@ spec:
     spec:
       priorityClassName: high-priority
       securityContext:
-        runAsUser: 1000
+        runAsUser: 1050
+        runAsGroup: 1000
         runAsGroup: 1000
         fsGroup: 1000
       containers:
@@ -108,7 +109,8 @@ spec:
         kb-mode: write
     spec:
       securityContext:
-        runAsUser: 1000
+        runAsUser: 1051
+        runAsGroup: 1000
         runAsGroup: 1000
         fsGroup: 1000
       containers:

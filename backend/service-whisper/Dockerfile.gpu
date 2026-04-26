@@ -55,9 +55,11 @@ WORKDIR /opt/jervis/whisper
 
 # Non-root — uid 1000 matches the host `damekjan` user so bind mounts
 # stay read-write.
-RUN useradd -m -u 1000 jervis && \
-    chown -R jervis:jervis /opt/jervis
-USER jervis
+# Per uid-map.md: shared gid 1000 jervis + per-service uid 1071 (Whisper).
+RUN groupadd -g 1000 jervis && \
+    useradd -u 1071 -g jervis -m -s /bin/bash jervis-whisper && \
+    chown -R jervis-whisper:jervis /opt/jervis
+USER jervis-whisper
 
 # HuggingFace model cache comes in via bind-mount at runtime
 # (/opt/jervis/hf-cache on the VD — shared with XTTS for a single

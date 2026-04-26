@@ -16,8 +16,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/service-mcp/app/ app/
 
-RUN useradd -m -u 1000 -s /bin/bash jervis && chown -R jervis:jervis /app
-USER 1000
+# Per uid-map.md: shared gid 1000 jervis + per-service uid 1030.
+RUN groupadd -g 1000 jervis && \
+    useradd -u 1030 -g jervis -m -s /bin/bash jervis-mcp && \
+    chown -R jervis-mcp:jervis /app
+USER jervis-mcp
 
 EXPOSE 8100
 

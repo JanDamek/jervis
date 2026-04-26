@@ -36,8 +36,11 @@ RUN python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')"
 
 COPY backend/service-orchestrator/app/ app/
 
-RUN useradd -m -u 1000 -s /bin/bash jervis && chown -R jervis:jervis /app
-USER 1000
+# Per uid-map.md: shared gid 1000 jervis + per-service uid 1020.
+RUN groupadd -g 1000 jervis && \
+    useradd -u 1020 -g jervis -m -s /bin/bash jervis-orchestrator && \
+    chown -R jervis-orchestrator:jervis /app
+USER jervis-orchestrator
 
 EXPOSE 8090
 

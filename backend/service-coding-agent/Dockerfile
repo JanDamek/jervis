@@ -61,16 +61,15 @@ RUN pip install claude-agent-sdk
 COPY backend/service-coding-agent/entrypoint-coding.sh /opt/jervis/entrypoint-coding.sh
 RUN chmod +x /opt/jervis/entrypoint-coding.sh
 
-# --- Non-root user (Claude CLI refuses --dangerously-skip-permissions as root) ---
-RUN useradd -m -s /bin/bash -u 1000 jervis && \
+# --- Non-root user per uid-map.md (Claude CLI refuses
+#     --dangerously-skip-permissions as root). Shared gid 1000 jervis
+#     + per-service uid 1040.
+RUN groupadd -g 1000 jervis && \
+    useradd -u 1040 -g jervis -m -s /bin/bash jervis-coding-agent && \
     mkdir -p /opt/jervis && \
-    chown -R jervis:jervis /opt/jervis
+    chown -R jervis-coding-agent:jervis /opt/jervis
 
-# Activate the non-root user as the container default. Without this
-# directive, Kubernetes still runs the container as UID 0 unless a Pod
-# securityContext.runAsUser is set — and that hadn't been set on the
-# coding-agent Job, so Claude CLI refused with
-# "--dangerously-skip-permissions cannot be used with root/sudo privileges".
-USER jervis
+# Activate the non-root user as the container default.
+USER jervis-coding-agent
 
 ENTRYPOINT ["/opt/jervis/entrypoint-coding.sh"]

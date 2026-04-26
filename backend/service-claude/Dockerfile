@@ -155,9 +155,13 @@ RUN chmod +x /opt/jervis/entrypoint-job.sh /opt/jervis/entrypoint-companion.sh
 COPY backend/service-claude/claude_sdk_runner.py /opt/jervis/claude_sdk_runner.py
 COPY backend/service-claude/companion_sdk_runner.py /opt/jervis/companion_sdk_runner.py
 
-# === Non-root user for Claude Code CLI (refuses --dangerously-skip-permissions as root) ===
-RUN useradd -m -s /bin/bash -u 1000 jervis && \
-    chown -R jervis:jervis /opt/jervis /opt/venv
+# === Non-root user per uid-map.md (Claude CLI refuses
+#     --dangerously-skip-permissions as root). Shared gid 1000 jervis
+#     + per-service uid 1041 (claude / jervis-claude image).
+RUN groupadd -g 1000 jervis && \
+    useradd -u 1041 -g jervis -m -s /bin/bash jervis-claude && \
+    chown -R jervis-claude:jervis /opt/jervis /opt/venv
+USER jervis-claude
 
 ENV PORT=3400 \
     JAVA_OPTS="-Xmx1g -Xms256m"

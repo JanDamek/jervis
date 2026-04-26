@@ -9,8 +9,13 @@ RUN apt-get update && \
 WORKDIR /opt/jervis/server
 COPY backend/server/build/libs/server-*.jar jervis-server.jar
 
-RUN useradd -m -u 1000 -s /bin/bash jervis && chown -R jervis:jervis /opt/jervis
-USER 1000
+# Per uid-map.md: shared gid 1000 jervis + per-service uid (1010 here).
+# PVC audit `ls -la` then shows which service wrote each file while
+# group sharing keeps R/W across pods on the same PVC.
+RUN groupadd -g 1000 jervis && \
+    useradd -u 1010 -g jervis -m -s /bin/bash jervis-server && \
+    chown -R jervis-server:jervis /opt/jervis
+USER jervis-server
 
 ENV JAVA_OPTS="-Xmx4g -Xms1g"
 EXPOSE 5500

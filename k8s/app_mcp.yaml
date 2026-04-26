@@ -34,7 +34,7 @@ spec:
     spec:
       priorityClassName: critical-priority
       securityContext:
-        runAsUser: 1000
+        runAsUser: 1030
         runAsGroup: 1000
         fsGroup: 1000
       containers:

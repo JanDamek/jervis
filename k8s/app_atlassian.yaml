@@ -15,7 +15,7 @@ spec:
         app: jervis-atlassian
     spec:
       securityContext:
-        runAsUser: 1000
+        runAsUser: 1100
         runAsGroup: 1000
         fsGroup: 1000
       containers:

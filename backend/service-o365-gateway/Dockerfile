@@ -9,8 +9,11 @@ WORKDIR /opt/jervis/service-o365-gateway
 
 COPY backend/service-o365-gateway/build/libs/service-o365-gateway-*.jar service-o365-gateway.jar
 
-RUN useradd -m -u 1000 -s /bin/bash jervis && chown -R jervis:jervis /opt/jervis
-USER 1000
+# Per uid-map.md: shared gid 1000 jervis + per-service uid 1090.
+RUN groupadd -g 1000 jervis && \
+    useradd -u 1090 -g jervis -m -s /bin/bash jervis-o365-gateway && \
+    chown -R jervis-o365-gateway:jervis /opt/jervis
+USER jervis-o365-gateway
 
 EXPOSE 8080
 

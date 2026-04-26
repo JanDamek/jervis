@@ -22,9 +22,9 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
 # Install aider-chat (the core coding tool for KILO)
 RUN pip install --no-cache-dir aider-chat httpx
 
-# Create non-root user (same UID as Claude agent for shared PVC compatibility)
+# Per uid-map.md: shared gid 1000 jervis + per-service uid 1043 (kilo).
 RUN groupadd -g 1000 jervis && \
-    useradd -u 1000 -g jervis -m -s /bin/bash jervis
+    useradd -u 1043 -g jervis -m -s /bin/bash jervis-kilo
 
 # Workspace directory
 WORKDIR /workspace
@@ -32,5 +32,7 @@ WORKDIR /workspace
 # Copy shared entrypoint
 COPY backend/shared-entrypoints/entrypoint-job.sh /opt/jervis/entrypoint-job.sh
 RUN chmod +x /opt/jervis/entrypoint-job.sh
+
+USER jervis-kilo
 
 ENTRYPOINT ["/opt/jervis/entrypoint-job.sh"]

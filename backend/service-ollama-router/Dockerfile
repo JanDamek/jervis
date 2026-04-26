@@ -15,8 +15,11 @@ RUN pip install --no-cache-dir -c /constraints.txt -r requirements.txt
 
 COPY backend/service-ollama-router/app/ app/
 
-RUN useradd -m -u 1000 -s /bin/bash jervis && chown -R jervis:jervis /app
-USER 1000
+# Per uid-map.md: shared gid 1000 jervis + per-service uid 1080.
+RUN groupadd -g 1000 jervis && \
+    useradd -u 1080 -g jervis -m -s /bin/bash jervis-ollama-router && \
+    chown -R jervis-ollama-router:jervis /app
+USER jervis-ollama-router
 
 EXPOSE 11430 5501
 

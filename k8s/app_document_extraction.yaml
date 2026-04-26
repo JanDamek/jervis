@@ -15,7 +15,7 @@ spec:
         app: jervis-document-extraction
     spec:
       securityContext:
-        runAsUser: 1000
+        runAsUser: 1110
         runAsGroup: 1000
         fsGroup: 1000
       containers:

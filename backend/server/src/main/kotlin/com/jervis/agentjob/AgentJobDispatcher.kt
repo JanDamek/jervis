@@ -605,14 +605,16 @@ class AgentJobDispatcher(
                         // .jervis/result.json. fsGroup=1000 makes K8s recursively
                         // chgrp the volume on mount so uid 1000 inherits write
                         // access via group membership.
-                        // runAsUser/runAsGroup belt-and-suspenders alongside the
-                        // Dockerfile USER directive — explicit at the K8s level
-                        // so a future image rebuild that drops USER jervis
-                        // doesn't silently regress the agent back to root
-                        // (Claude CLI refuses --dangerously-skip-permissions as
-                        // root). fsGroup keeps PVC mount group-writable to 1000.
+                        // Per uid-map.md (k8s/uid-map.md): jervis-coding-agent
+                        // runs as uid 1040 in shared gid 1000 jervis group.
+                        // PVC `ls -la` then shows which service wrote each
+                        // file (server uid 1010 wrote brief.md, agent uid
+                        // 1040 wrote result.json) while group sharing keeps
+                        // R/W working across pods. Belt-and-suspenders K8s
+                        // level — even if the image's USER directive
+                        // regresses, K8s pod spec wins.
                         .withNewSecurityContext()
-                            .withRunAsUser(1000L)
+                            .withRunAsUser(1040L)
                             .withRunAsGroup(1000L)
                             .withFsGroup(1000L)
                         .endSecurityContext()

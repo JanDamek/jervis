@@ -19,8 +19,11 @@ RUN python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')"
 COPY backend/service-knowledgebase/ .
 
 # Expose port 8080 (matching the Kotlin service port if possible, or standard 8080)
-RUN useradd -m -u 1000 -s /bin/bash jervis && chown -R jervis:jervis /app
-USER 1000
+# Per uid-map.md: shared gid 1000 jervis + per-service uid 1050.
+RUN groupadd -g 1000 jervis && \
+    useradd -u 1050 -g jervis -m -s /bin/bash jervis-knowledgebase && \
+    chown -R jervis-knowledgebase:jervis /app
+USER jervis-knowledgebase
 
 EXPOSE 8080
 

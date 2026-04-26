@@ -24,7 +24,7 @@ spec:
       # compacts land and the next pod boots without prior context.
       terminationGracePeriodSeconds: 300
       securityContext:
-        runAsUser: 1000
+        runAsUser: 1020
         runAsGroup: 1000
         fsGroup: 1000
       containers:
