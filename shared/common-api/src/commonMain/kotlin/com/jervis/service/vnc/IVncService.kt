@@ -5,22 +5,28 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.rpc.annotations.Rpc
 
 /**
- * IVncService — kRPC push surface for active VNC sessions.
+ * IVncService — kRPC surface for the sidebar Background VNC section.
  *
- * Sidebar Background section (Fáze K) renders one entry per active
- * session; clicking embeds the noVNC viewer for that pod's display.
+ * Discovery is push-based: `subscribeActiveSessions` returns a Flow
+ * driven by a K8s `Watch<Pod>` over pods labelled
+ * `app: jervis-browser-*` with a containerPort named `novnc`. No
+ * polling — the watcher fires on every pod ADD / MODIFY / DELETE.
  *
- * Live updates come from the change stream over `vnc_tokens`
- * (consumption flips a token from "issued" to "session active") plus
- * a periodic K8s pod presence cross-check so a torn-down pod
- * disappears from the list within seconds.
+ * Token mint is intentionally NOT on this service — it reuses the
+ * existing `IConnectionService.getBrowserSessionStatus(connectionId)`
+ * call (already used by the Settings VNC button). That endpoint returns
+ * `BrowserSessionStatusDto.vncUrl` with a fresh one-shot token built
+ * by the same path that powers the Settings flow — no NIH per
+ * `feedback-no-quickfix` (max use of existing libs / endpoints).
+ *
+ * SSOT: `docs/vnc-sidebar-discovery.md`.
  */
 @Rpc
 interface IVncService {
     /**
-     * Replay-1 Flow of currently active VNC sessions. First emission
-     * is the snapshot at subscribe time; subsequent emissions land on
-     * any token consumption / expiry / pod presence change.
+     * Live list of VNC-capable browser pods, scoped by clientId when
+     * provided. First emission is the current set; subsequent emissions
+     * land on every K8s pod transition.
      *
      * @param clientId Optional scope filter — null = global view.
      */

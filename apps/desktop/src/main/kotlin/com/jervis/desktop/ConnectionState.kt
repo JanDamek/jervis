@@ -192,6 +192,9 @@ class ConnectionManager(
                 println("Meeting recording stop: task=${event.taskId} reason=${event.reason}")
                 meetingRecorder.handleEvent(event)
             }
+
+            is JervisEvent.AgentJobStateChanged -> { // handled by ...
+            }
         }
     }
 
