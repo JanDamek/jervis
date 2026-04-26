@@ -39,6 +39,7 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermission
 import java.time.Instant
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
@@ -489,6 +490,34 @@ class AgentJobDispatcher(
             // the agent already produced a terminal result.
             if (Files.notExists(jervisDir.resolve(".gitignore"))) {
                 jervisDir.resolve(".gitignore").writeText("*\n")
+            }
+
+            // Server pod runs as root and writes `.jervis/` + its files
+            // root-owned. Agent pod runs as uid 1000 — without explicit
+            // mode bits, it cannot create new files (e.g.
+            // `claude-stream.jsonl` for the Claude CLI tee redirect, or
+            // `result.json` from write_result). fsGroup=1000 on the Job
+            // pod doesn't recurse to files written *after* the volume
+            // mount-time chgrp, so we set perms here. 0777 on the
+            // directory + 0666 on files is acceptable: the PVC is
+            // namespace-private and the agent already has full access
+            // by design (it's the only writer in `agent-jobs/<id>/`).
+            val rwxAll = setOf(
+                PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE, PosixFilePermission.OWNER_EXECUTE,
+                PosixFilePermission.GROUP_READ, PosixFilePermission.GROUP_WRITE, PosixFilePermission.GROUP_EXECUTE,
+                PosixFilePermission.OTHERS_READ, PosixFilePermission.OTHERS_WRITE, PosixFilePermission.OTHERS_EXECUTE,
+            )
+            val rwAll = setOf(
+                PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE,
+                PosixFilePermission.GROUP_READ, PosixFilePermission.GROUP_WRITE,
+                PosixFilePermission.OTHERS_READ, PosixFilePermission.OTHERS_WRITE,
+            )
+            runCatching { Files.setPosixFilePermissions(jervisDir, rwxAll) }
+            for (name in listOf("brief.md", "CLAUDE.md", ".gitignore")) {
+                val f = jervisDir.resolve(name)
+                if (Files.exists(f)) {
+                    runCatching { Files.setPosixFilePermissions(f, rwAll) }
+                }
             }
         }
     }
