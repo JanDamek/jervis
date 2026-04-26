@@ -29,7 +29,7 @@ spec:
                   CUTOFF=$(date -u -d "-${RETENTION_DAYS} days" +%Y.%m.%d 2>/dev/null || date -u -v-${RETENTION_DAYS}d +%Y.%m.%d)
                   echo "Cutoff date: ${CUTOFF} (retention=${RETENTION_DAYS}d)"
 
-                  for PREFIX in k8s-logs unifi-syslog unifi-controller; do
+                  for PREFIX in k8s-logs unifi-syslog unifi-controller rpi-host rpi-dns rpi-docker; do
                     echo "--- Scanning ${PREFIX}-* ---"
                     INDICES=$(curl -s "${ES_URL}/_cat/indices/${PREFIX}-*?h=index" 2>/dev/null)
                     if [ -z "$INDICES" ]; then

@@ -31,7 +31,6 @@ data:
 
     [INPUT]
         Name          forward
-        Tag           unifi.controller
         Listen        0.0.0.0
         Port          24224
         Buffer_Chunk_Size  1M
@@ -46,6 +45,21 @@ data:
         Name   modify
         Match  unifi.controller.*
         Add    source unifi-controller
+
+    [FILTER]
+        Name   modify
+        Match  rpi.host.*
+        Add    source rpi-host
+
+    [FILTER]
+        Name   modify
+        Match  rpi.dns
+        Add    source rpi-dns
+
+    [FILTER]
+        Name   modify
+        Match  rpi.docker.*
+        Add    source rpi-docker
 
     [OUTPUT]
         Name               es
@@ -65,6 +79,39 @@ data:
         Port               9200
         Logstash_Format    On
         Logstash_Prefix    unifi-controller
+        Type               _doc
+        Retry_Limit        3
+        Suppress_Type_Name On
+
+    [OUTPUT]
+        Name               es
+        Match              rpi.host.*
+        Host               elasticsearch.logging.svc.cluster.local
+        Port               9200
+        Logstash_Format    On
+        Logstash_Prefix    rpi-host
+        Type               _doc
+        Retry_Limit        3
+        Suppress_Type_Name On
+
+    [OUTPUT]
+        Name               es
+        Match              rpi.dns
+        Host               elasticsearch.logging.svc.cluster.local
+        Port               9200
+        Logstash_Format    On
+        Logstash_Prefix    rpi-dns
+        Type               _doc
+        Retry_Limit        3
+        Suppress_Type_Name On
+
+    [OUTPUT]
+        Name               es
+        Match              rpi.docker.*
+        Host               elasticsearch.logging.svc.cluster.local
+        Port               9200
+        Logstash_Format    On
+        Logstash_Prefix    rpi-docker
         Type               _doc
         Retry_Limit        3
         Suppress_Type_Name On

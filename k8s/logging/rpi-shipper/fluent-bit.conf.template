@@ -1,0 +1,117 @@
+[SERVICE]
+    Flush         5
+    Log_Level     info
+    Daemon        off
+    Parsers_File  parsers.conf
+    HTTP_Server   On
+    HTTP_Listen   0.0.0.0
+    HTTP_Port     2020
+
+# ---------- UniFi controller (bind /opt/unifi-backup/config/log) ----------
+[INPUT]
+    Name              tail
+    Tag               unifi.controller.server
+    Path              /unifi-logs/server.log
+    Path_Key          path
+    DB                /var/log/flb_server.db
+    Multiline         On
+    Parser_Firstline  unifi-log4j
+    Mem_Buf_Limit     10MB
+    Refresh_Interval  5
+
+[INPUT]
+    Name              tail
+    Tag               unifi.controller.mongo
+    Path              /unifi-logs/mongod.log
+    Path_Key          path
+    DB                /var/log/flb_mongo.db
+    Mem_Buf_Limit     10MB
+    Refresh_Interval  5
+
+[INPUT]
+    Name              tail
+    Tag               unifi.controller.access
+    Path              /unifi-logs/access.log,/unifi-logs/tasks.log
+    Path_Key          path
+    DB                /var/log/flb_access.db
+    Mem_Buf_Limit     10MB
+    Refresh_Interval  5
+
+[INPUT]
+    Name              tail
+    Tag               unifi.controller.misc
+    Path              /unifi-logs/*.log
+    Exclude_Path      /unifi-logs/server.log,/unifi-logs/mongod.log,/unifi-logs/access.log,/unifi-logs/tasks.log
+    Path_Key          path
+    DB                /var/log/flb_misc.db
+    Mem_Buf_Limit     5MB
+    Refresh_Interval  10
+
+# ---------- RPi host /var/log ----------
+[INPUT]
+    Name              tail
+    Tag               rpi.host.syslog
+    Path              /host-var-log/syslog
+    Path_Key          path
+    DB                /var/log/flb_host_syslog.db
+    Mem_Buf_Limit     10MB
+    Refresh_Interval  5
+
+[INPUT]
+    Name              tail
+    Tag               rpi.host.auth
+    Path              /host-var-log/auth.log
+    Path_Key          path
+    DB                /var/log/flb_host_auth.db
+    Mem_Buf_Limit     5MB
+    Refresh_Interval  5
+
+[INPUT]
+    Name              tail
+    Tag               rpi.host.kern
+    Path              /host-var-log/kern.log
+    Path_Key          path
+    DB                /var/log/flb_host_kern.db
+    Mem_Buf_Limit     5MB
+    Refresh_Interval  5
+
+# ---------- DNS server (dns-proxy container) ----------
+[INPUT]
+    Name              tail
+    Tag               rpi.dns
+    Path              /var-lib-docker-containers/__DNS_CID__/__DNS_CID__-json.log
+    Path_Key          path
+    DB                /var/log/flb_dns.db
+    Parser            docker
+    Mem_Buf_Limit     10MB
+    Refresh_Interval  5
+
+# ---------- Other Docker containers (excluding self, controller already covered, dns separate) ----------
+[INPUT]
+    Name              tail
+    Tag               rpi.docker.other
+    Path              /var-lib-docker-containers/*/*-json.log
+    Exclude_Path      /var-lib-docker-containers/__SELF_CID__/*,/var-lib-docker-containers/__CONTROLLER_CID__/*,/var-lib-docker-containers/__DNS_CID__/*
+    Path_Key          path
+    DB                /var/log/flb_docker_other.db
+    Parser            docker
+    Mem_Buf_Limit     10MB
+    Refresh_Interval  5
+
+[FILTER]
+    Name   modify
+    Match  unifi.controller.*
+    Add    host unifi-controller-rpi
+
+[FILTER]
+    Name   modify
+    Match  rpi.*
+    Add    rpi_host unifi
+
+[OUTPUT]
+    Name          forward
+    Match         *
+    Host          ${AGGREGATOR_HOST}
+    Port          ${AGGREGATOR_PORT}
+    Retry_Limit   False
+    Net.connect_timeout  10
