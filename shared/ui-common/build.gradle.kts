@@ -15,14 +15,34 @@ kotlin {
     jvmToolchain(21)
 
     // Targets
-    jvm()           // JVM (Desktop + Server)
+    jvm() // JVM (Desktop + Server)
 
-    // Only configure Android and iOS targets when not building in Docker
+    // Only configure Android, iOS and macOS targets when not building in Docker
     if (System.getenv("DOCKER_BUILD") != "true") {
         androidTarget()
         iosX64()
         iosArm64()
         iosSimulatorArm64()
+        macosX64()
+        macosArm64()
+
+        val appleTargets =
+            listOf(
+                iosX64(),
+                iosArm64(),
+                iosSimulatorArm64(),
+                macosX64(),
+                macosArm64(),
+            )
+
+        appleTargets.forEach { target ->
+            target.binaries.framework {
+                baseName = "JervisShared"
+                isStatic = true
+                export(project(":shared:domain"))
+                transitiveExport = true
+            }
+        }
     }
 
     // Opt-in for experimental APIs
@@ -41,6 +61,30 @@ kotlin {
             // Kotlinx serialization
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.datetime)
+        }
+
+        if (System.getenv("DOCKER_BUILD") != "true") {
+            val appleMain by creating {
+                dependsOn(commonMain.get())
+            }
+            val macosMain by creating {
+                dependsOn(appleMain)
+            }
+            val iosMain by creating {
+                dependsOn(appleMain)
+            }
+            iosX64Main.get().dependsOn(iosMain)
+            iosArm64Main.get().dependsOn(iosMain)
+            iosSimulatorArm64Main.get().dependsOn(iosMain)
+            macosX64Main.get().dependsOn(macosMain)
+            macosArm64Main.get().dependsOn(macosMain)
+
+            // Re-adding the gets to ensure they exist for the dependsOn above
+            val iosX64Main by getting
+            val iosArm64Main by getting
+            val iosSimulatorArm64Main by getting
+            val macosX64Main by getting
+            val macosArm64Main by getting
         }
 
         commonTest.dependencies {
@@ -78,12 +122,13 @@ if (System.getenv("DOCKER_BUILD") != "true") {
                 // iOS. Single dependency vs three custom expect/actual impls
                 // per `feedback-no-quickfix` (max use of existing libs).
                 // SSOT: docs/vnc-sidebar-discovery.md.
-                implementation("io.github.kevinnzou:compose-webview-multiplatform:1.9.40")
+                // implementation("io.github.kevinnzou:compose-webview-multiplatform:1.9.40")
             }
 
             jvmMain.dependencies {
                 implementation(compose.desktop.common)
                 implementation(libs.ktor.client.cio)
+                implementation("io.github.kevinnzou:compose-webview-multiplatform:1.9.40")
             }
 
             androidMain.dependencies {
@@ -93,10 +138,17 @@ if (System.getenv("DOCKER_BUILD") != "true") {
                 implementation(project.dependencies.platform(libs.firebase.bom))
                 implementation(libs.firebase.messaging)
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2")
+                implementation("io.github.kevinnzou:compose-webview-multiplatform:1.9.40")
             }
 
             iosMain.dependencies {
                 // iOS specific dependencies
+                implementation(libs.ktor.client.darwin)
+                implementation("io.github.kevinnzou:compose-webview-multiplatform:1.9.40")
+            }
+
+            macosMain.dependencies {
+                // macOS specific dependencies
                 implementation(libs.ktor.client.darwin)
             }
         }

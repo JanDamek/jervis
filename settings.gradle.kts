@@ -19,6 +19,8 @@ dependencyResolutionManagement {
         maven("https://repo.spring.io/milestone")
         maven("https://maven.pkg.jetbrains.space/public/p/compose/dev")
         maven("https://jitpack.io")
+        // JOGL/GlueGen for compose-webview-multiplatform → kcef → jcef
+        maven("https://jogamp.org/deployment/maven/")
     }
 }
 
@@ -41,22 +43,21 @@ if (System.getenv("DOCKER_BUILD") != "true") {
     )
 }
 
-include(
-    ":backend:common-services",
-    ":backend:server",
-    ":backend:service-coding-engine",
-    ":backend:service-atlassian",
-    ":backend:service-github",
-    ":backend:service-gitlab",
-    ":backend:service-claude",
-    ":backend:service-knowledgebase",
-    ":backend:service-o365-gateway",
-)
-
 if (System.getenv("DOCKER_BUILD") != "true") {
     include(
+        ":apps:androidApp",
+        ":apps:androidApp:androidWatchApp",
         ":apps:desktop",
-        ":apps:mobile",
-        ":apps:wearApp",
+        ":apps:iosApp",
+    )
+    include(
+        ":backend:service-atlassian",
+        ":backend:service-gitlab",
+        ":backend:service-coding-engine",
+        ":backend:common-services",
+        ":backend:server",
+        ":backend:service-claude",
+        ":backend:service-github",
+        ":backend:service-o365-gateway",
     )
 }

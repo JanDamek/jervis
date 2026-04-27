@@ -3,426 +3,385 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 56;
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A1000001000000000000001 /* JervisApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000002000000000000001 /* JervisApp.swift */; };
-		A1000003000000000000001 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000004000000000000001 /* ContentView.swift */; };
-		A1000005000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1000006000000000000001 /* Assets.xcassets */; };
-		A1000019000000000000001 /* NotificationDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000018000000000000001 /* NotificationDelegate.swift */; };
-		A1000021000000000000001 /* WatchSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000022000000000000001 /* WatchSessionManager.swift */; };
-		A1000023000000000000001 /* WatchConnectivity.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A1000024000000000000001 /* WatchConnectivity.framework */; settings = {ATTRIBUTES = (Weak, ); }; };
-		A1000025000000000000001 /* JervisIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000026000000000000001 /* JervisIntents.swift */; };
-		A1000027000000000000001 /* JervisApiClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000028000000000000001 /* JervisApiClient.swift */; };
-		A1000029000000000000001 /* WatchRecordingRelay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000030000000000000001 /* WatchRecordingRelay.swift */; };
-		A1000031000000000000001 /* JervisWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = W1000001000000000000001 /* JervisWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		W1000010000000000000001 /* JervisWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = W1000002000000000000001 /* JervisWatchApp.swift */; };
-		W1000011000000000000001 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = W1000003000000000000001 /* ContentView.swift */; };
-		W1000012000000000000001 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = W1000004000000000000001 /* ChatView.swift */; };
-		W1000013000000000000001 /* RecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = W1000005000000000000001 /* RecordingView.swift */; };
-		W1000014000000000000001 /* WatchAudioRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = W1000006000000000000001 /* WatchAudioRecorder.swift */; };
-		W1000015000000000000001 /* WatchChatManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = W1000007000000000000001 /* WatchChatManager.swift */; };
-		W1000016000000000000001 /* WatchConnectivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = W1000008000000000000001 /* WatchConnectivityManager.swift */; };
-		W1000017000000000000001 /* JervisIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = W1000009000000000000001 /* JervisIntents.swift */; };
-		W1000018000000000000001 /* WatchJervisApiClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = W100000A000000000000001 /* WatchJervisApiClient.swift */; };
-		W100001D000000000000001 /* WatchVoiceSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = W100000D000000000000001 /* WatchVoiceSession.swift */; };
-		W1000019000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = W100000B000000000000001 /* Assets.xcassets */; };
-		W100001A000000000000001 /* WatchConnectivity.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = W100001B000000000000001 /* WatchConnectivity.framework */; settings = {ATTRIBUTES = (Weak, ); }; };
-		W100001C000000000000001 /* JervisComplication.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = X1000001000000000000001 /* JervisComplication.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		X1000010000000000000001 /* JervisComplications.swift in Sources */ = {isa = PBXBuildFile; fileRef = X1000002000000000000001 /* JervisComplications.swift */; };
-		X1000011000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = X1000003000000000000001 /* Assets.xcassets */; };
-		X1000012000000000000001 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = X1000005000000000000001 /* WidgetKit.framework */; };
-		X1000013000000000000001 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = X1000006000000000000001 /* SwiftUI.framework */; };
+		04692F2B5BFD1B0B7E8FEDAE /* WatchSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3E93DA1FF128B6CF42FE73C /* WatchSessionManager.swift */; };
+		07459D6F47DF6D52AB8095F7 /* WatchChatManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24D2E24D70C5657BD0CE2719 /* WatchChatManager.swift */; };
+		1AE956DEC866D23D226E30A7 /* WatchJervisApiClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A583446177BD0E4F17FE0E1B /* WatchJervisApiClient.swift */; };
+		1C63C5AFBD9429500F8A5F25 /* NotificationDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FA797E656577CD58233F67C /* NotificationDelegate.swift */; };
+		2091F45AB4BE9543C02D20FA /* JervisWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 292468E881023A57DB91D5A3 /* JervisWatchApp.swift */; };
+		22EA1CB33A17DCC6FC82406D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F543015C899423D4B01CEB2E /* Assets.xcassets */; };
+		28B82A4261604763E5C22A6B /* WatchRecordingRelay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59A7E07326FDAC6FEE147285 /* WatchRecordingRelay.swift */; };
+		29E25E07E988350F98792BFE /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76663E94FFECD4E045493607 /* ChatView.swift */; };
+		3208C3026A50BC0DBB7CF4B5 /* JervisApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 644F6996BAFB603DAA585CCE /* JervisApp.swift */; };
+		5198285DB1DBF49EF1CBF9F7 /* RecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD9C1BBB23A62CBF1BF7C18A /* RecordingView.swift */; };
+		56B0305B5D3847FC6B326502 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE8509E5A49E4A5CAAEB3ADB /* ContentView.swift */; };
+		607E1C0A5DEC30D9DA7DC238 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F30BCCEF41F709A54C378804 /* Assets.xcassets */; };
+		69F5C94F5BA0A59B3A980231 /* JervisComplication.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E19BC99FC9AF76579E6613F5 /* JervisComplication.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		81AD36E6BBD39CCE14E2FD9E /* JervisApiClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB816FCD36B3ED026F9D5ED8 /* JervisApiClient.swift */; };
+		83A382B0D9F587ECA216DB53 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C5E4918B4DB76AD2D497B14D /* Assets.xcassets */; };
+		88142511BC765F82DAFA91EF /* JervisComplications.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C2301960A3E2C5D71AF2674 /* JervisComplications.swift */; };
+		9420499AE1D9582736D1A41E /* JervisWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = BD0A66FFC3ACC038310E0D09 /* JervisWatch.app */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		95B500AE1232927F279DF7E5 /* WatchVoiceSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 260E5D68392D46A306EBB8AE /* WatchVoiceSession.swift */; };
+		95E4FA74125D6A7372A7828A /* JervisIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 860C0C07AFB84CBAA9144124 /* JervisIntents.swift */; };
+		9B62F0E982C6D9E2B2AE3D40 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB5B415B980CC2CA807F3903 /* ContentView.swift */; };
+		B26C1F2707EECE79A1AF4C7D /* WatchAudioRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 470DEC9A7C42F956413D1D0B /* WatchAudioRecorder.swift */; };
+		C044275DCE25DEA5C6570036 /* JervisIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7799A69EA212F38F69E4354 /* JervisIntents.swift */; };
+		F2223002AB873D7F18D33519 /* WatchConnectivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84DD0CAD0BB65948A399B552 /* WatchConnectivityManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		W1000020000000000000001 /* PBXContainerItemProxy */ = {
+		A3EFFA249B858F348FF2469F /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = A1000012000000000000001 /* Project object */;
+			containerPortal = 242FB5348943441C388468CE /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = W1000030000000000000001;
+			remoteGlobalIDString = 34D285761E3E474B5A598E49;
 			remoteInfo = JervisWatch;
 		};
-		X1000020000000000000001 /* PBXContainerItemProxy */ = {
+		D7DE21EFEB6F62185F93BD51 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = A1000012000000000000001 /* Project object */;
+			containerPortal = 242FB5348943441C388468CE /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = X1000030000000000000001;
+			remoteGlobalIDString = AE7422CD54B6F890D926788A;
 			remoteInfo = JervisComplication;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		W1000040000000000000001 /* Embed Watch Content */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
-			dstSubfolderSpec = 16;
-			files = (
-				A1000031000000000000001 /* JervisWatch.app in Embed Watch Content */,
-			);
-			name = "Embed Watch Content";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		W1000041000000000000001 /* Embed App Extensions */ = {
+		191F1A6B88F853366A7C7AA5 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				W100001C000000000000001 /* JervisComplication.appex in Embed App Extensions */,
+				69F5C94F5BA0A59B3A980231 /* JervisComplication.appex in Embed Foundation Extensions */,
 			);
-			name = "Embed App Extensions";
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F01D8D18E2E9E4BF5ED7A167 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				9420499AE1D9582736D1A41E /* JervisWatch.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		A1000002000000000000001 /* JervisApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JervisApp.swift; sourceTree = "<group>"; };
-		A1000004000000000000001 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		A1000006000000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		A1000007000000000000001 /* iosApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iosApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		A1000008000000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		A1000018000000000000001 /* NotificationDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationDelegate.swift; sourceTree = "<group>"; };
-		A1000020000000000000001 /* iosApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = iosApp.entitlements; sourceTree = "<group>"; };
-		A1000022000000000000001 /* WatchSessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSessionManager.swift; sourceTree = "<group>"; };
-		A1000024000000000000001 /* WatchConnectivity.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WatchConnectivity.framework; path = System/Library/Frameworks/WatchConnectivity.framework; sourceTree = SDKROOT; };
-		A1000026000000000000001 /* JervisIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JervisIntents.swift; sourceTree = "<group>"; };
-		A1000028000000000000001 /* JervisApiClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JervisApiClient.swift; sourceTree = "<group>"; };
-		A1000030000000000000001 /* WatchRecordingRelay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRecordingRelay.swift; sourceTree = "<group>"; };
-		W1000001000000000000001 /* JervisWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = JervisWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		W1000002000000000000001 /* JervisWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JervisWatchApp.swift; sourceTree = "<group>"; };
-		W1000003000000000000001 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		W1000004000000000000001 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
-		W1000005000000000000001 /* RecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingView.swift; sourceTree = "<group>"; };
-		W1000006000000000000001 /* WatchAudioRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchAudioRecorder.swift; sourceTree = "<group>"; };
-		W1000007000000000000001 /* WatchChatManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchChatManager.swift; sourceTree = "<group>"; };
-		W1000008000000000000001 /* WatchConnectivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchConnectivityManager.swift; sourceTree = "<group>"; };
-		W100000D000000000000001 /* WatchVoiceSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchVoiceSession.swift; sourceTree = "<group>"; };
-		W1000009000000000000001 /* JervisIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JervisIntents.swift; sourceTree = "<group>"; };
-		W100000A000000000000001 /* WatchJervisApiClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchJervisApiClient.swift; sourceTree = "<group>"; };
-		W100000B000000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		W100000C000000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		W100001B000000000000001 /* WatchConnectivity.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WatchConnectivity.framework; path = System/Library/Frameworks/WatchConnectivity.framework; sourceTree = SDKROOT; };
-		X1000001000000000000001 /* JervisComplication.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = JervisComplication.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		X1000002000000000000001 /* JervisComplications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JervisComplications.swift; sourceTree = "<group>"; };
-		X1000003000000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		X1000004000000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		X1000005000000000000001 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
-		X1000006000000000000001 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		24D2E24D70C5657BD0CE2719 /* WatchChatManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchChatManager.swift; sourceTree = "<group>"; };
+		260E5D68392D46A306EBB8AE /* WatchVoiceSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchVoiceSession.swift; sourceTree = "<group>"; };
+		292468E881023A57DB91D5A3 /* JervisWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JervisWatchApp.swift; sourceTree = "<group>"; };
+		2C2301960A3E2C5D71AF2674 /* JervisComplications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JervisComplications.swift; sourceTree = "<group>"; };
+		470DEC9A7C42F956413D1D0B /* WatchAudioRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchAudioRecorder.swift; sourceTree = "<group>"; };
+		59A7E07326FDAC6FEE147285 /* WatchRecordingRelay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRecordingRelay.swift; sourceTree = "<group>"; };
+		644F6996BAFB603DAA585CCE /* JervisApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JervisApp.swift; sourceTree = "<group>"; };
+		6FA797E656577CD58233F67C /* NotificationDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationDelegate.swift; sourceTree = "<group>"; };
+		76663E94FFECD4E045493607 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
+		84DD0CAD0BB65948A399B552 /* WatchConnectivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchConnectivityManager.swift; sourceTree = "<group>"; };
+		86038AE1032E284E79B32AD6 /* iosApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = iosApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		860C0C07AFB84CBAA9144124 /* JervisIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JervisIntents.swift; sourceTree = "<group>"; };
+		A583446177BD0E4F17FE0E1B /* WatchJervisApiClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchJervisApiClient.swift; sourceTree = "<group>"; };
+		AB816FCD36B3ED026F9D5ED8 /* JervisApiClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JervisApiClient.swift; sourceTree = "<group>"; };
+		BD0A66FFC3ACC038310E0D09 /* JervisWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = JervisWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C5E4918B4DB76AD2D497B14D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		CD9C1BBB23A62CBF1BF7C18A /* RecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingView.swift; sourceTree = "<group>"; };
+		CE8509E5A49E4A5CAAEB3ADB /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		D3E93DA1FF128B6CF42FE73C /* WatchSessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSessionManager.swift; sourceTree = "<group>"; };
+		DB5B415B980CC2CA807F3903 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		E19BC99FC9AF76579E6613F5 /* JervisComplication.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = JervisComplication.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		E7799A69EA212F38F69E4354 /* JervisIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JervisIntents.swift; sourceTree = "<group>"; };
+		F30BCCEF41F709A54C378804 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		F543015C899423D4B01CEB2E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
-/* Begin PBXFrameworksBuildPhase section */
-		A1000009000000000000001 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				A1000023000000000000001 /* WatchConnectivity.framework in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		W1000050000000000000001 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				W100001A000000000000001 /* WatchConnectivity.framework in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		X1000050000000000000001 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				X1000012000000000000001 /* WidgetKit.framework in Frameworks */,
-				X1000013000000000000001 /* SwiftUI.framework in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXFrameworksBuildPhase section */
-
 /* Begin PBXGroup section */
-		A100000A000000000000001 = {
+		12FAD44AE1F83B84F9EA6524 /* JervisComplication */ = {
 			isa = PBXGroup;
 			children = (
-				A100000B000000000000001 /* iosApp */,
-				W1000060000000000000001 /* JervisWatch */,
-				X1000060000000000000001 /* JervisComplication */,
-				A100000C000000000000001 /* Products */,
-				A1000024000000000000001 /* WatchConnectivity.framework */,
-				W100001B000000000000001 /* WatchConnectivity.framework */,
-				X1000005000000000000001 /* WidgetKit.framework */,
-				X1000006000000000000001 /* SwiftUI.framework */,
+				C5E4918B4DB76AD2D497B14D /* Assets.xcassets */,
+				2C2301960A3E2C5D71AF2674 /* JervisComplications.swift */,
 			);
+			path = JervisComplication;
 			sourceTree = "<group>";
 		};
-		A100000B000000000000001 /* iosApp */ = {
+		1DB4B685CAEE8BEFEBBAEF94 /* iosApp */ = {
 			isa = PBXGroup;
 			children = (
-				A1000020000000000000001 /* iosApp.entitlements */,
-				A1000002000000000000001 /* JervisApp.swift */,
-				A1000004000000000000001 /* ContentView.swift */,
-				A1000018000000000000001 /* NotificationDelegate.swift */,
-				A1000022000000000000001 /* WatchSessionManager.swift */,
-				A1000026000000000000001 /* JervisIntents.swift */,
-				A1000028000000000000001 /* JervisApiClient.swift */,
-				A1000030000000000000001 /* WatchRecordingRelay.swift */,
-				A1000006000000000000001 /* Assets.xcassets */,
-				A1000008000000000000001 /* Info.plist */,
+				F543015C899423D4B01CEB2E /* Assets.xcassets */,
+				CE8509E5A49E4A5CAAEB3ADB /* ContentView.swift */,
+				AB816FCD36B3ED026F9D5ED8 /* JervisApiClient.swift */,
+				644F6996BAFB603DAA585CCE /* JervisApp.swift */,
+				E7799A69EA212F38F69E4354 /* JervisIntents.swift */,
+				6FA797E656577CD58233F67C /* NotificationDelegate.swift */,
+				59A7E07326FDAC6FEE147285 /* WatchRecordingRelay.swift */,
+				D3E93DA1FF128B6CF42FE73C /* WatchSessionManager.swift */,
 			);
 			path = iosApp;
 			sourceTree = "<group>";
 		};
-		A100000C000000000000001 /* Products */ = {
+		38B69C3F79CD97858CF7B609 = {
 			isa = PBXGroup;
 			children = (
-				A1000007000000000000001 /* iosApp.app */,
-				W1000001000000000000001 /* JervisWatch.app */,
-				X1000001000000000000001 /* JervisComplication.appex */,
+				1DB4B685CAEE8BEFEBBAEF94 /* iosApp */,
+				12FAD44AE1F83B84F9EA6524 /* JervisComplication */,
+				EA0071E1C75B08C7BF5618B7 /* JervisWatch */,
+				94C98B8B3A2BFC1966447269 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		94C98B8B3A2BFC1966447269 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				86038AE1032E284E79B32AD6 /* iosApp.app */,
+				E19BC99FC9AF76579E6613F5 /* JervisComplication.appex */,
+				BD0A66FFC3ACC038310E0D09 /* JervisWatch.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
-		W1000060000000000000001 /* JervisWatch */ = {
+		EA0071E1C75B08C7BF5618B7 /* JervisWatch */ = {
 			isa = PBXGroup;
 			children = (
-				W1000002000000000000001 /* JervisWatchApp.swift */,
-				W1000003000000000000001 /* ContentView.swift */,
-				W1000004000000000000001 /* ChatView.swift */,
-				W1000005000000000000001 /* RecordingView.swift */,
-				W1000006000000000000001 /* WatchAudioRecorder.swift */,
-				W1000007000000000000001 /* WatchChatManager.swift */,
-				W1000008000000000000001 /* WatchConnectivityManager.swift */,
-				W1000009000000000000001 /* JervisIntents.swift */,
-				W100000A000000000000001 /* WatchJervisApiClient.swift */,
-				W100000D000000000000001 /* WatchVoiceSession.swift */,
-				W100000B000000000000001 /* Assets.xcassets */,
-				W100000C000000000000001 /* Info.plist */,
+				F30BCCEF41F709A54C378804 /* Assets.xcassets */,
+				76663E94FFECD4E045493607 /* ChatView.swift */,
+				DB5B415B980CC2CA807F3903 /* ContentView.swift */,
+				860C0C07AFB84CBAA9144124 /* JervisIntents.swift */,
+				292468E881023A57DB91D5A3 /* JervisWatchApp.swift */,
+				CD9C1BBB23A62CBF1BF7C18A /* RecordingView.swift */,
+				470DEC9A7C42F956413D1D0B /* WatchAudioRecorder.swift */,
+				24D2E24D70C5657BD0CE2719 /* WatchChatManager.swift */,
+				84DD0CAD0BB65948A399B552 /* WatchConnectivityManager.swift */,
+				A583446177BD0E4F17FE0E1B /* WatchJervisApiClient.swift */,
+				260E5D68392D46A306EBB8AE /* WatchVoiceSession.swift */,
 			);
-			name = JervisWatch;
-			path = ../watchApp/JervisWatch;
-			sourceTree = "<group>";
-		};
-		X1000060000000000000001 /* JervisComplication */ = {
-			isa = PBXGroup;
-			children = (
-				X1000002000000000000001 /* JervisComplications.swift */,
-				X1000003000000000000001 /* Assets.xcassets */,
-				X1000004000000000000001 /* Info.plist */,
-			);
-			name = JervisComplication;
-			path = ../watchApp/JervisComplication;
+			path = JervisWatch;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		A100000D000000000000001 /* iosApp */ = {
+		34D285761E3E474B5A598E49 /* JervisWatch */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A100000E000000000000001 /* Build configuration list for PBXNativeTarget "iosApp" */;
+			buildConfigurationList = EE9A52C8F76F9D2DF05B5707 /* Build configuration list for PBXNativeTarget "JervisWatch" */;
 			buildPhases = (
-				A100000F000000000000001 /* Sources */,
-				A1000009000000000000001 /* Frameworks */,
-				A1000010000000000000001 /* Resources */,
-				A1000011000000000000001 /* Embed Frameworks */,
-				W1000040000000000000001 /* Embed Watch Content */,
+				C6FC7CCDBDB6B2DFE423EA6F /* Sources */,
+				0550FFACA8D73AA0AF084C7E /* Resources */,
+				191F1A6B88F853366A7C7AA5 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				W1000021000000000000001 /* PBXTargetDependency */,
-			);
-			name = iosApp;
-			productName = iosApp;
-			productReference = A1000007000000000000001 /* iosApp.app */;
-			productType = "com.apple.product-type.application";
-		};
-		W1000030000000000000001 /* JervisWatch */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = W1000070000000000000001 /* Build configuration list for PBXNativeTarget "JervisWatch" */;
-			buildPhases = (
-				W1000051000000000000001 /* Sources */,
-				W1000050000000000000001 /* Frameworks */,
-				W1000052000000000000001 /* Resources */,
-				W1000041000000000000001 /* Embed App Extensions */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				X1000021000000000000001 /* PBXTargetDependency */,
+				482F4C2584818615E3DE3024 /* PBXTargetDependency */,
 			);
 			name = JervisWatch;
+			packageProductDependencies = (
+			);
 			productName = JervisWatch;
-			productReference = W1000001000000000000001 /* JervisWatch.app */;
+			productReference = BD0A66FFC3ACC038310E0D09 /* JervisWatch.app */;
 			productType = "com.apple.product-type.application";
 		};
-		X1000030000000000000001 /* JervisComplication */ = {
+		78B53CC79860CBFC2F5543C6 /* iosApp */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = X1000070000000000000001 /* Build configuration list for PBXNativeTarget "JervisComplication" */;
+			buildConfigurationList = 29DCA9F0B3A40325067EB163 /* Build configuration list for PBXNativeTarget "iosApp" */;
 			buildPhases = (
-				X1000051000000000000001 /* Sources */,
-				X1000050000000000000001 /* Frameworks */,
-				X1000052000000000000001 /* Resources */,
+				AB2962E767F66DDFD18B3BE9 /* Compile Kotlin Multiplatform */,
+				297B59D9CE634556D6007C40 /* Sources */,
+				1623B02D10928C8101C1F806 /* Resources */,
+				F01D8D18E2E9E4BF5ED7A167 /* Embed Watch Content */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				9A6C2DEF3D9A0099A713581A /* PBXTargetDependency */,
+			);
+			name = iosApp;
+			packageProductDependencies = (
+			);
+			productName = iosApp;
+			productReference = 86038AE1032E284E79B32AD6 /* iosApp.app */;
+			productType = "com.apple.product-type.application";
+		};
+		AE7422CD54B6F890D926788A /* JervisComplication */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AAB95AE9979943E99D501203 /* Build configuration list for PBXNativeTarget "JervisComplication" */;
+			buildPhases = (
+				D47BE0D428EFCCD3BA589114 /* Sources */,
+				BD03BE2E8F1C7CCA5B558A12 /* Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
 			name = JervisComplication;
+			packageProductDependencies = (
+			);
 			productName = JervisComplication;
-			productReference = X1000001000000000000001 /* JervisComplication.appex */;
+			productReference = E19BC99FC9AF76579E6613F5 /* JervisComplication.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		A1000012000000000000001 /* Project object */ = {
+		242FB5348943441C388468CE /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 1500;
-				LastUpgradeCheck = 2610;
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
 				TargetAttributes = {
-					A100000D000000000000001 = {
-						CreatedOnToolsVersion = 15.0;
+					34D285761E3E474B5A598E49 = {
+						DevelopmentTeam = GR74KSG8M9;
+						ProvisioningStyle = Automatic;
 					};
-					W1000030000000000000001 = {
-						CreatedOnToolsVersion = 15.0;
+					78B53CC79860CBFC2F5543C6 = {
+						DevelopmentTeam = GR74KSG8M9;
+						ProvisioningStyle = Automatic;
 					};
-					X1000030000000000000001 = {
-						CreatedOnToolsVersion = 15.0;
+					AE7422CD54B6F890D926788A = {
+						DevelopmentTeam = GR74KSG8M9;
+						ProvisioningStyle = Automatic;
 					};
 				};
 			};
-			buildConfigurationList = A1000013000000000000001 /* Build configuration list for PBXProject "iosApp" */;
-			compatibilityVersion = "Xcode 14.0";
-			developmentRegion = en;
+			buildConfigurationList = FF7CA1CA754D017066F1822F /* Build configuration list for PBXProject "iosApp" */;
+			developmentRegion = cs;
 			hasScannedForEncodings = 0;
 			knownRegions = (
-				en,
 				Base,
+				cs,
 			);
-			mainGroup = A100000A000000000000001;
-			productRefGroup = A100000C000000000000001 /* Products */;
+			mainGroup = 38B69C3F79CD97858CF7B609;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 94C98B8B3A2BFC1966447269 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				A100000D000000000000001 /* iosApp */,
-				W1000030000000000000001 /* JervisWatch */,
-				X1000030000000000000001 /* JervisComplication */,
+				AE7422CD54B6F890D926788A /* JervisComplication */,
+				34D285761E3E474B5A598E49 /* JervisWatch */,
+				78B53CC79860CBFC2F5543C6 /* iosApp */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		A1000010000000000000001 /* Resources */ = {
+		0550FFACA8D73AA0AF084C7E /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A1000005000000000000001 /* Assets.xcassets in Resources */,
+				607E1C0A5DEC30D9DA7DC238 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		W1000052000000000000001 /* Resources */ = {
+		1623B02D10928C8101C1F806 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				W1000019000000000000001 /* Assets.xcassets in Resources */,
+				22EA1CB33A17DCC6FC82406D /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		X1000052000000000000001 /* Resources */ = {
+		BD03BE2E8F1C7CCA5B558A12 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				X1000011000000000000001 /* Assets.xcassets in Resources */,
+				83A382B0D9F587ECA216DB53 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		A1000011000000000000001 /* Embed Frameworks */ = {
+		AB2962E767F66DDFD18B3BE9 /* Compile Kotlin Multiplatform */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
+			inputFileListPaths = (
+			);
 			inputPaths = (
 			);
-			name = "Embed Frameworks";
+			name = "Compile Kotlin Multiplatform";
+			outputFileListPaths = (
+			);
 			outputPaths = (
-				"${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}/JervisMobile.framework",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "if [ \"YES\" = \"$OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED\" ]; then\n  echo \"Skipping Gradle build task invocation due to OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED environment variable set to \\\"YES\\\"\"\n  exit 0\nfi\ncd \"$SRCROOT/../..\"\n./gradlew :apps:mobile:embedAndSignAppleFrameworkForXcode";
+			shellScript = "if [ \"YES\" = \"$OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED\" ]; then\n  echo \"Skipping Gradle build task invocation due to OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED environment variable set to \\\"YES\\\"\"\n  exit 0\nfi\ncd \"$SRCROOT/../..\"\n./gradlew :shared:ui-common:embedAndSignAppleFrameworkForXcode\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		A100000F000000000000001 /* Sources */ = {
+		297B59D9CE634556D6007C40 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A1000003000000000000001 /* ContentView.swift in Sources */,
-				A1000001000000000000001 /* JervisApp.swift in Sources */,
-				A1000019000000000000001 /* NotificationDelegate.swift in Sources */,
-				A1000021000000000000001 /* WatchSessionManager.swift in Sources */,
-				A1000025000000000000001 /* JervisIntents.swift in Sources */,
-				A1000027000000000000001 /* JervisApiClient.swift in Sources */,
-				A1000029000000000000001 /* WatchRecordingRelay.swift in Sources */,
+				56B0305B5D3847FC6B326502 /* ContentView.swift in Sources */,
+				81AD36E6BBD39CCE14E2FD9E /* JervisApiClient.swift in Sources */,
+				3208C3026A50BC0DBB7CF4B5 /* JervisApp.swift in Sources */,
+				C044275DCE25DEA5C6570036 /* JervisIntents.swift in Sources */,
+				1C63C5AFBD9429500F8A5F25 /* NotificationDelegate.swift in Sources */,
+				28B82A4261604763E5C22A6B /* WatchRecordingRelay.swift in Sources */,
+				04692F2B5BFD1B0B7E8FEDAE /* WatchSessionManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		W1000051000000000000001 /* Sources */ = {
+		C6FC7CCDBDB6B2DFE423EA6F /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				W1000010000000000000001 /* JervisWatchApp.swift in Sources */,
-				W1000011000000000000001 /* ContentView.swift in Sources */,
-				W1000012000000000000001 /* ChatView.swift in Sources */,
-				W1000013000000000000001 /* RecordingView.swift in Sources */,
-				W1000014000000000000001 /* WatchAudioRecorder.swift in Sources */,
-				W1000015000000000000001 /* WatchChatManager.swift in Sources */,
-				W1000016000000000000001 /* WatchConnectivityManager.swift in Sources */,
-				W1000017000000000000001 /* JervisIntents.swift in Sources */,
-				W1000018000000000000001 /* WatchJervisApiClient.swift in Sources */,
-				W100001D000000000000001 /* WatchVoiceSession.swift in Sources */,
+				29E25E07E988350F98792BFE /* ChatView.swift in Sources */,
+				9B62F0E982C6D9E2B2AE3D40 /* ContentView.swift in Sources */,
+				95E4FA74125D6A7372A7828A /* JervisIntents.swift in Sources */,
+				2091F45AB4BE9543C02D20FA /* JervisWatchApp.swift in Sources */,
+				5198285DB1DBF49EF1CBF9F7 /* RecordingView.swift in Sources */,
+				B26C1F2707EECE79A1AF4C7D /* WatchAudioRecorder.swift in Sources */,
+				07459D6F47DF6D52AB8095F7 /* WatchChatManager.swift in Sources */,
+				F2223002AB873D7F18D33519 /* WatchConnectivityManager.swift in Sources */,
+				1AE956DEC866D23D226E30A7 /* WatchJervisApiClient.swift in Sources */,
+				95B500AE1232927F279DF7E5 /* WatchVoiceSession.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		X1000051000000000000001 /* Sources */ = {
+		D47BE0D428EFCCD3BA589114 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				X1000010000000000000001 /* JervisComplications.swift in Sources */,
+				88142511BC765F82DAFA91EF /* JervisComplications.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		W1000021000000000000001 /* PBXTargetDependency */ = {
+		482F4C2584818615E3DE3024 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = W1000030000000000000001 /* JervisWatch */;
-			targetProxy = W1000020000000000000001 /* PBXContainerItemProxy */;
+			target = AE7422CD54B6F890D926788A /* JervisComplication */;
+			targetProxy = D7DE21EFEB6F62185F93BD51 /* PBXContainerItemProxy */;
 		};
-		X1000021000000000000001 /* PBXTargetDependency */ = {
+		9A6C2DEF3D9A0099A713581A /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = X1000030000000000000001 /* JervisComplication */;
-			targetProxy = X1000020000000000000001 /* PBXContainerItemProxy */;
+			target = 34D285761E3E474B5A598E49 /* JervisWatch */;
+			targetProxy = A3EFFA249B858F348FF2469F /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		A1000014000000000000001 /* Debug */ = {
+		11814011E7D6EC822BFBC66D /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CLANG_ENABLE_OBJC_WEAK = YES;
@@ -448,18 +407,101 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = GR74KSG8M9;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 1.0.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.9;
+				WATCHOS_DEPLOYMENT_TARGET = 9.0;
+			};
+			name = Release;
+		};
+		60A3837CECDA312539445AFF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = JervisComplication/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.jervis.watchkitapp.complication;
+				PRODUCT_NAME = JervisComplication;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 9.0;
+			};
+			name = Debug;
+		};
+		6C824A6EB4BAD43AE2A4BB29 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = GR74KSG8M9;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = NO;
-				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_OPTIMIZATION_LEVEL = 0;
 				GCC_PREPROCESSOR_DEFINITIONS = (
-					"DEBUG=1",
 					"$(inherited)",
+					"DEBUG=1",
 				);
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
@@ -468,94 +510,54 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
-				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
-				SDKROOT = iphoneos;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.9;
+				WATCHOS_DEPLOYMENT_TARGET = 9.0;
 			};
 			name = Debug;
 		};
-		A1000015000000000000001 /* Release */ = {
+		9221A1FDC06803E8A2FC6E61 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ALWAYS_SEARCH_USER_PATHS = NO;
-				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
-				CLANG_ANALYZER_NONNULL = YES;
-				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
-				CLANG_ENABLE_MODULES = YES;
-				CLANG_ENABLE_OBJC_ARC = YES;
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
-				CLANG_WARN_BOOL_CONVERSION = YES;
-				CLANG_WARN_COMMA = YES;
-				CLANG_WARN_CONSTANT_CONVERSION = YES;
-				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
-				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
-				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
-				CLANG_WARN_EMPTY_BODY = YES;
-				CLANG_WARN_ENUM_CONVERSION = YES;
-				CLANG_WARN_INFINITE_RECURSION = YES;
-				CLANG_WARN_INT_CONVERSION = YES;
-				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
-				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
-				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
-				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
-				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
-				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
-				CLANG_WARN_STRICT_PROTOTYPES = YES;
-				CLANG_WARN_SUSPICIOUS_MOVE = YES;
-				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
-				CLANG_WARN_UNREACHABLE_CODE = YES;
-				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				COPY_PHASE_STRIP = NO;
-				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				ENABLE_NS_ASSERTIONS = NO;
-				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = NO;
-				GCC_C_LANGUAGE_STANDARD = gnu17;
-				GCC_NO_COMMON_BLOCKS = YES;
-				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
-				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
-				GCC_WARN_UNDECLARED_SELECTOR = YES;
-				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
-				GCC_WARN_UNUSED_FUNCTION = YES;
-				GCC_WARN_UNUSED_VARIABLE = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = iosApp/iosApp.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				FRAMEWORK_SEARCH_PATHS = "$(inherited) \"${BUILT_PRODUCTS_DIR}\"";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = iosApp/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Jervis;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
-				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MTL_ENABLE_DEBUG_INFO = NO;
-				MTL_FAST_MATH = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				OTHER_LDFLAGS = "$(inherited) -framework JervisShared";
+				PRODUCT_BUNDLE_IDENTIFIER = com.jervis;
+				PRODUCT_NAME = iosApp;
 				SDKROOT = iphoneos;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SWIFT_COMPILATION_MODE = wholemodule;
-				VALIDATE_PRODUCT = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
-			name = Release;
+			name = Debug;
 		};
-		A1000016000000000000001 /* Debug */ = {
+		AF835BFF1220CA5AB5B867E4 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = iosApp/iosApp.entitlements;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = GR74KSG8M9;
-				ENABLE_PREVIEWS = YES;
-				FRAMEWORK_SEARCH_PATHS = "$(inherited)";
-				"FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*]" = (
-					"$(inherited)",
-					"$(SRCROOT)/../mobile/build/bin/iosArm64/debugFramework",
-				);
-				"FRAMEWORK_SEARCH_PATHS[sdk=iphonesimulator*]" = (
-					"$(inherited)",
-					"$(SRCROOT)/../mobile/build/bin/iosSimulatorArm64/debugFramework",
-				);
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				FRAMEWORK_SEARCH_PATHS = "$(inherited) \"${BUILT_PRODUCTS_DIR}\"";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = iosApp/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Jervis;
@@ -563,7 +565,6 @@
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
@@ -571,232 +572,113 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
-				OTHER_LDFLAGS = (
-					"$(inherited)",
-					"-framework",
-					JervisMobile,
-				);
+				OTHER_LDFLAGS = "$(inherited) -framework JervisShared";
 				PRODUCT_BUNDLE_IDENTIFIER = com.jervis;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "";
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = NO;
-				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Debug;
-		};
-		A1000017000000000000001 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = iosApp/iosApp.entitlements;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = GR74KSG8M9;
-				ENABLE_PREVIEWS = YES;
-				FRAMEWORK_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(SRCROOT)/../mobile/build/bin/iosArm64/releaseFramework",
-				);
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = iosApp/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Jervis;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				MARKETING_VERSION = 1.0;
-				OTHER_LDFLAGS = (
-					"$(inherited)",
-					"-framework",
-					JervisMobile,
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.jervis;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				PROVISIONING_PROFILE_SPECIFIER = "";
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = NO;
-				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
+				PRODUCT_NAME = iosApp;
+				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
-		W1000071000000000000001 /* Debug */ = {
+		BFA3AB7E0CB3D8FAFE391D32 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = GR74KSG8M9;
-				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = ../watchApp/JervisWatch/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Jervis;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
-				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.jervis;
-				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = YES;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.jervis.watchkitapp;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = watchos;
-				SKIP_INSTALL = NO;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 4;
-				WATCHOS_DEPLOYMENT_TARGET = 9.0;
-			};
-			name = Debug;
-		};
-		W1000072000000000000001 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = GR74KSG8M9;
-				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = ../watchApp/JervisWatch/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Jervis;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
-				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.jervis;
-				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = YES;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.jervis.watchkitapp;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = watchos;
-				SKIP_INSTALL = NO;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 4;
-				WATCHOS_DEPLOYMENT_TARGET = 9.0;
-			};
-			name = Release;
-		};
-		X1000071000000000000001 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = GR74KSG8M9;
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = ../watchApp/JervisComplication/Info.plist;
+				INFOPLIST_FILE = JervisComplication/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.jervis.watchkitapp.complication;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = JervisComplication;
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 4;
-				WATCHOS_DEPLOYMENT_TARGET = 9.0;
-			};
-			name = Debug;
-		};
-		X1000072000000000000001 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = GR74KSG8M9;
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = ../watchApp/JervisComplication/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.jervis.watchkitapp.complication;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = watchos;
-				SKIP_INSTALL = YES;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
 				WATCHOS_DEPLOYMENT_TARGET = 9.0;
 			};
 			name = Release;
+		};
+		F78590B9F20DF4A37B714C59 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = JervisWatch/JervisWatch.entitlements;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = JervisWatch/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Jervis;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.jervis;
+				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jervis.watchkitapp;
+				PRODUCT_NAME = JervisWatch;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 9.0;
+			};
+			name = Release;
+		};
+		FD7AF1B4E4E6D946637DF882 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = JervisWatch/JervisWatch.entitlements;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = JervisWatch/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Jervis;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.jervis;
+				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jervis.watchkitapp;
+				PRODUCT_NAME = JervisWatch;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 9.0;
+			};
+			name = Debug;
 		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		A100000E000000000000001 /* Build configuration list for PBXNativeTarget "iosApp" */ = {
+		29DCA9F0B3A40325067EB163 /* Build configuration list for PBXNativeTarget "iosApp" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				A1000016000000000000001 /* Debug */,
-				A1000017000000000000001 /* Release */,
+				9221A1FDC06803E8A2FC6E61 /* Debug */,
+				AF835BFF1220CA5AB5B867E4 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Debug;
 		};
-		A1000013000000000000001 /* Build configuration list for PBXProject "iosApp" */ = {
+		AAB95AE9979943E99D501203 /* Build configuration list for PBXNativeTarget "JervisComplication" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				A1000014000000000000001 /* Debug */,
-				A1000015000000000000001 /* Release */,
+				60A3837CECDA312539445AFF /* Debug */,
+				BFA3AB7E0CB3D8FAFE391D32 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Debug;
 		};
-		W1000070000000000000001 /* Build configuration list for PBXNativeTarget "JervisWatch" */ = {
+		EE9A52C8F76F9D2DF05B5707 /* Build configuration list for PBXNativeTarget "JervisWatch" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				W1000071000000000000001 /* Debug */,
-				W1000072000000000000001 /* Release */,
+				FD7AF1B4E4E6D946637DF882 /* Debug */,
+				F78590B9F20DF4A37B714C59 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Debug;
 		};
-		X1000070000000000000001 /* Build configuration list for PBXNativeTarget "JervisComplication" */ = {
+		FF7CA1CA754D017066F1822F /* Build configuration list for PBXProject "iosApp" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				X1000071000000000000001 /* Debug */,
-				X1000072000000000000001 /* Release */,
+				6C824A6EB4BAD43AE2A4BB29 /* Debug */,
+				11814011E7D6EC822BFBC66D /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
 	};
-	rootObject = A1000012000000000000001 /* Project object */;
+	rootObject = 242FB5348943441C388468CE /* Project object */;
 }

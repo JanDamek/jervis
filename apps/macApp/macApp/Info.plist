@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Jervis</string>
+	<string>Jervis APNs Helper</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -28,7 +28,5 @@
 	<array>
 		<string>remote-notification</string>
 	</array>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Jervis needs microphone access for voice assistant and meeting recording.</string>
 </dict>
 </plist>

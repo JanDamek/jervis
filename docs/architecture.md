@@ -616,7 +616,7 @@ Settings are stored in MongoDB (`whisper_settings` collection, singleton documen
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | Deployment mode | `K8S_JOB` | `K8S_JOB` = K8s Jobs in cluster, `REST_REMOTE` = remote REST server |
-| REST remote URL | `http://192.168.100.117:8786` | URL of the Whisper REST service (only used in REST_REMOTE mode) |
+| REST remote URL | `http://ollama.lan.mazlusek.com:8786` | URL of the Whisper REST service (only used in REST_REMOTE mode) |
 
 ### Configurable Parameters (UI)
 
@@ -3065,7 +3065,7 @@ tasks; source identity (teams/whatsapp/slack/discord/…) is encoded in
 
 Companion watch apps for ad-hoc audio recording and voice chat commands. Both platforms send audio data to the paired phone, which handles upload via `RecordingUploadService`.
 
-### watchOS App (`apps/watchApp/`)
+### watchOS App (`apps/iosWatchApp/`)
 
 SwiftUI watchOS app with two main actions:
 
@@ -3074,7 +3074,7 @@ SwiftUI watchOS app with two main actions:
 
 **Phone-side integration:** `WatchSessionManager` (iOS) receives `WCSessionDelegate` data transfers and feeds audio chunks into `RecordingUploadService` for server upload.
 
-### Wear OS App (`apps/wearApp/`)
+### Wear OS App (`apps/androidWatchApp/`)
 
 Compose for Wear OS app (registered in `settings.gradle.kts` as `:apps:wearApp`):
 
@@ -3107,8 +3107,8 @@ Uses `AppShortcutsProvider` (iOS 16+ / watchOS 9+) for automatic Siri phrase reg
 Files:
 - `apps/iosApp/iosApp/JervisIntents.swift` — `AskJervisIntent`, `StartRecordingIntent`, `JervisShortcutsProvider`
 - `apps/iosApp/iosApp/JervisApiClient.swift` — HTTP client for Siri → backend
-- `apps/watchApp/JervisWatch/JervisIntents.swift` — watchOS intents (includes `StartWatchChatIntent`)
-- `apps/watchApp/JervisWatch/WatchJervisApiClient.swift` — watchOS HTTP client
+- `apps/iosWatchApp/JervisWatch/JervisIntents.swift` — watchOS intents (includes `StartWatchChatIntent`)
+- `apps/iosWatchApp/JervisWatch/WatchJervisApiClient.swift` — watchOS HTTP client
 
 #### Android (phone + Wear OS) — App Actions
 
@@ -3120,8 +3120,8 @@ Uses `shortcuts.xml` for Google Assistant integration:
 Files:
 - `apps/mobile/src/androidMain/res/xml/actions.xml` — App Actions capability definitions
 - `apps/mobile/src/androidMain/kotlin/.../VoiceQueryActivity.kt` — transparent Activity for voice queries
-- `apps/wearApp/src/main/res/xml/actions.xml` — Wear OS App Actions
-- `apps/wearApp/src/main/kotlin/.../VoiceQueryActivity.kt` — Wear OS voice query handler
+- `apps/androidWatchApp/src/main/res/xml/actions.xml` — Wear OS App Actions
+- `apps/androidWatchApp/src/main/kotlin/.../VoiceQueryActivity.kt` — Wear OS voice query handler
 
 #### Backend Endpoint
 
@@ -3332,7 +3332,7 @@ env on both the server script and the consumer.
                          ▼
               ┌──────────────────────┐
               │   Ollama Router      │  Port: 11430
-              │   (Queue + Proxy)    │  Host: 192.168.100.117
+              │   (Queue + Proxy)    │  Host: jervis-ollama-router (K8s service)
               │                      │
               │  ┌────────────────┐  │
               │  │ CRITICAL queue │  │  Unlimited, GPU-only
@@ -3417,10 +3417,10 @@ When a CRITICAL request is dispatched to a GPU, the router automatically creates
 
 | Service | Environment Variable | Value |
 |---------|---------------------|-------|
-| **Orchestrator** | `OLLAMA_API_BASE` | `http://192.168.100.117:11430` |
-| **KB (read)** | `OLLAMA_BASE_URL` | `http://192.168.100.117:11430` |
-| | `OLLAMA_EMBEDDING_BASE_URL` | `http://192.168.100.117:11430` |
-| | `OLLAMA_INGEST_BASE_URL` | `http://192.168.100.117:11430` |
+| **Orchestrator** | `OLLAMA_API_BASE` | `http://jervis-ollama-router:11430` |
+| **KB (read)** | `OLLAMA_BASE_URL` | `http://jervis-ollama-router:11430` |
+| | `OLLAMA_EMBEDDING_BASE_URL` | `http://jervis-ollama-router:11430` |
+| | `OLLAMA_INGEST_BASE_URL` | `http://jervis-ollama-router:11430` |
 | **KB (write)** | Same as KB read | |
 
 ### Router Configuration
@@ -4724,10 +4724,10 @@ OLLAMA_KEEP_ALIVE=1h
 
 | Service | Env Var | Value |
 |---------|---------|-------|
-| Kotlin server | `OLLAMA_BASE_URL` | `http://192.168.100.117:11430` |
-| KB service | `OLLAMA_*_BASE_URL` | `http://192.168.100.117:11430` |
-| Orchestrator | `OLLAMA_API_BASE` | `http://192.168.100.117:11430` |
-| Coding engine | `ollama-base-url` | `http://192.168.100.117:11430` |
+| Kotlin server | `OLLAMA_BASE_URL` | `http://jervis-ollama-router:11430` |
+| KB service | `OLLAMA_*_BASE_URL` | `http://jervis-ollama-router:11430` |
+| Orchestrator | `OLLAMA_API_BASE` | `http://jervis-ollama-router:11430` |
+| Coding engine | `ollama-base-url` | `http://jervis-ollama-router:11430` |
 
 ### Source Code
 
@@ -8825,12 +8825,12 @@ Toggled via K8s badge in `PersistentTopBar`. On compact layouts opens full-scree
 
 ### 5.12) Watch Apps
 
-**watchOS App** (`apps/watchApp/`) — SwiftUI (not Compose, native watchOS):
+**watchOS App** (`apps/iosWatchApp/`) — SwiftUI (not Compose, native watchOS):
 - Two-button home screen: **Ad-hoc Recording** (mic icon) and **Chat Voice Command** (chat icon)
 - Recording screen shows waveform + elapsed time + stop button
 - Audio chunks sent to iPhone via WatchConnectivity; iPhone-side `WatchSessionManager` feeds `RecordingUploadService`
 
-**Wear OS App** (`apps/wearApp/`) — Compose for Wear OS:
+**Wear OS App** (`apps/androidWatchApp/`) — Compose for Wear OS:
 - Recording screen: start/stop controls, elapsed time indicator
 - Chat screen: voice command recording with send action
 - Uses DataLayer API for phone communication
@@ -12469,7 +12469,7 @@ class Settings:
     mongodb_url = env("MONGODB_URL", "mongodb://localhost:27017")
     kotlin_server_url = env("KOTLIN_SERVER_URL", "http://jervis-server:5500")
     knowledgebase_url = env("KNOWLEDGEBASE_URL", "http://jervis-knowledgebase:8080")
-    ollama_url = env("OLLAMA_URL", "http://192.168.100.117:11434")
+    ollama_url = env("OLLAMA_URL", "http://ollama.lan.mazlusek.com:11434")
     k8s_namespace = env("K8S_NAMESPACE", "jervis")
     data_root = env("DATA_ROOT", "/opt/jervis/data")
     container_registry = env("CONTAINER_REGISTRY", "registry.damek-soft.eu/jandamek")

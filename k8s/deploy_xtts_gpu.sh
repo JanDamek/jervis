@@ -35,8 +35,18 @@ CONTAINER_NAME="jervis-xtts-gpu"
 DOCKERFILE="${PROJECT_ROOT}/backend/service-tts/Dockerfile.gpu"
 
 # Router + server endpoints (see deploy_whisper_gpu.sh — identical network layout).
-# XTTS runs outside the K8s cluster on the GPU VM; dial the worker node's NodePort
-# directly (in-cluster DNS is not resolvable from here).
+# XTTS runs outside the K8s cluster on the GPU VM; needs to dial the worker
+# node's NodePort because nginx-ingress doesn't currently forward gRPC :5500/:5501.
+#
+# TODO(2026-04-26): replace these raw IPs with DNS hostnames per the
+# "DNS only — no raw IPs" rule (CLAUDE.md, docs/guidelines.md §13).
+# Two viable paths:
+#   1. Add a UniFi local_dns alias for the K8s worker node (e.g.
+#      worker1.lan.mazlusek.com) and use it here with NodePort 30500/30501.
+#   2. Promote jervis-server / jervis-ollama-router from NodePort to MetalLB
+#      LoadBalancer with a dedicated VIP, then add an A record for
+#      jervis-grpc.lan.mazlusek.com or extend tcp-services on nginx-ingress.
+# Decision needed before next deploy of this service.
 ROUTER_GRPC_HOST="${ROUTER_GRPC_HOST:-192.168.101.37}"
 ROUTER_GRPC_PORT="${ROUTER_GRPC_PORT:-30501}"
 SERVER_GRPC_HOST="${SERVER_GRPC_HOST:-192.168.101.37}"
@@ -102,6 +112,7 @@ ssh_cmd "mkdir -p /opt/jervis/data/tts/speakers /opt/jervis/hf-cache"
 ssh_cmd "docker run -d \
     --name '$CONTAINER_NAME' \
     --restart unless-stopped \
+    --label autoheal=true \
     --gpus all \
     --network host \
     -v /opt/jervis/data/tts:/opt/jervis/data/tts \

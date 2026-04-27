@@ -297,6 +297,49 @@ that could just read the proto directly.
 
 SSOT specs: `docs/teams-pod-agent.md`, `docs/whatsapp-connection-design.md`.
 
+### 13. DNS only — no raw IPs in service config
+
+All service-to-service references — deploy scripts (`k8s/deploy_*.sh`,
+`k8s/build_*.sh`), Dockerfile env defaults, ConfigMaps, K8s manifests,
+Kotlin/Python client default URLs, `docs/architecture.md` URL tables —
+**must use DNS hostnames**, never raw IPs.
+
+UniFi controller (`unifi.lan.mazlusek.com`, 192.168.100.28) manages
+DNS for `*.lan.mazlusek.com`: per-host `local_dns` overrides for known
+servers + wildcard A record forwarding to the Nginx Ingress VIP via
+MetalLB. Detail v Jervis MCP, projekt **Infra**
+(`id=69aab27c937c40e2115efc74`, client `68a336adc3acf65a48cab3e7`).
+
+#### Existing hostnames (KB `infra://overview/network-dns` + `ingress-services`)
+
+| Hostname | Purpose |
+|---|---|
+| `nas.lan.mazlusek.com` | NAS (TrueNAS SCALE) |
+| `unifi.lan.mazlusek.com` | UniFi controller, DNS proxy, MCP host |
+| `ollama.lan.mazlusek.com` | GPU VM, audio service Docker containers |
+| `jervis-router.lan.mazlusek.com` | Jervis Ollama Router (Nginx Ingress) |
+| `kibana.lan.mazlusek.com` | Kibana ELK |
+| `*.lan.mazlusek.com` (wildcard) | Nginx Ingress VIP via MetalLB |
+
+Need a new hostname? Add a `local_dns` override in UniFi (not in repo).
+
+#### Only allowed raw IPs
+
+- K8s API server `192.168.100.221:6443` in kubeconfig (cluster
+  bootstrap).
+- Local debug values in gitignored `local.properties`.
+
+Anything else is a bug — fix during the next refactor of that file.
+
+#### Why
+
+Each raw IP is a ticking time bomb. Worker nodes get re-IP'd, MetalLB
+VIPs migrate, DHCP leases roll over, K8s topology refactors happen. DNS
+hostnames remain stable signposts; when a service moves, only the
+UniFi A record changes. Hardcoded IPs produce silent connectivity
+incidents like `Router: notify failed (192.168.100.216:5501) — No
+route to host` (incident 2026-04-26 on the Whisper container).
+
 ---
 
 ## Architecture Quick Reference

@@ -66,7 +66,15 @@ async def lifespan(app: FastAPI):
         await worker.start()
         logger.info("LLM extraction worker started with SQLite queue at %s/extraction_queue.db", queue_dir)
 
-    knowledge_service = KnowledgeService(extraction_queue=extraction_queue)
+    # Inject the wired-up rag_service + graph_service so KnowledgeService
+    # shares them with main.py — otherwise __init__ creates a second
+    # GraphService instance that never has set_thought_service() called on
+    # it, and `service.thought_service` proxy throws "not initialized".
+    knowledge_service = KnowledgeService(
+        extraction_queue=extraction_queue,
+        rag_service=rag_service,
+        graph_service=graph_service,
+    )
 
     # Initialize global service in routes module
     routes.service = knowledge_service

@@ -1,7 +1,7 @@
 import SwiftUI
 import UserNotifications
 import AVFoundation
-import JervisMobile
+import JervisShared
 
 @main
 struct JervisApp: App {

@@ -11,14 +11,16 @@ kotlin {
 
     jvm() // withJava() is deprecated and not needed
 
-    // Only configure iOS targets when not building in Docker (to avoid Kotlin Native dependencies)
+    // Only configure iOS and macOS targets when not building in Docker (to avoid Kotlin Native dependencies)
     if (System.getenv("DOCKER_BUILD") != "true") {
         listOf(
             iosX64(),
             iosArm64(),
             iosSimulatorArm64(),
-        ).forEach { iosTarget ->
-            iosTarget.binaries.framework {
+            macosX64(),
+            macosArm64(),
+        ).forEach { target ->
+            target.binaries.framework {
                 baseName = "CommonDto"
                 isStatic = true
             }

@@ -2,29 +2,24 @@ import Foundation
 import Darwin
 import IOKit
 
-/// Tiny newline-delimited JSON protocol over a Unix domain socket.
-///
-/// Swift host writes messages to the socket; the JVM child connects and
-/// reads them. One message per line. Supported kinds:
-///
-///   { "kind": "token", "hexToken": "...", "deviceId": "..." }
-///   { "kind": "payload", "userInfo": { ... } }
-///
-/// The JVM side keeps the connection open for the lifetime of the
-/// Compose window. If it drops, we queue messages and replay them on
-/// the next connect (so an APNs token that arrives before the JVM has
-/// latched the socket isn't lost).
+protocol SocketBridgeDelegate: AnyObject {
+    func socketBridgeDidRequestShowNotification(taskId: String?, title: String, body: String, category: String?, payload: [String: Any]?)
+    func socketBridgeDidRequestCancelNotification(taskId: String)
+    func socketBridgeDidRequestSetLoginItem(enabled: Bool)
+    func socketBridgeDidRequestQueryLoginItem()
+    func socketBridgeDidRequestFocusJervis()
+}
+
 final class SocketBridge {
+    weak var delegate: SocketBridgeDelegate?
+
     private let path: String
     private var serverFd: Int32 = -1
     private var clientFd: Int32 = -1
     private var pending: [String] = []
-    // State mutex — protects clientFd + pending. The accept() thread must
-    // NOT share a serial queue with send/flush, otherwise the blocking
-    // accept() call holds the queue forever and queued sends never fire.
     private let stateQueue = DispatchQueue(label: "jervis.macapp.socketbridge.state")
-    // Dedicated accept thread.
     private var acceptThread: Thread?
+    private var readThread: Thread?
 
     init(path: String) {
         self.path = path
@@ -46,6 +41,8 @@ final class SocketBridge {
         unlink(path)
     }
 
+    // MARK: - Outgoing (Swift → JVM)
+
     func sendToken(hexToken: String, deviceId: String) {
         let json = "{\"kind\":\"token\",\"hexToken\":\"\(hexToken)\",\"deviceId\":\"\(deviceId)\"}\n"
         send(line: json)
@@ -58,13 +55,30 @@ final class SocketBridge {
         send(line: json)
     }
 
+    func sendAction(taskId: String?, action: String, replyText: String?) {
+        var dict: [String: Any] = ["kind": "action", "action": action]
+        if let taskId = taskId { dict["taskId"] = taskId }
+        if let replyText = replyText { dict["replyText"] = replyText }
+        guard let data = try? JSONSerialization.data(withJSONObject: dict),
+              let json = String(data: data, encoding: .utf8) else { return }
+        send(line: json + "\n")
+    }
+
+    func sendLoginItemStatus(enabled: Bool) {
+        let json = "{\"kind\":\"loginItemStatus\",\"enabled\":\(enabled)}\n"
+        send(line: json)
+    }
+
+    /// True when a JVM client is currently connected to the socket.
+    func isClientConnected() -> Bool {
+        return stateQueue.sync { clientFd >= 0 }
+    }
+
     private func send(line: String) {
         stateQueue.async { [weak self] in
             guard let self = self else { return }
             if self.clientFd >= 0 {
                 if !self.writeLine(line, fd: self.clientFd) {
-                    // Write failed — client died without closing cleanly.
-                    // Queue the line for the next reconnect.
                     close(self.clientFd)
                     self.clientFd = -1
                     self.pending.append(line)
@@ -82,6 +96,74 @@ final class SocketBridge {
             return written == Int(len)
         }
     }
+
+    // MARK: - Incoming (JVM → Swift)
+
+    private func startReadLoop(fd: Int32) {
+        let t = Thread { [weak self] in self?.readLoop(fd: fd) }
+        t.name = "jervis.macapp.socketbridge.read"
+        readThread = t
+        t.start()
+    }
+
+    private func readLoop(fd: Int32) {
+        var buffer = Data()
+        var chunk = [UInt8](repeating: 0, count: 4096)
+        while true {
+            let n = recv(fd, &chunk, chunk.count, 0)
+            if n <= 0 { break }
+            buffer.append(chunk, count: n)
+            while let nl = buffer.firstIndex(of: 0x0A) {
+                let lineData = buffer.subdata(in: 0..<nl)
+                buffer.removeSubrange(0...nl)
+                if let line = String(data: lineData, encoding: .utf8), !line.isEmpty {
+                    handleLine(line)
+                }
+            }
+        }
+    }
+
+    private func handleLine(_ line: String) {
+        guard let data = line.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let kind = obj["kind"] as? String else { return }
+        switch kind {
+        case "showNotification":
+            let taskId = obj["taskId"] as? String
+            let title = (obj["title"] as? String) ?? ""
+            let body = (obj["body"] as? String) ?? ""
+            let category = obj["category"] as? String
+            let payload = obj["payload"] as? [String: Any]
+            DispatchQueue.main.async { [weak self] in
+                self?.delegate?.socketBridgeDidRequestShowNotification(
+                    taskId: taskId, title: title, body: body, category: category, payload: payload
+                )
+            }
+        case "cancelNotification":
+            if let taskId = obj["taskId"] as? String {
+                DispatchQueue.main.async { [weak self] in
+                    self?.delegate?.socketBridgeDidRequestCancelNotification(taskId: taskId)
+                }
+            }
+        case "setLoginItem":
+            let enabled = (obj["enabled"] as? Bool) ?? false
+            DispatchQueue.main.async { [weak self] in
+                self?.delegate?.socketBridgeDidRequestSetLoginItem(enabled: enabled)
+            }
+        case "queryLoginItem":
+            DispatchQueue.main.async { [weak self] in
+                self?.delegate?.socketBridgeDidRequestQueryLoginItem()
+            }
+        case "focusJervis":
+            DispatchQueue.main.async { [weak self] in
+                self?.delegate?.socketBridgeDidRequestFocusJervis()
+            }
+        default:
+            break
+        }
+    }
+
+    // MARK: - Socket setup
 
     private func openSocket() {
         unlink(path)
@@ -131,15 +213,14 @@ final class SocketBridge {
             print("[Jervis/macApp] JVM child connected")
             stateQueue.async { [weak self] in
                 guard let self = self else { return }
-                // Close any previous connection before accepting a new one.
                 if self.clientFd >= 0 { close(self.clientFd) }
                 self.clientFd = fd
                 self.flushPending()
             }
+            startReadLoop(fd: fd)
         }
     }
 
-    /// Must be called on stateQueue.
     private func flushPending() {
         guard clientFd >= 0 else { return }
         var failed = false
@@ -152,15 +233,11 @@ final class SocketBridge {
         if failed {
             close(clientFd)
             clientFd = -1
-            // Keep pending queue intact for the next connect.
         } else {
             pending.removeAll()
         }
     }
 
-    /// Stable per-machine UUID from IOKit so the deviceId survives
-    /// reinstalls (matches what Apple's `ioreg -rd1 -c IOPlatformExpertDevice`
-    /// returns under `IOPlatformUUID`).
     static func hardwareUuid() -> String? {
         let entry = IORegistryEntryFromPath(kIOMainPortDefault, "IOService:/")
         defer { IOObjectRelease(entry) }

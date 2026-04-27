@@ -1,4 +1,4 @@
-name: macApp
+name: JervisAPNs
 
 options:
   bundleIdPrefix: com.jervis
@@ -9,9 +9,6 @@ options:
 
 settings:
   base:
-    # Team ID shared with apps/iosApp (same Apple Developer account → the
-    # existing APNs .p8 Auth Key signs both). Hardcoded because xcodegen
-    # does not expand bash parameter defaults (${VAR:-default}).
     DEVELOPMENT_TEAM: GR74KSG8M9
     CODE_SIGN_STYLE: Automatic
     CODE_SIGN_IDENTITY: "Apple Development"
@@ -21,15 +18,11 @@ settings:
     ENABLE_HARDENED_RUNTIME: YES
 
 targets:
-  macApp:
+  JervisAPNs:
     type: application
     platform: macOS
     deploymentTarget: "13.0"
     sources:
-      # Swift sources only. Info.plist and entitlements content is
-      # expanded below so local linters/editors can reset the on-disk
-      # files to stubs without breaking the build — xcodegen writes the
-      # full content on every `generate`.
       - path: macApp
         excludes:
           - "Info.plist"
@@ -38,62 +31,33 @@ targets:
     info:
       path: macApp/Info.plist
       properties:
-        CFBundleDisplayName: Jervis
+        CFBundleDisplayName: Jervis APNs Helper
         LSMinimumSystemVersion: "13.0"
-        NSMicrophoneUsageDescription: Jervis needs microphone access for voice assistant and meeting recording.
-        # Agent-style app: no Dock icon, no main window. macApp exists to
-        # hold the APNs entitlement and relay notifications to the
-        # separate Compose Desktop Jervis.app over a Unix socket.
         LSUIElement: true
-        # Background mode so APNs wakeups can reach the app at launch.
         NSApplicationBackgroundModes:
           - remote-notification
     entitlements:
       path: macApp/macApp.entitlements
       properties:
-        # APNs (development host). Same DEVELOPMENT_TEAM + .p8 Auth Key as
-        # apps/iosApp, but bundle ID is com.jervis.macApp so the server
-        # must send with apns-topic=com.jervis.macApp for macOS devices.
-        # Note: macOS uses `com.apple.developer.aps-environment`, iOS uses
-        # plain `aps-environment`. Using the iOS key on macOS → codesign
-        # silently strips it as unrecognized → no APNs token.
         com.apple.developer.aps-environment: development
-        # Outbound network for the JVM child / any in-proc HTTP.
         com.apple.security.network.client: true
-        # JVM JIT / runtime (mirrors apps/desktop/runtime-entitlements.plist).
-        com.apple.security.cs.allow-jit: true
-        com.apple.security.cs.allow-unsigned-executable-memory: true
-        com.apple.security.cs.disable-library-validation: true
-        # Microphone access (matches apps/desktop).
-        com.apple.security.device.audio-input: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.jervis.macApp
-        PRODUCT_NAME: Jervis
+        PRODUCT_NAME: JervisAPNs
         INFOPLIST_FILE: macApp/Info.plist
         CODE_SIGN_ENTITLEMENTS: macApp/macApp.entitlements
         GENERATE_INFOPLIST_FILE: NO
     dependencies: []
-    scheme:
-      testTargets: []
-      gatherCoverageData: false
-      commandLineArguments: {}
-      environmentVariables: {}
 
-# Shared Xcode scheme so the target shows up in IntelliJ / Xcode /
-# AppCode under "Run" instead of requiring the user to pick a target
-# manually from the project navigator.
 schemes:
-  macApp:
+  JervisAPNs:
     build:
       targets:
-        macApp: all
+        JervisAPNs: all
     run:
       config: Debug
-      executable: macApp
-      # `-allowProvisioningUpdates` lets Xcode auto-register the App ID
-      # (com.jervis.macApp) and refresh the Push Notifications profile
-      # without an extra Signing & Capabilities round-trip.
+      executable: JervisAPNs
     test:
       config: Debug
     profile:

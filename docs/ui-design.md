@@ -1577,7 +1577,7 @@ Toggled via K8s badge in `PersistentTopBar`. On compact layouts opens full-scree
 - Recording screen shows waveform + elapsed time + stop button
 - Audio chunks sent to iPhone via WatchConnectivity; iPhone-side `WatchSessionManager` feeds `RecordingUploadService`
 
-**Wear OS App** (`apps/wearApp/`) — Compose for Wear OS:
+**Wear OS App** (`apps/androidWatchApp/`) — Compose for Wear OS:
 - Recording screen: start/stop controls, elapsed time indicator
 - Chat screen: voice command recording with send action
 - Uses DataLayer API for phone communication

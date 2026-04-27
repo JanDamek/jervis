@@ -45,6 +45,21 @@ public object ServerO365SessionServiceGrpcKt {
     @JvmStatic
     get() = ServerO365SessionServiceGrpc.getNotifyMethod()
 
+  public val acquireLoginConsentMethod:
+      MethodDescriptor<AcquireLoginConsentRequest, AcquireLoginConsentResponse>
+    @JvmStatic
+    get() = ServerO365SessionServiceGrpc.getAcquireLoginConsentMethod()
+
+  public val waitLoginConsentMethod:
+      MethodDescriptor<WaitLoginConsentRequest, WaitLoginConsentResponse>
+    @JvmStatic
+    get() = ServerO365SessionServiceGrpc.getWaitLoginConsentMethod()
+
+  public val releaseLoginConsentMethod:
+      MethodDescriptor<ReleaseLoginConsentRequest, ReleaseLoginConsentResponse>
+    @JvmStatic
+    get() = ServerO365SessionServiceGrpc.getReleaseLoginConsentMethod()
+
   /**
    * A stub for issuing RPCs to a(n) jervis.server.ServerO365SessionService service as suspending coroutines.
    */
@@ -114,6 +129,66 @@ public object ServerO365SessionServiceGrpcKt {
       callOptions,
       headers
     )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun acquireLoginConsent(request: AcquireLoginConsentRequest, headers: Metadata = Metadata()): AcquireLoginConsentResponse = unaryRpc(
+      channel,
+      ServerO365SessionServiceGrpc.getAcquireLoginConsentMethod(),
+      request,
+      callOptions,
+      headers
+    )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun waitLoginConsent(request: WaitLoginConsentRequest, headers: Metadata = Metadata()): WaitLoginConsentResponse = unaryRpc(
+      channel,
+      ServerO365SessionServiceGrpc.getWaitLoginConsentMethod(),
+      request,
+      callOptions,
+      headers
+    )
+
+    /**
+     * Executes this RPC and returns the response message, suspending until the RPC completes
+     * with [`Status.OK`][io.grpc.Status].  If the RPC completes with another status, a corresponding
+     * [StatusException] is thrown.  If this coroutine is cancelled, the RPC is also cancelled
+     * with the corresponding exception as a cause.
+     *
+     * @param request The request message to send to the server.
+     *
+     * @param headers Metadata to attach to the request.  Most users will not need this.
+     *
+     * @return The single response from the server.
+     */
+    public suspend fun releaseLoginConsent(request: ReleaseLoginConsentRequest, headers: Metadata = Metadata()): ReleaseLoginConsentResponse = unaryRpc(
+      channel,
+      ServerO365SessionServiceGrpc.getReleaseLoginConsentMethod(),
+      request,
+      callOptions,
+      headers
+    )
   }
 
   /**
@@ -158,6 +233,42 @@ public object ServerO365SessionServiceGrpcKt {
      */
     public open suspend fun notify(request: NotifyRequest): NotifyResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerO365SessionService.Notify is unimplemented"))
 
+    /**
+     * Returns the response to an RPC for jervis.server.ServerO365SessionService.AcquireLoginConsent.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun acquireLoginConsent(request: AcquireLoginConsentRequest): AcquireLoginConsentResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerO365SessionService.AcquireLoginConsent is unimplemented"))
+
+    /**
+     * Returns the response to an RPC for jervis.server.ServerO365SessionService.WaitLoginConsent.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun waitLoginConsent(request: WaitLoginConsentRequest): WaitLoginConsentResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerO365SessionService.WaitLoginConsent is unimplemented"))
+
+    /**
+     * Returns the response to an RPC for jervis.server.ServerO365SessionService.ReleaseLoginConsent.
+     *
+     * If this method fails with a [StatusException], the RPC will fail with the corresponding
+     * [io.grpc.Status].  If this method fails with a [java.util.concurrent.CancellationException], the RPC will fail
+     * with status `Status.CANCELLED`.  If this method fails for any other reason, the RPC will
+     * fail with `Status.UNKNOWN` with the exception as a cause.
+     *
+     * @param request The request from the client.
+     */
+    public open suspend fun releaseLoginConsent(request: ReleaseLoginConsentRequest): ReleaseLoginConsentResponse = throw StatusException(UNIMPLEMENTED.withDescription("Method jervis.server.ServerO365SessionService.ReleaseLoginConsent is unimplemented"))
+
     final override fun bindService(): ServerServiceDefinition = builder(getServiceDescriptor())
       .addMethod(unaryServerMethodDefinition(
       context = this.context,
@@ -173,6 +284,21 @@ public object ServerO365SessionServiceGrpcKt {
       context = this.context,
       descriptor = ServerO365SessionServiceGrpc.getNotifyMethod(),
       implementation = ::notify
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = ServerO365SessionServiceGrpc.getAcquireLoginConsentMethod(),
+      implementation = ::acquireLoginConsent
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = ServerO365SessionServiceGrpc.getWaitLoginConsentMethod(),
+      implementation = ::waitLoginConsent
+    ))
+      .addMethod(unaryServerMethodDefinition(
+      context = this.context,
+      descriptor = ServerO365SessionServiceGrpc.getReleaseLoginConsentMethod(),
+      implementation = ::releaseLoginConsent
     )).build()
   }
 }

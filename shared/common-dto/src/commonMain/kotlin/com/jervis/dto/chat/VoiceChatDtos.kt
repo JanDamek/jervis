@@ -67,7 +67,7 @@ enum class TtsChunkEventType { HEADER, PCM, DONE, ERROR }
 
 /**
  * Siri / Google Assistant one-shot text query.
- * Used by mobile VoiceQueryActivity, wearApp VoiceQueryActivity, and (via KMP bridge) iosApp.
+ * Used by mobile VoiceQueryActivity, androidWatchApp VoiceQueryActivity, and (via KMP bridge) iosApp.
  */
 @Serializable
 data class SiriQueryResponse(

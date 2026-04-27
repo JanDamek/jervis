@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-MOBILE_MODULE=":apps:mobile"
-APK_PATH="apps/mobile/build/outputs/apk/debug/mobile-debug.apk"
+MOBILE_MODULE=":apps:androidApp"
+APK_PATH="apps/androidApp/build/outputs/apk/debug/androidApp-debug.apk"
 PACKAGE="com.jervis.mobile"
 ACTIVITY="com.jervis.mobile.MainActivity"
 
@@ -14,7 +14,7 @@ echo "Step 1/3: Building debug APK..."
 
 if [ ! -f "$APK_PATH" ]; then
     # Try alternative path
-    APK_PATH=$(find apps/mobile/build/outputs/apk -name "*.apk" -type f | head -1)
+    APK_PATH=$(find apps/androidApp/build/outputs/apk -name "*.apk" -type f | head -1)
     if [ -z "$APK_PATH" ]; then
         echo "Error: APK not found after build"
         exit 1

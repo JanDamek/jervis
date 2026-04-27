@@ -76,4 +76,12 @@ ENV HF_HOME=/opt/jervis/hf-cache \
 
 EXPOSE 5501 8787
 
+# Detect NVML failure (host GPU re-attach event leaves the container with
+# a stale device handle — CUDA allocs throw "no CUDA-capable device is
+# detected" while the container itself stays running). Pairs with the
+# `autoheal=true` label set by deploy_xtts_gpu.sh so the autoheal sidecar
+# restarts us when this fires.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
+    CMD nvidia-smi -L > /dev/null 2>&1 || exit 1
+
 ENTRYPOINT ["python3", "-m", "app"]

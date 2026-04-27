@@ -23,6 +23,12 @@ xcuserdata/
 apps/macApp/macApp.xcodeproj/
 apps/macApp/macApp/Resources/JervisDesktop/
 
+# Desktop runtime artifacts — Chromium Embedded Framework bundle (~474 MB,
+# downloaded by KCEF on first launch) and JVM crash logs.
+apps/desktop/cef-bundle/
+apps/desktop/hs_err_pid*.log
+hs_err_pid*.log
+
 # Python
 __pycache__/
 *.pyc

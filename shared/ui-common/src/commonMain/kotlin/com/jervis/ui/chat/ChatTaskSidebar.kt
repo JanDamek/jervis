@@ -126,7 +126,12 @@ fun ChatTaskSidebar(
                 onClick = onMainChatSelected,
             )
 
-            Box(modifier = Modifier.weight(1f, fill = false)) {
+            // weight(1f) without fill=false so the inner LazyColumn gets the
+            // remaining vertical space and can scroll its items. Earlier
+            // `fill=false` collapsed the Box to wrap-content height on mobile
+            // (Android, iOS) which made the list unscrollable — Desktop
+            // happened to render OK because its window size was tall enough.
+            Box(modifier = Modifier.weight(1f)) {
                 when {
                     snapshot == null -> {
                         Box(

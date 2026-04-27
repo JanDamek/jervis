@@ -1,5 +1,5 @@
 import SwiftUI
-import JervisMobile
+import JervisShared
 
 struct ContentView: View {
     var body: some View {

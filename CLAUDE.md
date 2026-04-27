@@ -73,6 +73,30 @@ refresh buttons on live views, no event→pull round-trips, no `getXxx`
 on every reconnect. One-shot reads (pagination, file download) stay unary.
 SSOT: `docs/ui-design.md` §12 + `docs/structures.md` "UI Data Streams".
 
+## Networking — DNS only, no raw IPs
+
+**All service-to-service references must use DNS hostnames, never raw
+IPs.** UniFi controller manages DNS for `*.lan.mazlusek.com` (local_dns
+overrides + wildcard A record). Detail v Jervis MCP, projekt **Infra**
+(`id=69aab27c937c40e2115efc74`).
+
+Applies to: deploy scripts (`k8s/deploy_*.sh`), Dockerfile env defaults,
+ConfigMaps, K8s manifests, Kotlin/Python client default URLs,
+`docs/architecture.md` URL tables. Raw IPs (e.g. `192.168.x.y`) in any of
+these is a bug to fix during the next refactor of that file.
+
+**Existing service hostnames (KB infra/network-dns + ingress-services):**
+- `nas.lan.mazlusek.com` — NAS (TrueNAS SCALE)
+- `unifi.lan.mazlusek.com` — UniFi controller / DNS proxy / MCP host
+- `ollama.lan.mazlusek.com` — GPU VM (audio service containers)
+- `jervis-router.lan.mazlusek.com` — Jervis Ollama Router (Nginx Ingress)
+- `kibana.lan.mazlusek.com` — Kibana ELK
+- Wildcard `*.lan.mazlusek.com` → Nginx Ingress VIP via MetalLB
+
+**Only allowed raw-IP exceptions:** K8s API server in kubeconfig
+(`192.168.100.221:6443`); local debug values in gitignored
+`local.properties`. Anything else is a violation.
+
 ## Key Source Files
 
 > Full index of all source files is in **KB** (search: "Key Source Files Index").

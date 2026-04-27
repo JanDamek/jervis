@@ -16,12 +16,14 @@ kotlin {
     // Targets
     jvm() // JVM (Desktop + Server)
 
-    // Only configure Android and iOS targets when not building in Docker
+    // Only configure Android, iOS and macOS targets when not building in Docker
     if (System.getenv("DOCKER_BUILD") != "true") {
         androidTarget() // Android
         iosX64() // iOS Simulator (Intel Mac)
         iosArm64() // iOS Device
         iosSimulatorArm64() // iOS Simulator (Apple Silicon)
+        macosX64()
+        macosArm64()
     }
 
     sourceSets {

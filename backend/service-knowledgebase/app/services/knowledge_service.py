@@ -35,9 +35,17 @@ logger = logging.getLogger(__name__)
 
 
 class KnowledgeService:
-    def __init__(self, extraction_queue: LLMExtractionQueue = None):
-        self.rag_service = RagService()
-        self.graph_service = GraphService()
+    def __init__(
+        self,
+        extraction_queue: LLMExtractionQueue = None,
+        rag_service: RagService = None,
+        graph_service: GraphService = None,
+    ):
+        # Accept injected RagService + GraphService so KnowledgeService
+        # shares the same instances main.py wires the ThoughtService onto.
+        # If None, fall back to fresh instances (test/debug paths only).
+        self.rag_service = rag_service if rag_service is not None else RagService()
+        self.graph_service = graph_service if graph_service is not None else GraphService()
         self.hybrid_retriever = HybridRetriever(self.rag_service, self.graph_service)
         self.joern_client = JoernClient()
         self.document_extractor = DocumentExtractor()

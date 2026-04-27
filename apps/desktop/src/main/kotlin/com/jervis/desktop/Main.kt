@@ -13,6 +13,7 @@ import androidx.compose.ui.window.Tray
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import com.jervis.desktop.notification.LoginItemPromptDialog
 import com.jervis.desktop.ui.MainContent
 import java.awt.Dimension
 
@@ -33,6 +34,17 @@ fun main() {
     // Set dock icon BEFORE Compose application starts
     // so Stage Manager / Mission Control sees it immediately
     MacOSUtils.setDockIcon()
+
+    // On macOS, spawn the JervisAPNs Swift helper that holds the
+    // aps-environment entitlement. The JVM dials its Unix socket from
+    // PushTokenRegistrar.jvm.kt to pick up the APNs token and incoming
+    // pushes, and writes back showNotification/cancelNotification.
+    ApnsHelperLauncher.ensureRunningIfMacOs()
+
+    // KCEF (Chromium Embedded Framework) backs the in-app VNC WebView.
+    // Initialization is deferred to the first VNC click (in
+    // VncWebView.jvm.kt) — eager init races Skia/Compose's libjawt
+    // bridge and crashes Skiko_GetAWT on AWT-EventQueue-0.
 
     application {
         val serverBaseUrl =
@@ -159,6 +171,11 @@ fun main() {
                     navigator = navigator,
                     onOpenDebugWindow = { showDebug = true },
                 )
+
+                // Prompts the user once whether to register Jervis as a Login
+                // Item. Persisted so it never re-asks. macOS-only effect:
+                // talks to JervisAPNs helper which calls SMAppService.
+                LoginItemPromptDialog()
             }
         }
     }

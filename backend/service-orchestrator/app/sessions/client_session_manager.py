@@ -644,7 +644,10 @@ class ClientSessionManager:
         from jervis.server import agent_job_events_pb2
         from jervis_contracts.interceptors import prepare_context
 
-        from app.grpc_server_client import server_agent_job_events_stub
+        from app.grpc_server_client import (
+            _reset_channel as _reset_server_channel,
+            server_agent_job_events_stub,
+        )
 
         sid = session.session_id
         cid = session.client_id
@@ -686,6 +689,18 @@ class ClientSessionManager:
                     "agent events subscription error | session=%s err=%s retry=%.1fs",
                     sid, e, backoff,
                 )
+                # Server pod restart leaves the cached gRPC channel pinned
+                # to the dead pod IP. Reset it before sleeping so the next
+                # subscribe() picks up a fresh DNS resolution + TCP
+                # connection. Without this the loop reconnects forever.
+                # Long-term fix: shared ResilientGrpcChannel helper —
+                # see project-resilient-grpc-channels.md.
+                try:
+                    await _reset_server_channel()
+                except Exception as ce:
+                    logger.warning(
+                        "channel reset failed | session=%s err=%s", sid, ce,
+                    )
                 try:
                     await asyncio.sleep(backoff)
                 except asyncio.CancelledError:

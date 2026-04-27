@@ -16,9 +16,9 @@ fi
 # Build the iOS framework
 echo "Building iOS framework..."
 if [ "$USE_SIMULATOR" = true ]; then
-    ./gradlew :apps:mobile:linkDebugFrameworkIosSimulatorArm64
+    ./gradlew :shared:ui-common:linkDebugFrameworkIosSimulatorArm64
 else
-    ./gradlew :apps:mobile:linkDebugFrameworkIosArm64
+    ./gradlew :shared:ui-common:linkDebugFrameworkIosArm64
 fi
 
 if [ "$USE_SIMULATOR" = true ]; then
@@ -44,10 +44,12 @@ if [ "$USE_SIMULATOR" = true ]; then
     echo "Command line invocation:"
     echo "    xcodebuild -project apps/iosApp/iosApp.xcodeproj -scheme iosApp -configuration Debug -destination \"platform=iOS Simulator,id=$DEVICE_ID\" -derivedDataPath build/ios clean build"
     xcodebuild -project apps/iosApp/iosApp.xcodeproj \
-      -scheme iosApp \
+      -scheme "iOS App" \
       -configuration Debug \
       -destination "platform=iOS Simulator,id=$DEVICE_ID" \
       -derivedDataPath build/ios \
+      -skipPackagePluginValidation \
+      -skipMacroValidation \
       clean build
 
     APP_PATH="build/ios/Build/Products/Debug-iphonesimulator/iosApp.app"
@@ -71,10 +73,12 @@ else
     # embedAndSignAppleFrameworkForXcode (Gradle build phase) to copy
     # the freshly-built framework into the app bundle.
     OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED=NO xcodebuild -project apps/iosApp/iosApp.xcodeproj \
-      -scheme iosApp \
+      -scheme "iOS App" \
       -configuration Debug \
       -destination "platform=iOS,name=$DEVICE_NAME" \
       -derivedDataPath build/ios \
+      -skipPackagePluginValidation \
+      -skipMacroValidation \
       clean build
 
     APP_PATH="build/ios/Build/Products/Debug-iphoneos/iosApp.app"

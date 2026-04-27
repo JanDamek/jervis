@@ -199,6 +199,11 @@ class VncRpcImpl(
     }
 
     private suspend fun buildWhatsAppPlaceholder(podName: String): VncSessionSnapshot {
+        // ConnectionRpcImpl.getWhatsAppBrowserSessionStatus mints a real VNC URL
+        // (https://jervis-whatsapp-vnc.damek-soft.eu/vnc-login?token=...) so the
+        // sidebar embed works the same way as Teams. The eventual multi-pod
+        // refactor (one pod per WhatsApp connection like Teams) only changes
+        // the pod-discovery side; the mint path stays unchanged.
         val whatsAppConnection = runCatching {
             template.find(
                 Query(Criteria.where("provider").`is`(ProviderEnum.WHATSAPP.name)),
@@ -211,9 +216,12 @@ class VncRpcImpl(
             connectionLabel = whatsAppConnection?.name ?: "WhatsApp",
             clientId = null,
             podName = podName,
-            requiresMint = false,
-            note = "WhatsApp VNC bude přepsán na browser-pod konvenci jako Teams. " +
-                "Zatím jen placeholder — žádný embed.",
+            requiresMint = whatsAppConnection != null,
+            note = if (whatsAppConnection == null) {
+                "WhatsApp pod běží, ale nenašel se Connection záznam — embed nelze otevřít."
+            } else {
+                null
+            },
         )
     }
 

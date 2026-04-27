@@ -18,17 +18,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.jervis.ui.sidebar.BackgroundViewModel.ActiveVnc
 import com.jervis.ui.util.openUrlInBrowser
-import com.multiplatform.webview.web.WebView
-import com.multiplatform.webview.web.rememberWebViewState
 
 /**
  * Embedded VNC viewer panel — replaces the chat content area while the
@@ -53,18 +48,16 @@ fun VncEmbedPanel(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val scope = rememberCoroutineScope()
-    val webViewState = rememberWebViewState(active.vncUrl)
-
     Surface(
         modifier = modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.surface,
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
@@ -104,8 +97,8 @@ fun VncEmbedPanel(
                     }
                 }
             }
-            WebView(
-                state = webViewState,
+            VncWebView(
+                active = active,
                 modifier = Modifier.fillMaxSize(),
             )
         }

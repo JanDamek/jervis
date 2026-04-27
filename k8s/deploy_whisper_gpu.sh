@@ -105,6 +105,7 @@ fi
 ssh_cmd "docker run -d \
     --name '$CONTAINER_NAME' \
     --restart unless-stopped \
+    --label autoheal=true \
     --gpus all \
     --network host \
     -v /opt/jervis/hf-cache:/opt/jervis/hf-cache \

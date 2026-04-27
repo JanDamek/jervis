@@ -10,6 +10,7 @@ import com.jervis.dto.events.JervisEvent
 import com.jervis.rpc.NotificationRpcImpl
 import com.jervis.service.agentjob.IAgentJobService
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flow
@@ -114,6 +115,15 @@ class AgentJobRpcImpl(
     }
 
     override fun subscribeAgentNarrative(agentJobId: String): Flow<AgentNarrativeEvent> = flow {
+        // Terminal emits (NarrativeUnavailable for invalid id, missing record, missing
+        // file) are followed by awaitCancellation() so the Flow stays suspended
+        // instead of completing cleanly. The client wraps this stream in
+        // RpcConnectionManager.resilientFlow, which restarts on every clean
+        // completion — without the suspend, a `return@flow` triggers an
+        // immediate re-subscribe loop and the UI accumulates duplicate
+        // NarrativeUnavailable events (1 per second). The client cancels the
+        // job via closeNarrative() when the user dismisses the panel, which
+        // cancels this coroutine and frees server resources.
         val id = try {
             com.jervis.common.types.AgentJobId(org.bson.types.ObjectId(agentJobId))
         } catch (e: Exception) {
@@ -123,7 +133,7 @@ class AgentJobRpcImpl(
                     reason = "invalid agentJobId: $agentJobId",
                 ),
             )
-            return@flow
+            awaitCancellation()
         }
         val record = agentJobRecordRepository.getById(id) ?: run {
             emit(
@@ -132,7 +142,7 @@ class AgentJobRpcImpl(
                     reason = "agent job not found",
                 ),
             )
-            return@flow
+            awaitCancellation()
         }
         val streamFile = record.workspacePath?.let { Paths.get(it).resolve(".jervis/claude-stream.jsonl") }
         if (streamFile == null || !streamFile.exists()) {
@@ -142,7 +152,7 @@ class AgentJobRpcImpl(
                     reason = "narrative file missing — pre-Fáze-I dispatch or worktree cleaned",
                 ),
             )
-            return@flow
+            awaitCancellation()
         }
 
         // Replay everything that's already on disk, then if the job is not

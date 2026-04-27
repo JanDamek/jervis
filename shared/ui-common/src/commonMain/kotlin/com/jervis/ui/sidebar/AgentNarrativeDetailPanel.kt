@@ -104,18 +104,42 @@ fun AgentNarrativeDetailPanel(
             )
             Spacer(Modifier.size(4.dp))
 
-            if (narrative.isEmpty()) {
-                Box(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
-                    Text(
-                        text = "Loading narrative…",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+            // weight(1f) so the narrative list fills the remaining vertical
+            // space and scrolls; Modifier.fillMaxSize() inside a non-weighted
+            // Column child collapses to 0dp on mobile (header + metadata
+            // already consumed the available height).
+            //
+            // NarrativeUnavailable-only events (pre-Fáze-I dispatch, missing
+            // workspace, etc.) render as a clean empty state instead of one
+            // ⚠ row inside Activity — the row was misleading because it
+            // looked like "the agent reported this".
+            val unavailableOnly = narrative.isNotEmpty() &&
+                narrative.all { it is AgentNarrativeEvent.NarrativeUnavailable }
+            when {
+                narrative.isEmpty() -> {
+                    Box(modifier = Modifier.fillMaxWidth().weight(1f).padding(8.dp)) {
+                        Text(
+                            text = "Loading narrative…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(narrative, key = { it.timestamp + it.hashCode() }) { event ->
-                        NarrativeRow(event)
+                unavailableOnly -> {
+                    val reason = (narrative.first() as AgentNarrativeEvent.NarrativeUnavailable).reason
+                    Box(modifier = Modifier.fillMaxWidth().weight(1f).padding(8.dp)) {
+                        Text(
+                            text = "Záznam průběhu není k dispozici — $reason",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                else -> {
+                    LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                        items(narrative, key = { it.timestamp + it.hashCode() }) { event ->
+                            NarrativeRow(event)
+                        }
                     }
                 }
             }

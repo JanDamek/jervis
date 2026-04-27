@@ -56,6 +56,36 @@ public final class ServerO365SessionProto extends com.google.protobuf.GeneratedF
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_jervis_server_NotifyResponse_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_AcquireLoginConsentRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_AcquireLoginConsentRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_AcquireLoginConsentResponse_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_AcquireLoginConsentResponse_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_WaitLoginConsentRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_WaitLoginConsentRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_WaitLoginConsentResponse_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_WaitLoginConsentResponse_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_ReleaseLoginConsentRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_ReleaseLoginConsentRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_jervis_server_ReleaseLoginConsentResponse_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_jervis_server_ReleaseLoginConsentResponse_fieldAccessorTable;
 
   public static com.google.protobuf.Descriptors.FileDescriptor
       getDescriptor() {
@@ -92,17 +122,45 @@ public final class ServerO365SessionProto extends com.google.protobuf.GeneratedF
       "screenshot\022\031\n\010mfa_code\030\n \001(\tR\007mfaCode\022\035\n" +
       "\nmeeting_id\030\013 \001(\tR\tmeetingId\"X\n\016NotifyRe" +
       "sponse\022\026\n\006status\030\001 \001(\tR\006status\022\022\n\004kind\030\002" +
-      " \001(\tR\004kind\022\032\n\010priority\030\003 \001(\005R\010priority2\261" +
-      "\002\n\030ServerO365SessionService\022W\n\014SessionEv" +
-      "ent\022\".jervis.server.SessionEventRequest\032" +
-      "#.jervis.server.SessionEventResponse\022u\n\026" +
-      "CapabilitiesDiscovered\022,.jervis.server.C" +
-      "apabilitiesDiscoveredRequest\032-.jervis.se" +
-      "rver.CapabilitiesDiscoveredResponse\022E\n\006N" +
-      "otify\022\034.jervis.server.NotifyRequest\032\035.je" +
-      "rvis.server.NotifyResponseB7\n\033com.jervis" +
-      ".contracts.serverB\026ServerO365SessionProt" +
-      "oP\001b\006proto3"
+      " \001(\tR\004kind\022\032\n\010priority\030\003 \001(\005R\010priority\"\240" +
+      "\001\n\032AcquireLoginConsentRequest\022/\n\003ctx\030\001 \001" +
+      "(\0132\035.jervis.common.RequestContextR\003ctx\022#" +
+      "\n\rconnection_id\030\002 \001(\tR\014connectionId\022\024\n\005l" +
+      "abel\030\003 \001(\tR\005label\022\026\n\006reason\030\004 \001(\tR\006reaso" +
+      "n\"\206\001\n\033AcquireLoginConsentResponse\022\035\n\nreq" +
+      "uest_id\030\001 \001(\tR\trequestId\022\026\n\006status\030\002 \001(\t" +
+      "R\006status\022\032\n\010position\030\003 \001(\005R\010position\022\024\n\005" +
+      "token\030\004 \001(\tR\005token\"i\n\027WaitLoginConsentRe" +
+      "quest\022/\n\003ctx\030\001 \001(\0132\035.jervis.common.Reque" +
+      "stContextR\003ctx\022\035\n\nrequest_id\030\002 \001(\tR\trequ" +
+      "estId\"\262\001\n\030WaitLoginConsentResponse\022\026\n\006st" +
+      "atus\030\001 \001(\tR\006status\022\032\n\010position\030\002 \001(\005R\010po" +
+      "sition\022%\n\016deferred_until\030\003 \001(\tR\rdeferred" +
+      "Until\022\024\n\005token\030\004 \001(\tR\005token\022%\n\016decline_r" +
+      "eason\030\005 \001(\tR\rdeclineReason\"\234\001\n\032ReleaseLo" +
+      "ginConsentRequest\022/\n\003ctx\030\001 \001(\0132\035.jervis." +
+      "common.RequestContextR\003ctx\022\035\n\nrequest_id" +
+      "\030\002 \001(\tR\trequestId\022\024\n\005token\030\003 \001(\tR\005token\022" +
+      "\030\n\007outcome\030\004 \001(\tR\007outcome\"5\n\033ReleaseLogi" +
+      "nConsentResponse\022\026\n\006status\030\001 \001(\tR\006status" +
+      "2\362\004\n\030ServerO365SessionService\022W\n\014Session" +
+      "Event\022\".jervis.server.SessionEventReques" +
+      "t\032#.jervis.server.SessionEventResponse\022u" +
+      "\n\026CapabilitiesDiscovered\022,.jervis.server" +
+      ".CapabilitiesDiscoveredRequest\032-.jervis." +
+      "server.CapabilitiesDiscoveredResponse\022E\n" +
+      "\006Notify\022\034.jervis.server.NotifyRequest\032\035." +
+      "jervis.server.NotifyResponse\022l\n\023AcquireL" +
+      "oginConsent\022).jervis.server.AcquireLogin" +
+      "ConsentRequest\032*.jervis.server.AcquireLo" +
+      "ginConsentResponse\022c\n\020WaitLoginConsent\022&" +
+      ".jervis.server.WaitLoginConsentRequest\032\'" +
+      ".jervis.server.WaitLoginConsentResponse\022" +
+      "l\n\023ReleaseLoginConsent\022).jervis.server.R" +
+      "eleaseLoginConsentRequest\032*.jervis.serve" +
+      "r.ReleaseLoginConsentResponseB7\n\033com.jer" +
+      "vis.contracts.serverB\026ServerO365SessionP" +
+      "rotoP\001b\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
@@ -145,6 +203,42 @@ public final class ServerO365SessionProto extends com.google.protobuf.GeneratedF
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_server_NotifyResponse_descriptor,
         new java.lang.String[] { "Status", "Kind", "Priority", });
+    internal_static_jervis_server_AcquireLoginConsentRequest_descriptor =
+      getDescriptor().getMessageType(6);
+    internal_static_jervis_server_AcquireLoginConsentRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_AcquireLoginConsentRequest_descriptor,
+        new java.lang.String[] { "Ctx", "ConnectionId", "Label", "Reason", });
+    internal_static_jervis_server_AcquireLoginConsentResponse_descriptor =
+      getDescriptor().getMessageType(7);
+    internal_static_jervis_server_AcquireLoginConsentResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_AcquireLoginConsentResponse_descriptor,
+        new java.lang.String[] { "RequestId", "Status", "Position", "Token", });
+    internal_static_jervis_server_WaitLoginConsentRequest_descriptor =
+      getDescriptor().getMessageType(8);
+    internal_static_jervis_server_WaitLoginConsentRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_WaitLoginConsentRequest_descriptor,
+        new java.lang.String[] { "Ctx", "RequestId", });
+    internal_static_jervis_server_WaitLoginConsentResponse_descriptor =
+      getDescriptor().getMessageType(9);
+    internal_static_jervis_server_WaitLoginConsentResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_WaitLoginConsentResponse_descriptor,
+        new java.lang.String[] { "Status", "Position", "DeferredUntil", "Token", "DeclineReason", });
+    internal_static_jervis_server_ReleaseLoginConsentRequest_descriptor =
+      getDescriptor().getMessageType(10);
+    internal_static_jervis_server_ReleaseLoginConsentRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_ReleaseLoginConsentRequest_descriptor,
+        new java.lang.String[] { "Ctx", "RequestId", "Token", "Outcome", });
+    internal_static_jervis_server_ReleaseLoginConsentResponse_descriptor =
+      getDescriptor().getMessageType(11);
+    internal_static_jervis_server_ReleaseLoginConsentResponse_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_jervis_server_ReleaseLoginConsentResponse_descriptor,
+        new java.lang.String[] { "Status", });
     descriptor.resolveAllFeaturesImmutable();
     com.jervis.contracts.common.TypesProto.getDescriptor();
   }

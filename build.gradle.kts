@@ -24,24 +24,21 @@ allprojects {
 // Task to build everything
 tasks.register("buildAll") {
     group = "build"
-    description = "Build all modules (backend + desktop + mobile)"
+    description = "Build all modules (backend + apps)"
 
     dependsOn(
         ":backend:common-services:build",
         ":backend:service-coding-engine:build",
         ":backend:service-atlassian:build",
+        ":backend:service-gitlab:build",
+        ":backend:service-claude:build",
+        ":backend:service-github:build",
+        ":backend:service-o365-gateway:build",
         ":backend:server:build",
-        ":apps:desktop:build",
-        ":apps:mobile:build"
+        ":apps:androidApp:build",
+        ":apps:androidApp:androidWatchApp:build",
+        ":apps:macApp:assemble",
     )
-}
-
-// Task to run desktop app
-tasks.register("runDesktop") {
-    group = "application"
-    description = "Run desktop application"
-
-    dependsOn(":apps:desktop:run")
 }
 
 // Task to run server

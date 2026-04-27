@@ -82,13 +82,77 @@ def _kotlin_server_grpc_target() -> str:
     return f"{host}:5501"
 
 
+# Channel options aligned with project-resilient-grpc-channels.md plan:
+# keepalive forces TCP probes so dead peers (e.g. server pod restart) are
+# detected within ~30s instead of relying on the next RPC; on detection
+# gRPC closes the subchannel and re-resolves DNS on the next attempt.
+# Without these, a 21h-old channel can cache a dead pod IP and keep
+# returning "Connection refused" until the orchestrator pod is restarted.
+_CHANNEL_OPTIONS = [
+    ("grpc.keepalive_time_ms", 30000),
+    ("grpc.keepalive_timeout_ms", 10000),
+    ("grpc.keepalive_permit_without_calls", 1),
+    ("grpc.http2.max_pings_without_data", 0),
+    ("grpc.http2.min_time_between_pings_ms", 30000),
+    # Fast DNS re-resolution: on connection failure, retry resolve every 1s
+    # (default 30s) so newly-deployed pods are picked up quickly.
+    ("grpc.dns_min_time_between_resolutions_ms", 1000),
+]
+
+
 def _get_channel() -> grpc.aio.Channel:
     global _channel
     if _channel is None:
         target = _kotlin_server_grpc_target()
-        _channel = grpc.aio.insecure_channel(target)
+        _channel = grpc.aio.insecure_channel(target, options=_CHANNEL_OPTIONS)
         logger.debug("kotlin-server gRPC channel opened to %s", target)
     return _channel
+
+
+async def _reset_channel() -> None:
+    """Close the cached channel + invalidate all cached stubs.
+
+    Called by retry loops when an RPC fails with a transport error
+    (Connection refused, etc.) — gRPC's built-in subchannel-recycling can
+    get stuck holding a stale endpoint after a server pod restart, and
+    forcing a fresh channel makes DNS re-resolve and a new TCP connection
+    established. Stubs are recreated lazily on next call via the cached
+    `_get_channel()` returning the fresh handle.
+    """
+    global _channel, _cache_stub, _chat_approval_stub, _chat_context_stub
+    global _filter_rules_stub, _guidelines_stub, _meetings_stub, _proactive_stub
+    global _time_tracking_stub, _urgency_stub, _finance_stub
+    global _project_management_stub, _bug_tracker_stub, _merge_request_stub
+    global _environment_stub, _task_api_stub, _foreground_stub
+    global _orchestrator_progress_stub, _git_stub, _meeting_helper_callbacks_stub
+    global _agent_job_events_stub
+    if _channel is not None:
+        try:
+            await _channel.close()
+        except Exception as e:
+            logger.warning("kotlin-server gRPC channel close failed: %s", e)
+    _channel = None
+    _cache_stub = None
+    _chat_approval_stub = None
+    _chat_context_stub = None
+    _filter_rules_stub = None
+    _guidelines_stub = None
+    _meetings_stub = None
+    _proactive_stub = None
+    _time_tracking_stub = None
+    _urgency_stub = None
+    _finance_stub = None
+    _project_management_stub = None
+    _bug_tracker_stub = None
+    _merge_request_stub = None
+    _environment_stub = None
+    _task_api_stub = None
+    _foreground_stub = None
+    _orchestrator_progress_stub = None
+    _git_stub = None
+    _meeting_helper_callbacks_stub = None
+    _agent_job_events_stub = None
+    logger.info("kotlin-server gRPC channel reset (will recreate on next RPC)")
 
 
 def server_cache_stub() -> cache_pb2_grpc.ServerCacheServiceStub:

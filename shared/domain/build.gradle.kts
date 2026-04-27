@@ -16,15 +16,35 @@ kotlin {
     // Targets
     jvm() // JVM (Desktop + Server)
 
-    // Only configure Android and iOS targets when not building in Docker
+    // Only configure Android, iOS and macOS targets when not building in Docker
     if (System.getenv("DOCKER_BUILD") != "true") {
         androidTarget() // Android
         iosX64()
         iosArm64()
         iosSimulatorArm64()
+        macosX64()
+        macosArm64()
     }
 
     sourceSets {
+        val appleMain =
+            create("appleMain") {
+                dependsOn(commonMain.get())
+            }
+        val macosMain =
+            create("macosMain") {
+                dependsOn(appleMain)
+            }
+        val iosMain =
+            create("iosMain") {
+                dependsOn(appleMain)
+            }
+        iosX64Main.get().dependsOn(iosMain)
+        iosArm64Main.get().dependsOn(iosMain)
+        iosSimulatorArm64Main.get().dependsOn(iosMain)
+        macosX64Main.get().dependsOn(macosMain)
+        macosArm64Main.get().dependsOn(macosMain)
+
         commonMain.dependencies {
             // API interfaces
             api(project(":shared:common-api"))
@@ -48,7 +68,6 @@ kotlin {
             implementation(libs.kotlinx.rpc.krpc.client)
             implementation(libs.kotlinx.rpc.krpc.ktor.client)
             implementation(libs.kotlinx.rpc.krpc.serialization.cbor)
-
         }
 
         jvmMain.dependencies {
@@ -60,7 +79,7 @@ kotlin {
                 implementation(libs.ktor.client.cio)
             }
 
-            iosMain.dependencies {
+            appleMain.dependencies {
                 implementation(libs.ktor.client.darwin)
             }
         }

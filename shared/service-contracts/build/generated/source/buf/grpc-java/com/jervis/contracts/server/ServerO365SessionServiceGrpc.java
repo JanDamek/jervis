@@ -118,6 +118,99 @@ public final class ServerO365SessionServiceGrpc {
     return getNotifyMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.AcquireLoginConsentRequest,
+      com.jervis.contracts.server.AcquireLoginConsentResponse> getAcquireLoginConsentMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "AcquireLoginConsent",
+      requestType = com.jervis.contracts.server.AcquireLoginConsentRequest.class,
+      responseType = com.jervis.contracts.server.AcquireLoginConsentResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.server.AcquireLoginConsentRequest,
+      com.jervis.contracts.server.AcquireLoginConsentResponse> getAcquireLoginConsentMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.AcquireLoginConsentRequest, com.jervis.contracts.server.AcquireLoginConsentResponse> getAcquireLoginConsentMethod;
+    if ((getAcquireLoginConsentMethod = ServerO365SessionServiceGrpc.getAcquireLoginConsentMethod) == null) {
+      synchronized (ServerO365SessionServiceGrpc.class) {
+        if ((getAcquireLoginConsentMethod = ServerO365SessionServiceGrpc.getAcquireLoginConsentMethod) == null) {
+          ServerO365SessionServiceGrpc.getAcquireLoginConsentMethod = getAcquireLoginConsentMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.AcquireLoginConsentRequest, com.jervis.contracts.server.AcquireLoginConsentResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "AcquireLoginConsent"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.AcquireLoginConsentRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.AcquireLoginConsentResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new ServerO365SessionServiceMethodDescriptorSupplier("AcquireLoginConsent"))
+              .build();
+        }
+      }
+    }
+    return getAcquireLoginConsentMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.WaitLoginConsentRequest,
+      com.jervis.contracts.server.WaitLoginConsentResponse> getWaitLoginConsentMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "WaitLoginConsent",
+      requestType = com.jervis.contracts.server.WaitLoginConsentRequest.class,
+      responseType = com.jervis.contracts.server.WaitLoginConsentResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.server.WaitLoginConsentRequest,
+      com.jervis.contracts.server.WaitLoginConsentResponse> getWaitLoginConsentMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.WaitLoginConsentRequest, com.jervis.contracts.server.WaitLoginConsentResponse> getWaitLoginConsentMethod;
+    if ((getWaitLoginConsentMethod = ServerO365SessionServiceGrpc.getWaitLoginConsentMethod) == null) {
+      synchronized (ServerO365SessionServiceGrpc.class) {
+        if ((getWaitLoginConsentMethod = ServerO365SessionServiceGrpc.getWaitLoginConsentMethod) == null) {
+          ServerO365SessionServiceGrpc.getWaitLoginConsentMethod = getWaitLoginConsentMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.WaitLoginConsentRequest, com.jervis.contracts.server.WaitLoginConsentResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "WaitLoginConsent"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.WaitLoginConsentRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.WaitLoginConsentResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new ServerO365SessionServiceMethodDescriptorSupplier("WaitLoginConsent"))
+              .build();
+        }
+      }
+    }
+    return getWaitLoginConsentMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<com.jervis.contracts.server.ReleaseLoginConsentRequest,
+      com.jervis.contracts.server.ReleaseLoginConsentResponse> getReleaseLoginConsentMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "ReleaseLoginConsent",
+      requestType = com.jervis.contracts.server.ReleaseLoginConsentRequest.class,
+      responseType = com.jervis.contracts.server.ReleaseLoginConsentResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<com.jervis.contracts.server.ReleaseLoginConsentRequest,
+      com.jervis.contracts.server.ReleaseLoginConsentResponse> getReleaseLoginConsentMethod() {
+    io.grpc.MethodDescriptor<com.jervis.contracts.server.ReleaseLoginConsentRequest, com.jervis.contracts.server.ReleaseLoginConsentResponse> getReleaseLoginConsentMethod;
+    if ((getReleaseLoginConsentMethod = ServerO365SessionServiceGrpc.getReleaseLoginConsentMethod) == null) {
+      synchronized (ServerO365SessionServiceGrpc.class) {
+        if ((getReleaseLoginConsentMethod = ServerO365SessionServiceGrpc.getReleaseLoginConsentMethod) == null) {
+          ServerO365SessionServiceGrpc.getReleaseLoginConsentMethod = getReleaseLoginConsentMethod =
+              io.grpc.MethodDescriptor.<com.jervis.contracts.server.ReleaseLoginConsentRequest, com.jervis.contracts.server.ReleaseLoginConsentResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "ReleaseLoginConsent"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.ReleaseLoginConsentRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  com.jervis.contracts.server.ReleaseLoginConsentResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new ServerO365SessionServiceMethodDescriptorSupplier("ReleaseLoginConsent"))
+              .build();
+        }
+      }
+    }
+    return getReleaseLoginConsentMethod;
+  }
+
   /**
    * Creates a new async stub that supports all call types for the service
    */
@@ -214,6 +307,38 @@ public final class ServerO365SessionServiceGrpc {
         io.grpc.stub.StreamObserver<com.jervis.contracts.server.NotifyResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getNotifyMethod(), responseObserver);
     }
+
+    /**
+     * <pre>
+     * Login Consent Semaphore (global singleton across ALL connections):
+     * pod MUST call AcquireLoginConsent before any login attempt that
+     * could trigger an MFA push. Server pushes a notification to user's
+     * devices with action buttons [Now / Defer 15min / Defer 1h / Cancel].
+     * Pod long-polls WaitLoginConsent until status=granted (proceed) or
+     * declined (go to ERROR). After login completes — success OR failure
+     * — pod MUST call ReleaseLoginConsent so the next pod in queue can
+     * get its turn. Only ONE consent push lives on user's devices at a
+     * time; queued pods wait silently.
+     * </pre>
+     */
+    default void acquireLoginConsent(com.jervis.contracts.server.AcquireLoginConsentRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.AcquireLoginConsentResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getAcquireLoginConsentMethod(), responseObserver);
+    }
+
+    /**
+     */
+    default void waitLoginConsent(com.jervis.contracts.server.WaitLoginConsentRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.WaitLoginConsentResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getWaitLoginConsentMethod(), responseObserver);
+    }
+
+    /**
+     */
+    default void releaseLoginConsent(com.jervis.contracts.server.ReleaseLoginConsentRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.ReleaseLoginConsentResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getReleaseLoginConsentMethod(), responseObserver);
+    }
   }
 
   /**
@@ -292,6 +417,41 @@ public final class ServerO365SessionServiceGrpc {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getNotifyMethod(), getCallOptions()), request, responseObserver);
     }
+
+    /**
+     * <pre>
+     * Login Consent Semaphore (global singleton across ALL connections):
+     * pod MUST call AcquireLoginConsent before any login attempt that
+     * could trigger an MFA push. Server pushes a notification to user's
+     * devices with action buttons [Now / Defer 15min / Defer 1h / Cancel].
+     * Pod long-polls WaitLoginConsent until status=granted (proceed) or
+     * declined (go to ERROR). After login completes — success OR failure
+     * — pod MUST call ReleaseLoginConsent so the next pod in queue can
+     * get its turn. Only ONE consent push lives on user's devices at a
+     * time; queued pods wait silently.
+     * </pre>
+     */
+    public void acquireLoginConsent(com.jervis.contracts.server.AcquireLoginConsentRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.AcquireLoginConsentResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getAcquireLoginConsentMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void waitLoginConsent(com.jervis.contracts.server.WaitLoginConsentRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.WaitLoginConsentResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getWaitLoginConsentMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void releaseLoginConsent(com.jervis.contracts.server.ReleaseLoginConsentRequest request,
+        io.grpc.stub.StreamObserver<com.jervis.contracts.server.ReleaseLoginConsentResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getReleaseLoginConsentMethod(), getCallOptions()), request, responseObserver);
+    }
   }
 
   /**
@@ -343,6 +503,38 @@ public final class ServerO365SessionServiceGrpc {
       return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
           getChannel(), getNotifyMethod(), getCallOptions(), request);
     }
+
+    /**
+     * <pre>
+     * Login Consent Semaphore (global singleton across ALL connections):
+     * pod MUST call AcquireLoginConsent before any login attempt that
+     * could trigger an MFA push. Server pushes a notification to user's
+     * devices with action buttons [Now / Defer 15min / Defer 1h / Cancel].
+     * Pod long-polls WaitLoginConsent until status=granted (proceed) or
+     * declined (go to ERROR). After login completes — success OR failure
+     * — pod MUST call ReleaseLoginConsent so the next pod in queue can
+     * get its turn. Only ONE consent push lives on user's devices at a
+     * time; queued pods wait silently.
+     * </pre>
+     */
+    public com.jervis.contracts.server.AcquireLoginConsentResponse acquireLoginConsent(com.jervis.contracts.server.AcquireLoginConsentRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getAcquireLoginConsentMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.server.WaitLoginConsentResponse waitLoginConsent(com.jervis.contracts.server.WaitLoginConsentRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getWaitLoginConsentMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.server.ReleaseLoginConsentResponse releaseLoginConsent(com.jervis.contracts.server.ReleaseLoginConsentRequest request) throws io.grpc.StatusException {
+      return io.grpc.stub.ClientCalls.blockingV2UnaryCall(
+          getChannel(), getReleaseLoginConsentMethod(), getCallOptions(), request);
+    }
   }
 
   /**
@@ -393,6 +585,38 @@ public final class ServerO365SessionServiceGrpc {
     public com.jervis.contracts.server.NotifyResponse notify(com.jervis.contracts.server.NotifyRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getNotifyMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * Login Consent Semaphore (global singleton across ALL connections):
+     * pod MUST call AcquireLoginConsent before any login attempt that
+     * could trigger an MFA push. Server pushes a notification to user's
+     * devices with action buttons [Now / Defer 15min / Defer 1h / Cancel].
+     * Pod long-polls WaitLoginConsent until status=granted (proceed) or
+     * declined (go to ERROR). After login completes — success OR failure
+     * — pod MUST call ReleaseLoginConsent so the next pod in queue can
+     * get its turn. Only ONE consent push lives on user's devices at a
+     * time; queued pods wait silently.
+     * </pre>
+     */
+    public com.jervis.contracts.server.AcquireLoginConsentResponse acquireLoginConsent(com.jervis.contracts.server.AcquireLoginConsentRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getAcquireLoginConsentMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.server.WaitLoginConsentResponse waitLoginConsent(com.jervis.contracts.server.WaitLoginConsentRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getWaitLoginConsentMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public com.jervis.contracts.server.ReleaseLoginConsentResponse releaseLoginConsent(com.jervis.contracts.server.ReleaseLoginConsentRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getReleaseLoginConsentMethod(), getCallOptions(), request);
     }
   }
 
@@ -448,11 +672,49 @@ public final class ServerO365SessionServiceGrpc {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getNotifyMethod(), getCallOptions()), request);
     }
+
+    /**
+     * <pre>
+     * Login Consent Semaphore (global singleton across ALL connections):
+     * pod MUST call AcquireLoginConsent before any login attempt that
+     * could trigger an MFA push. Server pushes a notification to user's
+     * devices with action buttons [Now / Defer 15min / Defer 1h / Cancel].
+     * Pod long-polls WaitLoginConsent until status=granted (proceed) or
+     * declined (go to ERROR). After login completes — success OR failure
+     * — pod MUST call ReleaseLoginConsent so the next pod in queue can
+     * get its turn. Only ONE consent push lives on user's devices at a
+     * time; queued pods wait silently.
+     * </pre>
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.AcquireLoginConsentResponse> acquireLoginConsent(
+        com.jervis.contracts.server.AcquireLoginConsentRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getAcquireLoginConsentMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.WaitLoginConsentResponse> waitLoginConsent(
+        com.jervis.contracts.server.WaitLoginConsentRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getWaitLoginConsentMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<com.jervis.contracts.server.ReleaseLoginConsentResponse> releaseLoginConsent(
+        com.jervis.contracts.server.ReleaseLoginConsentRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getReleaseLoginConsentMethod(), getCallOptions()), request);
+    }
   }
 
   private static final int METHODID_SESSION_EVENT = 0;
   private static final int METHODID_CAPABILITIES_DISCOVERED = 1;
   private static final int METHODID_NOTIFY = 2;
+  private static final int METHODID_ACQUIRE_LOGIN_CONSENT = 3;
+  private static final int METHODID_WAIT_LOGIN_CONSENT = 4;
+  private static final int METHODID_RELEASE_LOGIN_CONSENT = 5;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -482,6 +744,18 @@ public final class ServerO365SessionServiceGrpc {
         case METHODID_NOTIFY:
           serviceImpl.notify((com.jervis.contracts.server.NotifyRequest) request,
               (io.grpc.stub.StreamObserver<com.jervis.contracts.server.NotifyResponse>) responseObserver);
+          break;
+        case METHODID_ACQUIRE_LOGIN_CONSENT:
+          serviceImpl.acquireLoginConsent((com.jervis.contracts.server.AcquireLoginConsentRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.AcquireLoginConsentResponse>) responseObserver);
+          break;
+        case METHODID_WAIT_LOGIN_CONSENT:
+          serviceImpl.waitLoginConsent((com.jervis.contracts.server.WaitLoginConsentRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.WaitLoginConsentResponse>) responseObserver);
+          break;
+        case METHODID_RELEASE_LOGIN_CONSENT:
+          serviceImpl.releaseLoginConsent((com.jervis.contracts.server.ReleaseLoginConsentRequest) request,
+              (io.grpc.stub.StreamObserver<com.jervis.contracts.server.ReleaseLoginConsentResponse>) responseObserver);
           break;
         default:
           throw new AssertionError();
@@ -522,6 +796,27 @@ public final class ServerO365SessionServiceGrpc {
               com.jervis.contracts.server.NotifyRequest,
               com.jervis.contracts.server.NotifyResponse>(
                 service, METHODID_NOTIFY)))
+        .addMethod(
+          getAcquireLoginConsentMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.server.AcquireLoginConsentRequest,
+              com.jervis.contracts.server.AcquireLoginConsentResponse>(
+                service, METHODID_ACQUIRE_LOGIN_CONSENT)))
+        .addMethod(
+          getWaitLoginConsentMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.server.WaitLoginConsentRequest,
+              com.jervis.contracts.server.WaitLoginConsentResponse>(
+                service, METHODID_WAIT_LOGIN_CONSENT)))
+        .addMethod(
+          getReleaseLoginConsentMethod(),
+          io.grpc.stub.ServerCalls.asyncUnaryCall(
+            new MethodHandlers<
+              com.jervis.contracts.server.ReleaseLoginConsentRequest,
+              com.jervis.contracts.server.ReleaseLoginConsentResponse>(
+                service, METHODID_RELEASE_LOGIN_CONSENT)))
         .build();
   }
 
@@ -573,6 +868,9 @@ public final class ServerO365SessionServiceGrpc {
               .addMethod(getSessionEventMethod())
               .addMethod(getCapabilitiesDiscoveredMethod())
               .addMethod(getNotifyMethod())
+              .addMethod(getAcquireLoginConsentMethod())
+              .addMethod(getWaitLoginConsentMethod())
+              .addMethod(getReleaseLoginConsentMethod())
               .build();
         }
       }
