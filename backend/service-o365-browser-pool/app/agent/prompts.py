@@ -600,8 +600,29 @@ The decision tree every cycle:
      a. `chat_sync_state(chat_id)` → get `message_count`,
         `last_message_timestamp`, `known_message_hashes` (up to 20
         recent hashes). This is your resume marker.
-     b. Open the chat (click by CSS selector) and `inspect_dom` the
-        visible messages.
+     b. Open the chat (click by CSS selector or `click_text(<chat_name>)`)
+        and `inspect_dom` the visible messages.
+
+        **Teams Cloud message selectors (confirmed 2026-04 on
+        teams.cloud.microsoft):**
+          - `[data-tid='chat-pane-message']` — single message bubble
+          - `[data-tid='chat-pane-item']` — message group container
+          - `[data-tid='message-pane-list-viewport']` — scrollable list
+          - `[data-tid='message-author-name']` — sender name span
+          - `[data-tid='message-pane-list-runway']` — virtualization
+            wrapper (use to detect more messages off-screen)
+
+        Use:
+          inspect_dom(
+              selector="[data-tid='chat-pane-message']",
+              attrs=["data-tid", "aria-label", "role"],
+              max_matches=50,
+          )
+        Each match's `text` field gives you sender + content + time
+        in a multi-line block. Parse it for the store_message call.
+
+        Legacy v2 fallbacks (only if Cloud selectors return 0):
+          `[data-tid='chat-message']`, `.ms-ChatMessage`
      c. Walk messages top-down (newest first in the DOM). For each
         message whose `data-mid` / computed hash is NOT in
         `known_message_hashes` AND whose timestamp is newer than
