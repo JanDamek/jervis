@@ -355,13 +355,17 @@ async def look_at_screen(
                 "visible_actions": [], "detected_text": {}}
 
     # Reject VLM when URL alone is decisive — saves a 30-60 s router
-    # round-trip for cold_start / post_navigation reasons.
+    # round-trip. On a known Microsoft 365 product URL the page is a
+    # signed-in SPA shell; nothing the VLM tells us about it would
+    # outrank what inspect_dom returns. Reject for ALL reasons except
+    # `mfa_code` (visual-only when DOM doesn't expose the number).
     try:
         url = page.url or ""
     except Exception:
         url = ""
     reason_lc = reason.lower()
-    if reason_lc in _VLM_SHORTCUT_REASONS and url:
+    is_mfa_visual = reason_lc in {"mfa_code", "mfa_detect", "icon_no_text"}
+    if not is_mfa_visual and url:
         for f in _KNOWN_PRODUCT_URL_FRAGMENTS:
             if f in url:
                 return {
@@ -369,9 +373,10 @@ async def look_at_screen(
                     "summary": (
                         f"URL '{url}' is a known product page. Run "
                         "inspect_dom for the app shell selector instead "
-                        "(e.g. [data-tid='chat-list'], [role='treeitem'], "
-                        "[data-app-section]). VLM is rejected for this "
-                        "reason — see tool docstring."
+                        "(e.g. [data-tid='simple-collab-dnd-rail'] [role='treeitem'], "
+                        "[data-tid='chat-pane-message'], [data-tid='experience-layout']). "
+                        "VLM rejected for known-product URL — only `mfa_code` / "
+                        "`icon_no_text` reasons reach the VLM here."
                     ),
                     "visible_actions": [],
                     "detected_text": {},
