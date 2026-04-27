@@ -111,9 +111,27 @@ class ApnsPushService(
             .setAlertBody(body)
             .setSound("default")
 
-        // time-sensitive: immediate delivery, bypasses Focus/DND for 1 hour
+        // time-sensitive interruption-level — Pushy 0.15+ has a typed setter
+        // that places the field in the right place under `aps`. Earlier code
+        // used addCustomProperty which inserts at the root and iOS silently
+        // ignored it (sometimes dropping the entire payload). Time-sensitive
+        // also requires the iOS app to declare the
+        // `com.apple.developer.usernotifications.time-sensitive` entitlement;
+        // without it Apple downgrades to the active interruption level, but
+        // the alert is still displayed.
         if (isUrgent) {
-            payloadBuilder.addCustomProperty("interruption-level", "time-sensitive")
+            try {
+                val cls = Class.forName("com.eatthepath.pushy.apns.util.SimpleApnsPayloadBuilder\$InterruptionLevel")
+                val timeSensitive = cls.enumConstants.firstOrNull { (it as Enum<*>).name == "TIME_SENSITIVE" }
+                if (timeSensitive != null) {
+                    SimpleApnsPayloadBuilder::class.java
+                        .getMethod("setInterruptionLevel", cls)
+                        .invoke(payloadBuilder, timeSensitive)
+                }
+            } catch (_: Throwable) {
+                // Pushy without InterruptionLevel — skip (not a blocker for
+                // delivery, only the bypass-DND behavior).
+            }
         }
 
         // Set category for actionable notifications. Login consent is checked
@@ -128,7 +146,8 @@ class ApnsPushService(
         }
         category?.let { payloadBuilder.setCategoryName(it) }
 
-        // Add custom data fields
+        // Add custom data fields — outside `aps`, accessible via
+        // userInfo[...] in the iOS NotificationDelegate.
         for ((key, value) in data) {
             payloadBuilder.addCustomProperty(key, value)
         }
@@ -136,6 +155,10 @@ class ApnsPushService(
         data["badgeCount"]?.toIntOrNull()?.let { payloadBuilder.setBadgeNumber(it) }
 
         val payload = payloadBuilder.build()
+        logger.info {
+            "APNs payload (clientId=$clientId, isUrgent=$isUrgent, " +
+                "isLoginConsent=$isLoginConsent, category=$category): $payload"
+        }
 
         for ((tokenDoc, topic) in tokens) {
             try {
