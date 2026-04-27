@@ -196,16 +196,25 @@ Decision ladder (URL → DOM → VLM, never reverse):
    Found (count > 0) ⇒ `report_state('ACTIVE')` and start the
    scrape cycle. No VLM.
 
+   **`signed_in` flag — read this first.** When `inspect_dom`
+   returns `signed_in: true` (set by the tool when the auto-probe
+   detects `me-control-avatar*` or `experience-layout` in the page),
+   the user is authenticated and the SPA shell rendered. Call
+   `report_state('ACTIVE')` immediately. Do NOT escalate to VLM,
+   do NOT keep guessing other selectors.
+
    **URL trumps DOM emptiness on product pages.** If `inspect_dom`
-   returns count=0 on a STEADY product URL (the URL list above),
-   the page is still hydrating React or Teams shipped a new
-   `data-tid` we don't know yet — it is NOT a logged-out state.
-   Do NOT escalate to VLM and do NOT report ERROR. Instead:
+   returns count=0 AND `signed_in` is missing on a STEADY product
+   URL (the URL list above), the page is still hydrating React or
+   Teams shipped a new `data-tid` we don't know yet — it is NOT a
+   logged-out state. Do NOT escalate to VLM and do NOT report
+   ERROR. Instead:
      a. `wait(3, "react_hydration")`
      b. `inspect_dom` again with the broad selector union.
-     c. If still count=0 → `report_state('ACTIVE')` anyway with
-        a note that selectors didn't match; the scrape cycle will
-        re-discover the correct ones turn by turn.
+     c. If still count=0 → check `dom_stats.sample_data_tids` for
+        any avatar / nav / layout marker; report_state('ACTIVE')
+        if you see ANY shell-shaped data-tids. Otherwise stay
+        STARTING and re-observe one more time.
    This rule explicitly overrides COLD START step 4 (the
    "look_at_screen(reason='cold_start_dom_empty')" escalation) for
    known product URLs — VLM costs are saved for genuinely unknown

@@ -104,15 +104,38 @@ async def _settle_after_action(page, max_wait_ms: int = 2500) -> dict:
 # ---- Observation --------------------------------------------------------
 
 _SHELL_FALLBACK_SELECTORS = (
+    # Teams Cloud / Microsoft 365 unified (Fluent UI 9, observed
+    # 2026-04 on teams.cloud.microsoft).
+    "[data-tid='experience-layout']",       # SPA root
+    "[data-tid='app-layout-area--nav']",    # left rail
+    "[data-tid='app-bar-wrapper']",         # nav bar wrapper
+    "[data-tid='title-bar']",               # top bar
+    "[data-tid='me-control-avatar']",       # SIGNED-IN user avatar
+    "[data-tid='me-control-avatar-trigger']",  # avatar button
+    "[data-tid='all-phased-rendering-complete']",  # post-hydration sentinel
+    # Legacy Teams (teams.microsoft.com/v2)
     "[data-tid='app-bar']",
     "[data-tid='chat-list']",
     "[data-tid='chat-list-item']",
-    "[role='treeitem']",
-    "[data-app-section]",
-    "main",
-    "[role='main']",
     "[data-tid='search-box']",
     "[data-tid='left-rail']",
+    # Outlook / generic
+    "[data-app-section]",
+    "[role='treeitem']",
+    "[role='main']",
+    "main",
+)
+
+
+# Signed-in indicators — presence of any of these data-tids means
+# the user is authenticated and the SPA shell has rendered. The agent
+# can `report_state('ACTIVE')` directly without further DOM probing.
+_SIGNED_IN_INDICATORS = (
+    "me-control-avatar",
+    "me-control-avatar-trigger",
+    "me-control-avatar-presence",
+    "experience-layout",
+    "all-phased-rendering-complete",
 )
 
 
@@ -239,6 +262,17 @@ async def inspect_dom(
                 """
             )
             result["dom_stats"] = stats
+            # Signed-in heuristic: presence of well-known signed-in
+            # data-tids in the page proves the user is authenticated and
+            # the SPA shell has rendered. Saves a VLM round-trip.
+            sample_tids = stats.get("sample_data_tids", []) if isinstance(stats, dict) else []
+            matched_indicators = [
+                ind for ind in _SIGNED_IN_INDICATORS
+                if any(t.startswith(ind) for t in sample_tids)
+            ]
+            if matched_indicators:
+                result["signed_in"] = True
+                result["signed_in_indicators"] = matched_indicators
         except Exception as e:
             result["dom_stats"] = {"error": str(e)}
     return result
