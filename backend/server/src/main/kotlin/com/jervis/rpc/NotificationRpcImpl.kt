@@ -3,19 +3,32 @@ package com.jervis.rpc
 import com.jervis.rpc.NotificationRpcImpl
 import com.jervis.dto.error.ErrorNotificationDto
 import com.jervis.dto.events.JervisEvent
+import com.jervis.dto.task.TaskStateEnum
 import com.jervis.service.notification.INotificationService
+import com.jervis.task.TaskRepository
+import com.jervis.common.types.ClientId
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
 import mu.KotlinLogging
+import org.bson.types.ObjectId
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.stereotype.Component
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 
 @Component
-class NotificationRpcImpl : INotificationService {
+class NotificationRpcImpl(
+    @Autowired(required = false) private val taskRepository: TaskRepository? = null,
+) : INotificationService {
     private val logger = KotlinLogging.logger {}
+    private val replayScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     // Store notification streams per client
     private val eventStreams = ConcurrentHashMap<String, MutableSharedFlow<JervisEvent>>()
@@ -42,7 +55,62 @@ class NotificationRpcImpl : INotificationService {
             )
         }
 
+        // Replay all currently-pending USER_TASK rows to the (re)connecting
+        // client. The flow's own replay buffer (last 10 events) handles
+        // recent live events, but a TaskDocument that has been sitting in
+        // USER_TASK state for hours — e.g. a login_consent push the user
+        // ignored on iOS while sandbox APNs was misbehaving — would be
+        // outside that buffer. Without this replay the chat dialog never
+        // surfaces on cold start, even though the server-side gate is
+        // still open.
+        replayScope.launch {
+            replayPendingUserTasks(clientId, sharedFlow)
+        }
+
         return sharedFlow.asSharedFlow()
+    }
+
+    private suspend fun replayPendingUserTasks(
+        clientId: String,
+        flow: MutableSharedFlow<JervisEvent>,
+    ) {
+        val repo = taskRepository ?: return
+        try {
+            val cid = ClientId(ObjectId(clientId))
+            val pending = repo
+                .findByClientIdAndStateOrderByCreatedAtAsc(cid, TaskStateEnum.USER_TASK)
+                .toList()
+            if (pending.isEmpty()) return
+            logger.info { "Replaying ${pending.size} pending USER_TASK(s) to client $clientId" }
+            for (task in pending) {
+                val sourceUrnValue = task.sourceUrn.value
+                val isLoginConsent = task.actionType == "login_consent" ||
+                    sourceUrnValue.startsWith("login_consent::")
+                val interruptDescription = if (isLoginConsent) {
+                    val requestId = sourceUrnValue.removePrefix("login_consent::")
+                        .takeIf { it.isNotBlank() && it != sourceUrnValue }
+                    if (requestId != null) "requestId=$requestId" else task.userQuestionContext
+                } else {
+                    task.userQuestionContext
+                }
+                flow.emit(
+                    JervisEvent.UserTaskCreated(
+                        clientId = clientId,
+                        taskId = task.id.toString(),
+                        title = task.pendingUserQuestion ?: task.taskName,
+                        timestamp = Instant.now().toString(),
+                        interruptAction = task.actionType,
+                        interruptDescription = interruptDescription,
+                        isApproval = false,
+                        projectId = task.projectId?.toString(),
+                    ),
+                )
+            }
+        } catch (e: IllegalArgumentException) {
+            logger.warn { "Replay skipped — invalid clientId: $clientId" }
+        } catch (e: Exception) {
+            logger.warn(e) { "Replay of pending USER_TASKs failed for $clientId" }
+        }
     }
 
     /**
