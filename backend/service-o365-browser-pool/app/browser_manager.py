@@ -86,6 +86,14 @@ class BrowserManager:
         legacy_state = self._legacy_state_path(client_id)
         do_migration = legacy_state.exists() and not (profile_dir / "Default").exists()
 
+        # Suppress "Restore Pages?" prompt on launch. After a pod kill (k8s
+        # restart, OOM, eviction) Chromium considers the previous shutdown
+        # unclean and shows a yellow infobar / dialog asking the user to
+        # restore. The agent has no way to dismiss it without VNC, so the
+        # whole pod is blocked. Tab URLs are owned by `tabs.json` (saved
+        # every 30 s); the in-Chromium session restore is redundant.
+        self._mark_chromium_exit_clean(profile_dir)
+
         context = await self._playwright.chromium.launch_persistent_context(
             user_data_dir=str(profile_dir),
             headless=settings.headless,
@@ -93,11 +101,14 @@ class BrowserManager:
                 "--disable-blink-features=AutomationControlled",
                 "--disable-dev-shm-usage",
                 "--no-sandbox",
-                # Restore the last session if Chromium recorded one
-                # (mainly relevant after a crash). Tab restore is
-                # backed up by `tabs.json` below for the clean-shutdown
-                # case where Chromium drops the session anyway.
+                # Crash-recovery session restore stays on for the case where
+                # tabs.json hasn't been written yet (cold start within first
+                # 30 s after pod restart).
                 "--restore-last-session",
+                # Skip "Are you sure you want to restore?" dialogs in
+                # combination with the Preferences hack above.
+                "--disable-session-crashed-bubble",
+                "--disable-infobars",
             ],
             user_agent=user_agent
             or (
@@ -166,6 +177,33 @@ class BrowserManager:
     def _legacy_state_path(self, client_id: str) -> Path:
         # Where the previous BrowserManager wrote `storage_state` JSON.
         return Path(settings.profiles_dir) / client_id / "state.json"
+
+    def _mark_chromium_exit_clean(self, profile_dir: Path) -> None:
+        """Edit the Chromium Preferences JSON to declare the last exit as
+        clean, so the next launch never shows the 'Restore Pages?' bar.
+
+        Called BEFORE every launch; after Chromium starts it owns the file
+        and writes the actual exit state on its own shutdown."""
+        prefs_path = profile_dir / "Default" / "Preferences"
+        if not prefs_path.exists():
+            # Fresh profile — nothing to patch; Chromium will create
+            # Preferences with sensible defaults on first run.
+            return
+        try:
+            data = json.loads(prefs_path.read_text())
+        except Exception:
+            logger.warning("Preferences JSON unreadable, skipping exit-state patch")
+            return
+        profile = data.setdefault("profile", {})
+        if profile.get("exit_type") == "Normal" and profile.get("exited_cleanly") is True:
+            return
+        profile["exit_type"] = "Normal"
+        profile["exited_cleanly"] = True
+        try:
+            prefs_path.write_text(json.dumps(data))
+            logger.info("Marked Chromium exit as clean to skip restore prompt")
+        except Exception as e:
+            logger.warning("Failed to patch Preferences: %s", e)
 
     async def _migrate_legacy_state(
         self, client_id: str, context: BrowserContext, legacy_state: Path,
