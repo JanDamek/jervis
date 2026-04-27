@@ -15,7 +15,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.http.contentType
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -68,6 +73,10 @@ fun UserTaskNotificationDialog(
             onDeny = onDeny,
             onDismiss = onDismiss,
         )
+        event.interruptAction == "login_consent" -> LoginConsentContent(
+            event = event,
+            onDismiss = onDismiss,
+        )
         event.isError -> ErrorContent(
             event = event,
             onRetry = onRetry,
@@ -86,6 +95,78 @@ fun UserTaskNotificationDialog(
             onDismiss = onDismiss,
         )
     }
+}
+
+/**
+ * Login Consent — global semaphore prompt. Four buttons (Teď / Za 15
+ * min / Za 1 hod / Zrušit) post directly to the server's
+ * `/api/v1/login-consent/{requestId}/respond` endpoint. requestId is
+ * encoded in `event.interruptDescription` as `requestId=<id>|...`.
+ */
+@Composable
+private fun LoginConsentContent(
+    event: JervisEvent.UserTaskCreated,
+    onDismiss: () -> Unit,
+) {
+    val connectionName = event.connectionName ?: "Microsoft 365"
+    val requestId = event.interruptDescription
+        ?.split("|")
+        ?.firstOrNull { it.startsWith("requestId=") }
+        ?.removePrefix("requestId=")
+        ?.takeIf { it.isNotBlank() }
+
+    val scope = rememberCoroutineScope()
+    val serverBaseUrl = "https://jervis.damek-soft.eu"
+
+    fun respond(action: String) {
+        if (requestId == null) {
+            onDismiss()
+            return
+        }
+        scope.launch {
+            try {
+                val client = io.ktor.client.HttpClient()
+                client.use { c ->
+                    c.post("$serverBaseUrl/api/v1/login-consent/$requestId/respond") {
+                        contentType(io.ktor.http.ContentType.Application.Json)
+                        setBody("""{"action":"$action"}""")
+                    }
+                }
+            } catch (_: Exception) {
+                // Best-effort; if it fails the user can retry from
+                // the chat surface or the push notification action.
+            }
+            onDismiss()
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Login: $connectionName",
+                style = MaterialTheme.typography.headlineSmall,
+            )
+        },
+        text = {
+            Text(
+                text = "Pod potřebuje přihlásit $connectionName. Vyber kdy:",
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        },
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                JPrimaryButton(text = "Teď", onClick = { respond("now") })
+                JSecondaryButton(onClick = { respond("defer_15") }) { Text("Za 15 min") }
+            }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                JSecondaryButton(onClick = { respond("defer_60") }) { Text("Za 1 hod") }
+                JSecondaryButton(onClick = { respond("cancel") }) { Text("Zrušit") }
+            }
+        },
+    )
 }
 
 /**
