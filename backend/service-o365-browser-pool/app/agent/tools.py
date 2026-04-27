@@ -103,6 +103,27 @@ async def _settle_after_action(page, max_wait_ms: int = 2500) -> dict:
 
 # ---- Observation --------------------------------------------------------
 
+# Legacy → Teams Cloud selector aliases. When the agent passes a v2
+# selector that no longer exists on Teams Cloud (Fluent UI 9), the
+# tool transparently swaps it for the working equivalent. The agent
+# learns the canonical selector via dom_stats / shell_probe, but
+# cached LLM context often resurfaces the legacy strings — instead
+# of returning empty (which spawns retry loops), serve the right
+# DOM up front.
+_SELECTOR_ALIASES: dict[str, str] = {
+    "[data-tid='chat-list-item']": "[data-tid='simple-collab-dnd-rail'] [role='treeitem']",
+    '[data-tid="chat-list-item"]': "[data-tid='simple-collab-dnd-rail'] [role='treeitem']",
+    "[data-tid='chat-list-item'], [role='treeitem']": "[data-tid='simple-collab-dnd-rail'] [role='treeitem']",
+    '[data-tid="chat-list-item"], [role="treeitem"]': "[data-tid='simple-collab-dnd-rail'] [role='treeitem']",
+    "[data-tid='chat-list']": "[data-tid='simple-collab-dnd-rail']",
+    '[data-tid="chat-list"]': "[data-tid='simple-collab-dnd-rail']",
+    # Legacy chat-message → Teams Cloud chat-pane-message
+    "[data-tid='chat-message']": "[data-tid='chat-pane-message']",
+    '[data-tid="chat-message"]': "[data-tid='chat-pane-message']",
+    ".ms-ChatMessage": "[data-tid='chat-pane-message']",
+}
+
+
 _SHELL_FALLBACK_SELECTORS = (
     # Teams Cloud / Microsoft 365 unified (Fluent UI 9, observed
     # 2026-04 on teams.cloud.microsoft).
@@ -181,10 +202,23 @@ async def inspect_dom(
     if page is None:
         return {"matches": [], "count": 0, "url": "", "truncated": False,
                 "error": f"no page for tab_name={tab_name!r}"}
+    # Apply legacy selector aliases (chat-list-item → simple-collab-dnd-rail
+    # treeitem, chat-message → chat-pane-message, etc.). The agent often
+    # caches the legacy v2 strings from prior turns / older prompt
+    # snippets; rather than return empty and force a retry loop, swap
+    # transparently and report the swap so the model can update its
+    # memory.
+    aliased_from = None
+    if selector in _SELECTOR_ALIASES:
+        aliased_from = selector
+        selector = _SELECTOR_ALIASES[selector]
     result = await _dom_query.query(
         page, selector=selector, attrs=attrs or [],
         text=text, max_matches=max_matches,
     )
+    if aliased_from:
+        result["selector_used"] = selector
+        result["selector_aliased_from"] = aliased_from
     if ctx.last_dom_signature != result["url"]:
         ctx.last_dom_delta_ts = time.time()
     ctx.last_dom_signature = result["url"]
