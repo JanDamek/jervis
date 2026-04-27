@@ -69,35 +69,52 @@ class FcmPushService(
         for (tokenDoc in tokens) {
             try {
                 val isUrgent = data["interruptAction"] in listOf("o365_mfa", "o365_relogin")
+                // Login consent must be data-only so JervisFcmService.onMessageReceived
+                // fires in background → builds a local notification with the four
+                // action buttons (Now / Defer 15 min / Defer 1 hod / Cancel) via
+                // PlatformNotificationManager. With a `notification` payload set
+                // Android FCM auto-shows a button-less system notification and
+                // never wakes our service.
+                val isLoginConsent = data["type"] == "login_consent"
 
                 val messageBuilder = com.google.firebase.messaging.Message.builder()
                     .setToken(tokenDoc.token)
-                    // Notification payload — ensures system tray notification when app is backgrounded
-                    .setNotification(
-                        com.google.firebase.messaging.Notification.builder()
-                            .setTitle(title)
-                            .setBody(body)
-                            .build()
-                    )
-                    // Data payload — for in-app handling when foregrounded
                     .putAllData(data + mapOf(
                         "title" to title,
                         "body" to body,
                         "clientId" to clientId,
                     ))
 
-                // MFA notifications need immediate delivery with short TTL
-                if (isUrgent) {
+                if (!isLoginConsent) {
+                    // Standard path: notification payload + data. System tray
+                    // shows the basic notification when app is backgrounded.
+                    messageBuilder.setNotification(
+                        com.google.firebase.messaging.Notification.builder()
+                            .setTitle(title)
+                            .setBody(body)
+                            .build()
+                    )
+                }
+
+                // MFA + login_consent need immediate delivery with short TTL
+                if (isUrgent || isLoginConsent) {
                     messageBuilder.setAndroidConfig(
                         com.google.firebase.messaging.AndroidConfig.builder()
                             .setPriority(com.google.firebase.messaging.AndroidConfig.Priority.HIGH)
-                            .setTtl(120_000) // 2 minutes — MFA has a short window
-                            .setNotification(
-                                com.google.firebase.messaging.AndroidNotification.builder()
-                                    .setChannelId("jervis_urgent")
-                                    .setPriority(com.google.firebase.messaging.AndroidNotification.Priority.MAX)
-                                    .build()
-                            )
+                            .setTtl(if (isLoginConsent) 600_000 else 120_000)
+                            .apply {
+                                if (!isLoginConsent) {
+                                    // Login consent has no notification payload, so
+                                    // AndroidNotification config is inert; only set
+                                    // it for the MFA notification path.
+                                    setNotification(
+                                        com.google.firebase.messaging.AndroidNotification.builder()
+                                            .setChannelId("jervis_urgent")
+                                            .setPriority(com.google.firebase.messaging.AndroidNotification.Priority.MAX)
+                                            .build()
+                                    )
+                                }
+                            }
                             .build()
                     )
                 }

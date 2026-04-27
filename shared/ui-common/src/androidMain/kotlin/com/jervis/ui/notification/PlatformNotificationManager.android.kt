@@ -31,6 +31,10 @@ actual class PlatformNotificationManager actual constructor() {
         const val ACTION_DENY = "com.jervis.DENY"
         const val ACTION_REPLY = "com.jervis.REPLY"
         const val ACTION_CONFIRM = "com.jervis.CONFIRM"
+        const val ACTION_LOGIN_NOW = "com.jervis.LOGIN_NOW"
+        const val ACTION_LOGIN_DEFER_15 = "com.jervis.LOGIN_DEFER_15"
+        const val ACTION_LOGIN_DEFER_60 = "com.jervis.LOGIN_DEFER_60"
+        const val ACTION_LOGIN_CANCEL = "com.jervis.LOGIN_CANCEL"
         const val KEY_MFA_CODE = "mfa_code"
     }
 
@@ -103,17 +107,19 @@ actual class PlatformNotificationManager actual constructor() {
         badgeCount: Int?,
         mfaType: String?,
         mfaNumber: String?,
+        requestId: String?,
     ) {
         val context = AndroidContextHolder.applicationContext
         if (!hasPermission) return
 
-        val isUrgent = interruptAction in listOf("o365_mfa", "o365_relogin")
+        val isLoginConsent = interruptAction == "login_consent" && requestId != null
+        val isUrgent = isLoginConsent || interruptAction in listOf("o365_mfa", "o365_relogin")
         val channel = when {
             isUrgent -> CHANNEL_URGENT
             isApproval -> CHANNEL_APPROVAL
             else -> CHANNEL_TASKS
         }
-        val notificationId = taskId?.hashCode() ?: System.currentTimeMillis().toInt()
+        val notificationId = taskId?.hashCode() ?: requestId?.hashCode() ?: System.currentTimeMillis().toInt()
 
         val builder = NotificationCompat.Builder(context, channel)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
@@ -154,6 +160,31 @@ actual class PlatformNotificationManager actual constructor() {
 
             builder.addAction(0, "Povolit", approvePi)
             builder.addAction(0, "Zamítnout", denyPi)
+        }
+
+        // Login consent actions — 4 buttons mirroring iOS UNNotificationCategory
+        // (Now / Defer 15 min / Defer 1 hod / Cancel). Each posts directly to
+        // the server `/api/v1/login-consent/{requestId}/respond` endpoint.
+        if (isLoginConsent && requestId != null) {
+            for ((idx, pair) in listOf(
+                ACTION_LOGIN_NOW to "Teď",
+                ACTION_LOGIN_DEFER_15 to "Za 15 min",
+                ACTION_LOGIN_DEFER_60 to "Za 1 hod",
+                ACTION_LOGIN_CANCEL to "Zrušit",
+            ).withIndex()) {
+                val (action, label) = pair
+                val intent = Intent(context, NotificationActionReceiver::class.java).apply {
+                    this.action = action
+                    putExtra("requestId", requestId)
+                }
+                val pi = PendingIntent.getBroadcast(
+                    context,
+                    notificationId * 8 + idx,
+                    intent,
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                )
+                builder.addAction(0, label, pi)
+            }
         }
 
         // MFA actions based on type

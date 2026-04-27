@@ -48,6 +48,7 @@ expect class PlatformNotificationManager() {
         badgeCount: Int? = null,
         mfaType: String? = null,
         mfaNumber: String? = null,
+        requestId: String? = null,
     )
 
     /**

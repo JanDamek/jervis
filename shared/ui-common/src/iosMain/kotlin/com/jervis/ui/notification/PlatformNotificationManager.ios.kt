@@ -155,6 +155,7 @@ actual class PlatformNotificationManager actual constructor() {
         badgeCount: Int?,
         mfaType: String?,
         mfaNumber: String?,
+        requestId: String?,
     ) {
         val content = UNMutableNotificationContent().apply {
             setTitle(title)

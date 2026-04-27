@@ -1,27 +1,14 @@
 package com.jervis.ui.notification
 
-/**
- * Desktop JVM notification manager.
- *
- * Uses platform-specific commands:
- * - macOS: osascript "display notification"
- * - Windows: java.awt.SystemTray
- * - Linux: notify-send
- *
- * Desktop OS notifications don't support action buttons.
- * Approval actions are handled by the in-app ApprovalNotificationDialog.
- */
 actual class PlatformNotificationManager actual constructor() {
     private val isMacOS = System.getProperty("os.name")?.lowercase()?.contains("mac") == true
     private val isWindows = System.getProperty("os.name")?.lowercase()?.contains("win") == true
     private val isLinux = System.getProperty("os.name")?.lowercase()?.contains("linux") == true
 
     actual fun initialize() {
-        // Desktop doesn't need channel/category setup
     }
 
     actual fun requestPermission() {
-        // Desktop doesn't require explicit permission
     }
 
     actual val hasPermission: Boolean
@@ -36,12 +23,19 @@ actual class PlatformNotificationManager actual constructor() {
         badgeCount: Int?,
         mfaType: String?,
         mfaNumber: String?,
+        requestId: String?,
     ) {
         val isUrgent = interruptAction in listOf("o365_mfa", "o365_relogin")
+        val category = when {
+            isApproval -> "APPROVAL"
+            mfaType == "authenticator_code" || mfaType == "sms_code" -> "MFA_CODE"
+            mfaType == "authenticator_number" || mfaType == "phone_call" -> "MFA_CONFIRM"
+            else -> null
+        }
 
         try {
             when {
-                isMacOS -> showMacOSNotification(title, body)
+                isMacOS -> showMacOSNotification(title, body, taskId, category, mfaNumber)
                 isWindows -> showWindowsNotification(title, body)
                 isLinux -> showLinuxNotification(title, body)
             }
@@ -49,20 +43,27 @@ actual class PlatformNotificationManager actual constructor() {
             println("Failed to show desktop notification: ${e.message}")
         }
 
-        // Bring app to front for urgent or approval notifications — in-app dialog handles interaction
-        if ((isApproval || isUrgent) && isMacOS) {
+        if ((isApproval || isUrgent) && isMacOS && category == null) {
             bringToFront()
         }
     }
 
     actual fun cancelNotification(taskId: String) {
-        // Desktop OS notifications auto-dismiss, no cancel needed
+        if (isMacOS) {
+            MacAppSocketBridge.cancelNotification(taskId)
+        }
     }
 
-    private fun showMacOSNotification(title: String, body: String) {
-        // DISABLED: osascript notifications open Script Editor on click, not Jervis.
-        // Compose Desktop has no native macOS notification API.
-        // In-app dialog + window bring-to-front handles urgent notifications.
+    private fun showMacOSNotification(title: String, body: String, taskId: String?, category: String?, mfaNumber: String?) {
+        val payload = mutableMapOf<String, String>()
+        if (mfaNumber != null) payload["mfaNumber"] = mfaNumber
+        MacAppSocketBridge.showNotification(
+            taskId = taskId,
+            title = title,
+            body = body,
+            category = category,
+            payload = payload,
+        )
     }
 
     private fun showWindowsNotification(title: String, body: String) {
@@ -81,11 +82,6 @@ actual class PlatformNotificationManager actual constructor() {
         Runtime.getRuntime().exec(arrayOf("notify-send", title, body))
     }
 
-    /**
-     * Bring the application window to the front on macOS.
-     * Used when an approval notification arrives to ensure
-     * the user sees the in-app approval dialog.
-     */
     private fun bringToFront() {
         try {
             val script = """
