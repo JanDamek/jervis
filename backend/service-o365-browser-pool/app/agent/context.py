@@ -41,6 +41,12 @@ class ToolContext:
     last_observation_kind: str = ""  # "dom" | "vlm" | ""
     last_auth_request_at: str = ""   # ISO; 60-min relogin cooldown per §18
     notified_contexts: set[str] = field(default_factory=set)
+    # Login Consent Semaphore (product §17 + §18):
+    # populated when this pod is currently holding the global login lock.
+    # Cleared on release. notify_user(kind='mfa') passes this token via
+    # `mfa_lock_token` so the server knows the request is authorized.
+    login_consent_request_id: str = ""
+    login_consent_token: str = ""
 
     def resolve_tab(self, name: str) -> Page | None:
         """Return the page for a named tab. When `name` is empty, returns the

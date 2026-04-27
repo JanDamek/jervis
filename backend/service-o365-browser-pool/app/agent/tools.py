@@ -56,7 +56,7 @@ from langgraph.prebuilt import InjectedState
 
 from app.agent import _dom_query, work_hours
 from app.agent.context import get_pod_context
-from app.grpc_clients import router_inference_stub
+from app.grpc_clients import router_inference_stub, server_o365_session_stub
 from app.pod_state import PodState
 from jervis.common import enums_pb2, types_pb2
 from jervis.router import inference_pb2
@@ -501,6 +501,150 @@ async def report_capabilities(capabilities: list[str]) -> dict:
         return {"ok": True, "capabilities": capabilities}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+@tool
+async def request_login_permission(label: str, reason: str) -> dict:
+    """Acquire the GLOBAL login consent lock before any login attempt.
+
+    Blocks (long-poll loop) until the user grants permission via push
+    notification action button [Now] OR declines via [Cancel] / lock
+    timeout. While waiting, the user may receive the notification on
+    their phone, watch, or desktop.
+
+    MUST be called before:
+      - the first `fill_credentials(field='password')` of a session
+      - any retry after a previous login attempt failed
+      - re-login after `EXPIRED` session detection
+
+    Args:
+        label: Human-readable connection name shown in the push
+            ("MMB - Teams", "Mazlusek mazlusek.com", …).
+        reason: Short tag — "fresh_login" / "session_expired" /
+            "fido_recovery" / "retry_after_failure".
+
+    Returns:
+        {"granted": True} when user pressed [Now] — pod proceeds with
+            login (5 min hold timeout from this point).
+        {"granted": False, "reason": <str>} when user pressed [Cancel]
+            or the request timed out — pod transitions to ERROR; do
+            NOT retry, wait for `/instruction approve-relogin`.
+    """
+    ctx = get_pod_context()
+    if not _server_grpc_ok():
+        # No server URL configured (local dev) — bypass.
+        return {"granted": True, "reason": "no_server_url_dev_mode"}
+
+    from jervis.server import o365_session_pb2
+
+    rctx = types_pb2.RequestContext()
+    prepare_context(rctx)
+    try:
+        ack = await server_o365_session_stub().AcquireLoginConsent(
+            o365_session_pb2.AcquireLoginConsentRequest(
+                ctx=rctx,
+                connection_id=ctx.connection_id,
+                label=label,
+                reason=reason,
+            ),
+            timeout=15.0,
+        )
+    except Exception as e:
+        logger.warning("AcquireLoginConsent failed: %s — proceeding without lock", e)
+        return {"granted": True, "reason": f"acquire_error:{e}"}
+
+    request_id = ack.request_id
+    logger.info(
+        "LoginConsent: acquired status=%s position=%s req=%s",
+        ack.status, ack.position, request_id,
+    )
+
+    # Long-poll loop: server holds for ~60 s on each call, returns when
+    # state changes. Pod re-issues until terminal state.
+    while True:
+        try:
+            resp = await server_o365_session_stub().WaitLoginConsent(
+                o365_session_pb2.WaitLoginConsentRequest(
+                    ctx=rctx, request_id=request_id,
+                ),
+                timeout=70.0,
+            )
+        except Exception as e:
+            logger.warning("WaitLoginConsent transient: %s — retry in 5s", e)
+            await asyncio.sleep(5)
+            continue
+
+        status = resp.status
+        if status == "granted":
+            ctx.login_consent_request_id = request_id
+            ctx.login_consent_token = resp.token
+            logger.info("LoginConsent: GRANTED req=%s", request_id)
+            return {"granted": True, "request_id": request_id}
+        if status in ("declined", "expired"):
+            reason_str = resp.decline_reason or status
+            logger.info("LoginConsent: %s req=%s reason=%s",
+                         status.upper(), request_id, reason_str)
+            return {"granted": False, "reason": reason_str}
+        if status == "deferred":
+            logger.info(
+                "LoginConsent: deferred until %s — agent waits",
+                resp.deferred_until,
+            )
+        # status in {"queued", "deferred"} — keep polling.
+        await asyncio.sleep(2)
+
+
+@tool
+async def release_login_permission(outcome: str) -> dict:
+    """Release the GLOBAL login lock after the login flow completes.
+
+    MUST be called as the last step of any login flow:
+      - outcome='success'  — user reached ACTIVE state
+      - outcome='fail'     — credentials wrong / MFA failed
+      - outcome='expired'  — Microsoft expired the MFA challenge
+      - outcome='cancelled' — user manually intervened via VNC
+
+    The next pod waiting in the queue gets its consent push 0–10 s
+    after this call returns.
+    """
+    ctx = get_pod_context()
+    request_id = ctx.login_consent_request_id
+    token = ctx.login_consent_token
+    if not request_id or not token:
+        return {"ok": True, "skipped": True, "reason": "no_lock_held"}
+    if not _server_grpc_ok():
+        ctx.login_consent_request_id = ""
+        ctx.login_consent_token = ""
+        return {"ok": True, "skipped": True, "reason": "no_server_url_dev_mode"}
+
+    from jervis.server import o365_session_pb2
+
+    rctx = types_pb2.RequestContext()
+    prepare_context(rctx)
+    try:
+        resp = await server_o365_session_stub().ReleaseLoginConsent(
+            o365_session_pb2.ReleaseLoginConsentRequest(
+                ctx=rctx,
+                request_id=request_id,
+                token=token,
+                outcome=outcome,
+            ),
+            timeout=10.0,
+        )
+        ctx.login_consent_request_id = ""
+        ctx.login_consent_token = ""
+        return {"ok": True, "status": resp.status}
+    except Exception as e:
+        logger.warning("ReleaseLoginConsent failed: %s", e)
+        # Still clear the local token — server tick will force-release on timeout.
+        ctx.login_consent_request_id = ""
+        ctx.login_consent_token = ""
+        return {"ok": False, "error": str(e)}
+
+
+def _server_grpc_ok() -> bool:
+    from app.config import settings
+    return bool(settings.kotlin_server_url)
 
 
 @tool
@@ -1449,6 +1593,8 @@ ALL_TOOLS = [
     # Navigation
     list_tabs, open_tab, switch_tab, close_tab, navigate,
     report_capabilities, get_enabled_features,
+    # Login Consent Semaphore (product §17/§18, global)
+    request_login_permission, release_login_permission,
     # Actions
     click, click_text, click_visual, mouse_click, fill, fill_visual,
     fill_credentials, press, wait,

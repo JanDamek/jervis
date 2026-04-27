@@ -4,13 +4,20 @@ import com.jervis.common.types.ClientId
 import com.jervis.common.types.ConnectionId
 import com.jervis.common.types.SourceUrn
 import com.jervis.connection.ConnectionRepository
+import com.jervis.connection.LoginConsentService
+import com.jervis.contracts.server.AcquireLoginConsentRequest
+import com.jervis.contracts.server.AcquireLoginConsentResponse
 import com.jervis.contracts.server.CapabilitiesDiscoveredRequest
 import com.jervis.contracts.server.CapabilitiesDiscoveredResponse
 import com.jervis.contracts.server.NotifyRequest
 import com.jervis.contracts.server.NotifyResponse
+import com.jervis.contracts.server.ReleaseLoginConsentRequest
+import com.jervis.contracts.server.ReleaseLoginConsentResponse
 import com.jervis.contracts.server.ServerO365SessionServiceGrpcKt
 import com.jervis.contracts.server.SessionEventRequest
 import com.jervis.contracts.server.SessionEventResponse
+import com.jervis.contracts.server.WaitLoginConsentRequest
+import com.jervis.contracts.server.WaitLoginConsentResponse
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ConnectionStateEnum
 import com.jervis.dto.task.TaskStateEnum
@@ -38,6 +45,7 @@ class ServerO365SessionGrpcImpl(
     private val fcmPushService: FcmPushService,
     private val apnsPushService: ApnsPushService,
     private val ephemeralPromptRegistry: EphemeralPromptRegistry,
+    private val loginConsentService: LoginConsentService,
     private val deviceTokenRepository: DeviceTokenRepository? = null,
 ) : ServerO365SessionServiceGrpcKt.ServerO365SessionServiceCoroutineImplBase() {
     private val logger = KotlinLogging.logger {}
@@ -384,6 +392,48 @@ class ServerO365SessionGrpcImpl(
         }
         "error" -> "[$connectionName] Agent uvízl — potřebuje pomoc"
         else -> "[$connectionName] ${req.message.take(60)}"
+    }
+
+    // ── Login Consent Semaphore ─────────────────────────────────────────
+
+    override suspend fun acquireLoginConsent(
+        request: AcquireLoginConsentRequest,
+    ): AcquireLoginConsentResponse {
+        val result = loginConsentService.acquire(
+            connectionId = request.connectionId,
+            label = request.label,
+            reason = request.reason,
+        )
+        return AcquireLoginConsentResponse.newBuilder()
+            .setRequestId(result.requestId)
+            .setStatus(result.status)
+            .setPosition(result.position)
+            .setToken(result.token)
+            .build()
+    }
+
+    override suspend fun waitLoginConsent(
+        request: WaitLoginConsentRequest,
+    ): WaitLoginConsentResponse {
+        val result = loginConsentService.await(request.requestId)
+        val builder = WaitLoginConsentResponse.newBuilder()
+            .setStatus(result.status)
+            .setPosition(result.position)
+            .setToken(result.token)
+            .setDeclineReason(result.declineReason)
+        result.deferredUntil?.let { builder.deferredUntil = it.toString() }
+        return builder.build()
+    }
+
+    override suspend fun releaseLoginConsent(
+        request: ReleaseLoginConsentRequest,
+    ): ReleaseLoginConsentResponse {
+        val status = loginConsentService.release(
+            requestId = request.requestId,
+            token = request.token,
+            outcome = request.outcome,
+        )
+        return ReleaseLoginConsentResponse.newBuilder().setStatus(status).build()
     }
 
     private fun czechDescription(req: NotifyRequest, connectionName: String): String {

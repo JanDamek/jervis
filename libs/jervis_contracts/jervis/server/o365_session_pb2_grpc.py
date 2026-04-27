@@ -60,6 +60,21 @@ class ServerO365SessionServiceStub(object):
                 request_serializer=jervis_dot_server_dot_o365__session__pb2.NotifyRequest.SerializeToString,
                 response_deserializer=jervis_dot_server_dot_o365__session__pb2.NotifyResponse.FromString,
                 _registered_method=True)
+        self.AcquireLoginConsent = channel.unary_unary(
+                '/jervis.server.ServerO365SessionService/AcquireLoginConsent',
+                request_serializer=jervis_dot_server_dot_o365__session__pb2.AcquireLoginConsentRequest.SerializeToString,
+                response_deserializer=jervis_dot_server_dot_o365__session__pb2.AcquireLoginConsentResponse.FromString,
+                _registered_method=True)
+        self.WaitLoginConsent = channel.unary_unary(
+                '/jervis.server.ServerO365SessionService/WaitLoginConsent',
+                request_serializer=jervis_dot_server_dot_o365__session__pb2.WaitLoginConsentRequest.SerializeToString,
+                response_deserializer=jervis_dot_server_dot_o365__session__pb2.WaitLoginConsentResponse.FromString,
+                _registered_method=True)
+        self.ReleaseLoginConsent = channel.unary_unary(
+                '/jervis.server.ServerO365SessionService/ReleaseLoginConsent',
+                request_serializer=jervis_dot_server_dot_o365__session__pb2.ReleaseLoginConsentRequest.SerializeToString,
+                response_deserializer=jervis_dot_server_dot_o365__session__pb2.ReleaseLoginConsentResponse.FromString,
+                _registered_method=True)
 
 
 class ServerO365SessionServiceServicer(object):
@@ -94,6 +109,33 @@ class ServerO365SessionServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def AcquireLoginConsent(self, request, context):
+        """Login Consent Semaphore (global singleton across ALL connections):
+        pod MUST call AcquireLoginConsent before any login attempt that
+        could trigger an MFA push. Server pushes a notification to user's
+        devices with action buttons [Now / Defer 15min / Defer 1h / Cancel].
+        Pod long-polls WaitLoginConsent until status=granted (proceed) or
+        declined (go to ERROR). After login completes — success OR failure
+        — pod MUST call ReleaseLoginConsent so the next pod in queue can
+        get its turn. Only ONE consent push lives on user's devices at a
+        time; queued pods wait silently.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def WaitLoginConsent(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ReleaseLoginConsent(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ServerO365SessionServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -111,6 +153,21 @@ def add_ServerO365SessionServiceServicer_to_server(servicer, server):
                     servicer.Notify,
                     request_deserializer=jervis_dot_server_dot_o365__session__pb2.NotifyRequest.FromString,
                     response_serializer=jervis_dot_server_dot_o365__session__pb2.NotifyResponse.SerializeToString,
+            ),
+            'AcquireLoginConsent': grpc.unary_unary_rpc_method_handler(
+                    servicer.AcquireLoginConsent,
+                    request_deserializer=jervis_dot_server_dot_o365__session__pb2.AcquireLoginConsentRequest.FromString,
+                    response_serializer=jervis_dot_server_dot_o365__session__pb2.AcquireLoginConsentResponse.SerializeToString,
+            ),
+            'WaitLoginConsent': grpc.unary_unary_rpc_method_handler(
+                    servicer.WaitLoginConsent,
+                    request_deserializer=jervis_dot_server_dot_o365__session__pb2.WaitLoginConsentRequest.FromString,
+                    response_serializer=jervis_dot_server_dot_o365__session__pb2.WaitLoginConsentResponse.SerializeToString,
+            ),
+            'ReleaseLoginConsent': grpc.unary_unary_rpc_method_handler(
+                    servicer.ReleaseLoginConsent,
+                    request_deserializer=jervis_dot_server_dot_o365__session__pb2.ReleaseLoginConsentRequest.FromString,
+                    response_serializer=jervis_dot_server_dot_o365__session__pb2.ReleaseLoginConsentResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -205,6 +262,87 @@ class ServerO365SessionService(object):
             '/jervis.server.ServerO365SessionService/Notify',
             jervis_dot_server_dot_o365__session__pb2.NotifyRequest.SerializeToString,
             jervis_dot_server_dot_o365__session__pb2.NotifyResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def AcquireLoginConsent(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.server.ServerO365SessionService/AcquireLoginConsent',
+            jervis_dot_server_dot_o365__session__pb2.AcquireLoginConsentRequest.SerializeToString,
+            jervis_dot_server_dot_o365__session__pb2.AcquireLoginConsentResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def WaitLoginConsent(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.server.ServerO365SessionService/WaitLoginConsent',
+            jervis_dot_server_dot_o365__session__pb2.WaitLoginConsentRequest.SerializeToString,
+            jervis_dot_server_dot_o365__session__pb2.WaitLoginConsentResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ReleaseLoginConsent(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jervis.server.ServerO365SessionService/ReleaseLoginConsent',
+            jervis_dot_server_dot_o365__session__pb2.ReleaseLoginConsentRequest.SerializeToString,
+            jervis_dot_server_dot_o365__session__pb2.ReleaseLoginConsentResponse.FromString,
             options,
             channel_credentials,
             insecure,

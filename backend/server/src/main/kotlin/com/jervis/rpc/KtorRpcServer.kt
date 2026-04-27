@@ -129,6 +129,7 @@ class KtorRpcServer(
     private val ttsRuleRpcImpl: com.jervis.tts.TtsRuleRpcImpl,
     private val agentJobRpcImpl: com.jervis.agentjob.AgentJobRpcImpl,
     private val vncRpcImpl: com.jervis.vnc.VncRpcImpl,
+    private val loginConsentService: com.jervis.connection.LoginConsentService,
 ) {
     private val logger = KotlinLogging.logger {}
     private var server: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
@@ -203,6 +204,37 @@ class KtorRpcServer(
 
                             get("/") {
                                 call.respondText("{\"status\":\"UP\"}", io.ktor.http.ContentType.Application.Json)
+                            }
+
+                            // Login Consent Semaphore — user action callback from
+                            // iOS/Android/macApp push notification action buttons
+                            // (LOGIN_CONSENT category: now / defer_15 / defer_60 /
+                            // cancel). Body: {"action":"now|defer_15|defer_60|cancel"}.
+                            post("/api/v1/login-consent/{requestId}/respond") {
+                                val requestId = call.parameters["requestId"] ?: return@post call.respondText(
+                                    "missing requestId",
+                                    status = HttpStatusCode.BadRequest,
+                                )
+                                val payload = try {
+                                    call.receive<Map<String, String>>()
+                                } catch (_: Exception) {
+                                    return@post call.respondText(
+                                        "invalid body",
+                                        status = HttpStatusCode.BadRequest,
+                                    )
+                                }
+                                val action = payload["action"]
+                                if (action !in setOf("now", "defer_15", "defer_60", "cancel")) {
+                                    return@post call.respondText(
+                                        "invalid action",
+                                        status = HttpStatusCode.BadRequest,
+                                    )
+                                }
+                                loginConsentService.respond(requestId, action!!)
+                                call.respondText(
+                                    "{\"status\":\"ok\"}",
+                                    io.ktor.http.ContentType.Application.Json,
+                                )
                             }
 
                             // OAuth2 routes

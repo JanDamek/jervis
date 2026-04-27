@@ -154,6 +154,26 @@ LOGIN (stored PVC session first, credentials only if asked)
   scans the live DOM, not the VLM's summary. Call `click_text(
   '<login_email>')` directly on the picker; do NOT waste turns
   hunting for a CSS selector or asking VLM again.
+- **Login Consent Semaphore (CRITICAL — call BEFORE fill_credentials).**
+  The user (one human across all connections) must approve every login
+  attempt that could trigger an MFA push. Before the FIRST
+  `fill_credentials(field='password')` of an authentication flow:
+    1. `request_login_permission(label='<connection name>',
+       reason='fresh_login' | 'session_expired' | 'fido_recovery' |
+       'retry_after_failure')`. This BLOCKS up to several minutes
+       while the user decides.
+    2. On `{granted: True}` → proceed with `fill_credentials`. You
+       have a 5-minute hold timeout on the global lock; finish login
+       (incl. MFA) within that window.
+    3. On `{granted: False, reason: ...}` → `report_state('ERROR')`
+       and STOP. Do NOT retry. The user explicitly declined or
+       deferred — wait for an `/instruction approve-relogin` payload.
+    4. After login completes (success/fail/expired) →
+       `release_login_permission(outcome='success'|'fail'|'expired')`.
+       This is automatic on `report_state('ACTIVE')` / `'ERROR'`,
+       but call it explicitly if you exit the flow another way.
+  Skipping consent = MFA push appears unannounced during a meeting +
+  risk of two simultaneous codes confusing the user. NEVER skip.
 - Password screen → `fill_credentials(selector, field='password')`. The
   runtime injects the secret; you NEVER see or pass the value.
 - "Stay signed in?" / consent → `click_text('Yes')` or `click_text('No')`.

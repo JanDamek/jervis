@@ -88,3 +88,67 @@ class NotifyResponse(_message.Message):
     kind: str
     priority: int
     def __init__(self, status: _Optional[str] = ..., kind: _Optional[str] = ..., priority: _Optional[int] = ...) -> None: ...
+
+class AcquireLoginConsentRequest(_message.Message):
+    __slots__ = ("ctx", "connection_id", "label", "reason")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    CONNECTION_ID_FIELD_NUMBER: _ClassVar[int]
+    LABEL_FIELD_NUMBER: _ClassVar[int]
+    REASON_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    connection_id: str
+    label: str
+    reason: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., connection_id: _Optional[str] = ..., label: _Optional[str] = ..., reason: _Optional[str] = ...) -> None: ...
+
+class AcquireLoginConsentResponse(_message.Message):
+    __slots__ = ("request_id", "status", "position", "token")
+    REQUEST_ID_FIELD_NUMBER: _ClassVar[int]
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    POSITION_FIELD_NUMBER: _ClassVar[int]
+    TOKEN_FIELD_NUMBER: _ClassVar[int]
+    request_id: str
+    status: str
+    position: int
+    token: str
+    def __init__(self, request_id: _Optional[str] = ..., status: _Optional[str] = ..., position: _Optional[int] = ..., token: _Optional[str] = ...) -> None: ...
+
+class WaitLoginConsentRequest(_message.Message):
+    __slots__ = ("ctx", "request_id")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    REQUEST_ID_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    request_id: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., request_id: _Optional[str] = ...) -> None: ...
+
+class WaitLoginConsentResponse(_message.Message):
+    __slots__ = ("status", "position", "deferred_until", "token", "decline_reason")
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    POSITION_FIELD_NUMBER: _ClassVar[int]
+    DEFERRED_UNTIL_FIELD_NUMBER: _ClassVar[int]
+    TOKEN_FIELD_NUMBER: _ClassVar[int]
+    DECLINE_REASON_FIELD_NUMBER: _ClassVar[int]
+    status: str
+    position: int
+    deferred_until: str
+    token: str
+    decline_reason: str
+    def __init__(self, status: _Optional[str] = ..., position: _Optional[int] = ..., deferred_until: _Optional[str] = ..., token: _Optional[str] = ..., decline_reason: _Optional[str] = ...) -> None: ...
+
+class ReleaseLoginConsentRequest(_message.Message):
+    __slots__ = ("ctx", "request_id", "token", "outcome")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    REQUEST_ID_FIELD_NUMBER: _ClassVar[int]
+    TOKEN_FIELD_NUMBER: _ClassVar[int]
+    OUTCOME_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    request_id: str
+    token: str
+    outcome: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., request_id: _Optional[str] = ..., token: _Optional[str] = ..., outcome: _Optional[str] = ...) -> None: ...
+
+class ReleaseLoginConsentResponse(_message.Message):
+    __slots__ = ("status",)
+    STATUS_FIELD_NUMBER: _ClassVar[int]
+    status: str
+    def __init__(self, status: _Optional[str] = ...) -> None: ...

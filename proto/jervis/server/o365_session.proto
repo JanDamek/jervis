@@ -24,6 +24,22 @@ service ServerO365SessionService {
   rpc CapabilitiesDiscovered(CapabilitiesDiscoveredRequest)
       returns (CapabilitiesDiscoveredResponse);
   rpc Notify(NotifyRequest) returns (NotifyResponse);
+
+  // Login Consent Semaphore (global singleton across ALL connections):
+  // pod MUST call AcquireLoginConsent before any login attempt that
+  // could trigger an MFA push. Server pushes a notification to user's
+  // devices with action buttons [Now / Defer 15min / Defer 1h / Cancel].
+  // Pod long-polls WaitLoginConsent until status=granted (proceed) or
+  // declined (go to ERROR). After login completes — success OR failure
+  // — pod MUST call ReleaseLoginConsent so the next pod in queue can
+  // get its turn. Only ONE consent push lives on user's devices at a
+  // time; queued pods wait silently.
+  rpc AcquireLoginConsent(AcquireLoginConsentRequest)
+      returns (AcquireLoginConsentResponse);
+  rpc WaitLoginConsent(WaitLoginConsentRequest)
+      returns (WaitLoginConsentResponse);
+  rpc ReleaseLoginConsent(ReleaseLoginConsentRequest)
+      returns (ReleaseLoginConsentResponse);
 }
 
 // ── SessionEvent ────────────────────────────────────────────────────────
@@ -79,4 +95,46 @@ message NotifyResponse {
   string status = 1;          // "ok" / "deduped" / "suppressed"
   string kind = 2;
   int32 priority = 3;
+}
+
+// ── Login Consent Semaphore ─────────────────────────────────────────────
+
+message AcquireLoginConsentRequest {
+  jervis.common.RequestContext ctx = 1;
+  string connection_id = 2;
+  string label = 3;            // human-readable "MMB - Teams"
+  string reason = 4;            // "fresh_login" / "session_expired" / "fido_recovery"
+}
+
+message AcquireLoginConsentResponse {
+  string request_id = 1;       // identifier for subsequent Wait/Release
+  string status = 2;           // "granted" (rare — only when queue empty AND no holder)
+                               // "queued" (common — wait via WaitLoginConsent)
+  int32 position = 3;          // 0 if granted, otherwise queue position
+  string token = 4;            // populated when status=granted
+}
+
+message WaitLoginConsentRequest {
+  jervis.common.RequestContext ctx = 1;
+  string request_id = 2;
+  // Server long-polls up to ~60s. Pod re-issues until terminal status.
+}
+
+message WaitLoginConsentResponse {
+  string status = 1;           // "queued" / "deferred" / "granted" / "declined" / "expired"
+  int32 position = 2;          // updated queue position
+  string deferred_until = 3;   // ISO-8601, populated on "deferred"
+  string token = 4;            // populated on "granted"
+  string decline_reason = 5;   // populated on "declined" / "expired"
+}
+
+message ReleaseLoginConsentRequest {
+  jervis.common.RequestContext ctx = 1;
+  string request_id = 2;
+  string token = 3;             // must match the granted token
+  string outcome = 4;           // "success" / "fail" / "expired" / "cancelled"
+}
+
+message ReleaseLoginConsentResponse {
+  string status = 1;           // "ok" / "unknown_request" / "token_mismatch"
 }
