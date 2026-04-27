@@ -6,6 +6,7 @@ import platform.UserNotifications.UNAuthorizationOptionBadge
 import platform.UserNotifications.UNAuthorizationOptionSound
 import platform.UserNotifications.UNMutableNotificationContent
 import platform.UserNotifications.UNNotificationAction
+import platform.UserNotifications.UNNotificationActionOptionDestructive
 import platform.UserNotifications.UNNotificationActionOptionForeground
 import platform.UserNotifications.UNNotificationCategory
 import platform.UserNotifications.UNNotificationCategoryOptionNone
@@ -31,10 +32,15 @@ actual class PlatformNotificationManager actual constructor() {
         const val CATEGORY_APPROVAL = "APPROVAL"
         const val CATEGORY_MFA_CODE = "MFA_CODE"
         const val CATEGORY_MFA_CONFIRM = "MFA_CONFIRM"
+        const val CATEGORY_LOGIN_CONSENT = "LOGIN_CONSENT"
         const val ACTION_APPROVE = "APPROVE"
         const val ACTION_DENY = "DENY"
         const val ACTION_MFA_REPLY = "MFA_REPLY"
         const val ACTION_MFA_CONFIRM = "MFA_CONFIRM"
+        const val ACTION_LOGIN_NOW = "LOGIN_NOW"
+        const val ACTION_LOGIN_DEFER_15 = "LOGIN_DEFER_15"
+        const val ACTION_LOGIN_DEFER_60 = "LOGIN_DEFER_60"
+        const val ACTION_LOGIN_CANCEL = "LOGIN_CANCEL"
     }
 
     private var _hasPermission = false
@@ -88,7 +94,41 @@ actual class PlatformNotificationManager actual constructor() {
             options = UNNotificationCategoryOptionNone,
         )
 
-        center.setNotificationCategories(setOf(approvalCategory, mfaCodeCategory, mfaConfirmCategory))
+        // Login Consent category — Apple Watch friendly action buttons asking
+        // the user whether the pod may start a login flow now / defer / cancel.
+        // Only ONE of these is delivered at a time across all pods (server-side
+        // semaphore), so the user always knows which connection is being asked
+        // about (label in the body).
+        val loginNowAction = UNNotificationAction.actionWithIdentifier(
+            identifier = ACTION_LOGIN_NOW,
+            title = "Teď",
+            options = UNNotificationActionOptionForeground,
+        )
+        val loginDefer15Action = UNNotificationAction.actionWithIdentifier(
+            identifier = ACTION_LOGIN_DEFER_15,
+            title = "Za 15 min",
+            options = UNNotificationActionOptionForeground,
+        )
+        val loginDefer60Action = UNNotificationAction.actionWithIdentifier(
+            identifier = ACTION_LOGIN_DEFER_60,
+            title = "Za 1 hod",
+            options = UNNotificationActionOptionForeground,
+        )
+        val loginCancelAction = UNNotificationAction.actionWithIdentifier(
+            identifier = ACTION_LOGIN_CANCEL,
+            title = "Zrušit",
+            options = UNNotificationActionOptionDestructive,
+        )
+        val loginConsentCategory = UNNotificationCategory.categoryWithIdentifier(
+            identifier = CATEGORY_LOGIN_CONSENT,
+            actions = listOf(loginNowAction, loginDefer15Action, loginDefer60Action, loginCancelAction),
+            intentIdentifiers = emptyList<String>(),
+            options = UNNotificationCategoryOptionNone,
+        )
+
+        center.setNotificationCategories(
+            setOf(approvalCategory, mfaCodeCategory, mfaConfirmCategory, loginConsentCategory),
+        )
     }
 
     actual fun requestPermission() {

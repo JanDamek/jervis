@@ -198,10 +198,11 @@ class LoginConsentService(
                         reason = holder.reason,
                         queuedAt = now,
                         availableAt = now.plus(Duration.ofMinutes(deltaMin)),
-                        deferCount = (holder.notificationTaskId?.length ?: 0) + 1,
+                        deferCount = holder.deferCount + 1,
                     )
                     save(state.copy(currentHolder = null, queue = state.queue + deferredEntry, updatedAt = now))
-                    logger.info { "LoginConsent: DEFERRED ${holder.label} by $deltaMin min (req=$requestId)" }
+                    logger.info { "LoginConsent: DEFERRED ${holder.label} by $deltaMin min (req=$requestId, defer#${deferredEntry.deferCount})" }
+                    wake(requestId)
                     promoteIfPossible(now)
                 }
                 "cancel" -> {
@@ -267,11 +268,12 @@ class LoginConsentService(
             token = token,
             acquiredAt = now,
             expiresAt = now.plus(awaitingConsentTimeout),
+            deferCount = available.deferCount,
         )
         val newQueue = state.queue.filterNot { it.requestId == available.requestId }
         save(state.copy(currentHolder = holder, queue = newQueue, updatedAt = now))
         sendConsentPush(holder)
-        logger.info { "LoginConsent: promoted ${available.label} from queue (req=${available.requestId})" }
+        logger.info { "LoginConsent: promoted ${available.label} from queue (req=${available.requestId}, defer#${available.deferCount})" }
     }
 
     private fun evaluate(state: LoginConsentDocument, requestId: String): Pair<Boolean, WaitResult> {

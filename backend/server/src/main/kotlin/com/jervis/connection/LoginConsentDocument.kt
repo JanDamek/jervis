@@ -59,6 +59,7 @@ data class LoginConsentDocument(
         val acquiredAt: Instant,
         val expiresAt: Instant,
         val lastHeartbeatAt: Instant = acquiredAt,
+        val deferCount: Int = 0,
         val notificationTaskId: String? = null,
     )
 

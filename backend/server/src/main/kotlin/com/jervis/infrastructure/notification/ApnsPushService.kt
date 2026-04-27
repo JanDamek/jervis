@@ -97,7 +97,9 @@ class ApnsPushService(
         logger.info { "Sending APNs push to ${iosTokens.size} iOS + ${macosTokens.size} macOS device(s) for client=$clientId" }
 
         val isApproval = data["isApproval"] == "true"
-        val isUrgent = data["interruptAction"] in listOf("o365_mfa", "o365_relogin")
+        val isLoginConsent = data["type"] == "login_consent"
+        val isUrgent = isLoginConsent ||
+            data["interruptAction"] in listOf("o365_mfa", "o365_relogin")
 
         // Alert push only — never set setContentAvailable(true) together with
         // setAlertTitle/Body. Apple treats (alert + content-available) as a
@@ -114,9 +116,11 @@ class ApnsPushService(
             payloadBuilder.addCustomProperty("interruption-level", "time-sensitive")
         }
 
-        // Set category for actionable notifications
+        // Set category for actionable notifications. Login consent is checked
+        // first because its push carries no `mfaType` / `isApproval` flags.
         val mfaType = data["mfaType"]
         val category = when {
+            isLoginConsent -> "LOGIN_CONSENT"
             isUrgent && mfaType in listOf("authenticator_code", "sms_code") -> "MFA_CODE"
             isUrgent && mfaType != null -> "MFA_CONFIRM"
             isApproval -> "APPROVAL"
