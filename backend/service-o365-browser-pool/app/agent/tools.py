@@ -147,25 +147,44 @@ async def inspect_dom(
     return result
 
 
+_KNOWN_PRODUCT_URL_FRAGMENTS = (
+    "teams.microsoft.com",
+    "teams.cloud.microsoft",
+    "teams.live.com",
+    "outlook.office.com",
+    "outlook.live.com",
+)
+_KNOWN_LOGIN_URL_FRAGMENTS = (
+    "login.microsoftonline.com",
+    "login.live.com",
+    "login.microsoft.com",
+)
+_VLM_SHORTCUT_REASONS = {"cold_start", "post_navigation", "post_action_verify", "heartbeat"}
+
+
 @tool
 async def look_at_screen(
     reason: str,
     ask: str = "",
     tab_name: str = "",
 ) -> dict:
-    """VLM observation via router. Use for unknown state (cold start, post-
-    navigate, post-error, ACTIVE heartbeat) OR when inspect_dom returns
-    count=0 for a selector the agent expected to match.
+    """VLM observation via router. Use ONLY when the URL is unknown / weird
+    AND scoped DOM has already failed (count=0 on the expected selector),
+    OR when reading visual-only content such as the MFA 2-digit number
+    when DOM doesn't expose it. Calling this tool with a recognisable
+    product / login URL bounces back with a `redirect_to_dom` hint —
+    use `inspect_dom` instead.
 
     Returns:
         {app_state, summary, visible_actions, detected_text}
 
         app_state ∈ {login, mfa, chat_list, conversation, meeting_stage,
-                     loading, unknown}
+                     loading, unknown, redirect_to_dom}
 
     Args:
-        reason: Short tag ("cold_start", "mfa_code", "post_action_verify",
-            "heartbeat", "dom_empty").
+        reason: Short tag — `mfa_code`, `dom_empty`, `icon_no_text`,
+            `cold_start_unknown_url`. Avoid `cold_start`, `post_navigation`,
+            `post_action_verify`, `heartbeat` — those are URL-derivable.
         ask: Optional focused question (e.g. "return the 2-digit number
             shown on the page"). When provided, the `detected_text` field
             carries the focused answer.
@@ -176,6 +195,43 @@ async def look_at_screen(
     if page is None:
         return {"app_state": "unknown", "summary": f"no page for tab_name={tab_name!r}",
                 "visible_actions": [], "detected_text": {}}
+
+    # Reject VLM when URL alone is decisive — saves a 30-60 s router
+    # round-trip for cold_start / post_navigation reasons.
+    try:
+        url = page.url or ""
+    except Exception:
+        url = ""
+    reason_lc = reason.lower()
+    if reason_lc in _VLM_SHORTCUT_REASONS and url:
+        for f in _KNOWN_PRODUCT_URL_FRAGMENTS:
+            if f in url:
+                return {
+                    "app_state": "redirect_to_dom",
+                    "summary": (
+                        f"URL '{url}' is a known product page. Run "
+                        "inspect_dom for the app shell selector instead "
+                        "(e.g. [data-tid='chat-list'], [role='treeitem'], "
+                        "[data-app-section]). VLM is rejected for this "
+                        "reason — see tool docstring."
+                    ),
+                    "visible_actions": [],
+                    "detected_text": {},
+                }
+        for f in _KNOWN_LOGIN_URL_FRAGMENTS:
+            if f in url:
+                return {
+                    "app_state": "redirect_to_dom",
+                    "summary": (
+                        f"URL '{url}' is a known login flow. Run "
+                        "inspect_dom for input[type='email'], "
+                        "input[type='password'], or the account-picker "
+                        "tile selectors. VLM is rejected for this "
+                        "reason — see tool docstring."
+                    ),
+                    "visible_actions": [],
+                    "detected_text": {},
+                }
     try:
         shot = await page.screenshot(type="jpeg", quality=70, full_page=False)
     except Exception as e:
