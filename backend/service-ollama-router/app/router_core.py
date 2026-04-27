@@ -552,6 +552,7 @@ class OllamaRouter:
             return await self.route_request(
                 api_path, body,
                 priority=priority, intent=intent, deadline_iso=deadline_iso,
+                capability=capability,
             )
 
         # All cascade steps (cloud tiers + local) raised quota-style
@@ -612,6 +613,7 @@ class OllamaRouter:
         priority: Priority | None = None,
         intent: str = "",
         deadline_iso: str | None = None,
+        capability: str | None = None,
     ) -> Union[AsyncIterator[dict], dict]:
         """Queue + dispatch an inference request. Returns an async iterator
         for streaming paths, or a dict for unary (embedding) paths.
@@ -633,6 +635,7 @@ class OllamaRouter:
             body=body,
             deadline_iso=deadline_iso,
             intent=intent or "",
+            capability=capability or detect_capability_from_body(api_path, body),
         )
 
         self._last_any_gpu_activity = time.monotonic()
