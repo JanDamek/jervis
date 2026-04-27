@@ -20,7 +20,7 @@ def create_health_router(browser_manager: BrowserManager) -> APIRouter:
 
     @router.get("/ready")
     async def ready() -> dict:
-        if browser_manager._browser is None:
+        if browser_manager._playwright is None:
             return {"status": "not_ready"}
         return {"status": "ready"}
 
