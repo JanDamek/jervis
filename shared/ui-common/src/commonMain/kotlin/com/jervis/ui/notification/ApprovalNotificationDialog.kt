@@ -73,7 +73,13 @@ fun UserTaskNotificationDialog(
             onDeny = onDeny,
             onDismiss = onDismiss,
         )
-        event.interruptAction == "login_consent" -> LoginConsentContent(
+        // Login consent — detect by interruptAction OR by interruptDescription
+        // shape (`requestId=...|connectionId=...`). The fallback on description
+        // covers the case where the event is replayed from a stored
+        // TaskDocument (via sidebar refresh) where interruptAction may have
+        // been dropped during serialization round-trip.
+        event.interruptAction == "login_consent" ||
+            event.interruptDescription?.contains("requestId=") == true -> LoginConsentContent(
             event = event,
             onDismiss = onDismiss,
         )

@@ -32,7 +32,7 @@ targets:
     entitlements:
       path: iosApp/iosApp.entitlements
       properties:
-        aps-environment: production
+        aps-environment: development
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.jervis

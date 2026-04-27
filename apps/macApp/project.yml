@@ -39,7 +39,7 @@ targets:
     entitlements:
       path: macApp/macApp.entitlements
       properties:
-        com.apple.developer.aps-environment: production
+        com.apple.developer.aps-environment: development
         com.apple.security.network.client: true
     settings:
       base:
