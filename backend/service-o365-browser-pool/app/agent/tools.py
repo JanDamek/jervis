@@ -290,7 +290,21 @@ _KNOWN_LOGIN_URL_FRAGMENTS = (
     "login.live.com",
     "login.microsoft.com",
 )
-_VLM_SHORTCUT_REASONS = {"cold_start", "post_navigation", "post_action_verify", "heartbeat"}
+_VLM_SHORTCUT_REASONS = {
+    "cold_start",
+    "post_navigation",
+    "post_action_verify",
+    "heartbeat",
+    # `dom_empty` is the agent's escalation when inspect_dom returned 0
+    # matches. With the new dom_stats / signed_in / shell_probe fallback,
+    # the empty result on a known product URL just means the selector
+    # was stale — the page IS loaded. Bouncing this back to DOM saves
+    # the VLM round-trip (especially valuable while the router VLM
+    # bottleneck on p40-2 is unresolved).
+    "dom_empty",
+    "cold_start_dom_empty",
+    "cold_start_unknown_url",
+}
 
 
 @tool
