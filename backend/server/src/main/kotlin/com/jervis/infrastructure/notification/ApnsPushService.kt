@@ -121,16 +121,17 @@ class ApnsPushService(
         // the alert is still displayed.
         if (isUrgent) {
             try {
-                val cls = Class.forName("com.eatthepath.pushy.apns.util.SimpleApnsPayloadBuilder\$InterruptionLevel")
+                val cls = Class.forName("com.eatthepath.pushy.apns.util.InterruptionLevel")
                 val timeSensitive = cls.enumConstants.firstOrNull { (it as Enum<*>).name == "TIME_SENSITIVE" }
                 if (timeSensitive != null) {
                     SimpleApnsPayloadBuilder::class.java
                         .getMethod("setInterruptionLevel", cls)
                         .invoke(payloadBuilder, timeSensitive)
+                } else {
+                    logger.warn { "InterruptionLevel.TIME_SENSITIVE constant not found on Pushy class" }
                 }
-            } catch (_: Throwable) {
-                // Pushy without InterruptionLevel — skip (not a blocker for
-                // delivery, only the bypass-DND behavior).
+            } catch (e: Throwable) {
+                logger.warn(e) { "Failed to set time-sensitive interruption-level on APNs payload" }
             }
         }
 
