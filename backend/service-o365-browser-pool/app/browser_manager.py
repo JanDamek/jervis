@@ -78,6 +78,14 @@ class BrowserManager:
         profile_dir = self._profile_dir(client_id)
         profile_dir.mkdir(parents=True, exist_ok=True)
 
+        # Migration: pre-existing state.json (cookies + localStorage from
+        # the previous BrowserManager) gets injected into the persistent
+        # context after first launch so sessions don't break. localStorage
+        # injection requires running JS in each origin — best-effort, the
+        # important auth payload is in cookies.
+        legacy_state = self._legacy_state_path(client_id)
+        do_migration = legacy_state.exists() and not (profile_dir / "Default").exists()
+
         context = await self._playwright.chromium.launch_persistent_context(
             user_data_dir=str(profile_dir),
             headless=settings.headless,
@@ -101,6 +109,8 @@ class BrowserManager:
         )
 
         self._contexts[client_id] = context
+        if do_migration:
+            await self._migrate_legacy_state(client_id, context, legacy_state)
         await self._restore_tabs(client_id, context)
         self._autosave_tasks[client_id] = asyncio.create_task(
             self._tabs_autosave_loop(client_id),
@@ -152,6 +162,42 @@ class BrowserManager:
 
     def _tabs_path(self, client_id: str) -> Path:
         return Path(settings.profiles_dir) / client_id / "tabs.json"
+
+    def _legacy_state_path(self, client_id: str) -> Path:
+        # Where the previous BrowserManager wrote `storage_state` JSON.
+        return Path(settings.profiles_dir) / client_id / "state.json"
+
+    async def _migrate_legacy_state(
+        self, client_id: str, context: BrowserContext, legacy_state: Path,
+    ) -> None:
+        """One-shot migration from the old `state.json` to the persistent
+        profile. Cookies are added directly via Playwright API. localStorage
+        is left to be re-built by the agent's normal navigation —
+        re-login may be needed on origins that depend on it. Cookies
+        carry the auth payload for O365, so this preserves sessions in
+        practice.
+
+        On success the `state.json` is renamed `state.json.migrated` so
+        the migration runs at most once per client."""
+        try:
+            state = json.loads(legacy_state.read_text())
+        except Exception as e:
+            logger.warning("Legacy state.json unreadable for %s: %s", client_id, e)
+            return
+        cookies = state.get("cookies") or []
+        if cookies:
+            try:
+                await context.add_cookies(cookies)
+                logger.info(
+                    "Migrated %d cookies from legacy state.json for %s",
+                    len(cookies), client_id,
+                )
+            except Exception:
+                logger.exception("add_cookies failed for %s", client_id)
+        try:
+            legacy_state.rename(legacy_state.with_suffix(".json.migrated"))
+        except Exception:
+            pass
 
     async def _restore_tabs(self, client_id: str, context: BrowserContext) -> None:
         """Re-open the URLs from the previous session's tabs.json on top
