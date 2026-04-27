@@ -132,6 +132,7 @@ class BrowserManager:
         if do_migration:
             await self._migrate_legacy_state(client_id, context, legacy_state)
         await self._restore_tabs(client_id, context)
+        await self._dedupe_tabs(client_id, context)
         self._autosave_tasks[client_id] = asyncio.create_task(
             self._tabs_autosave_loop(client_id),
         )
@@ -306,6 +307,46 @@ class BrowserManager:
                     await page.close()
                 except Exception:
                     pass
+
+    async def _dedupe_tabs(self, client_id: str, context: BrowserContext) -> None:
+        """Close redundant tabs that the agent should never have seen:
+          - extra about:blank pages (only one is useful, e.g. for the
+            agent to navigate from)
+          - duplicate URLs (same login flow opened multiple times)
+        Keeps the FIRST occurrence of each URL plus at most one
+        about:blank slot.
+        """
+        seen_urls: set[str] = set()
+        kept_blank = False
+        to_close: list = []
+        for page in list(context.pages):
+            if page.is_closed():
+                continue
+            url = ""
+            try:
+                url = page.url or ""
+            except Exception:
+                continue
+            if url in ("", "about:blank"):
+                if kept_blank:
+                    to_close.append(page)
+                else:
+                    kept_blank = True
+                continue
+            if url in seen_urls:
+                to_close.append(page)
+                continue
+            seen_urls.add(url)
+        for page in to_close:
+            try:
+                await page.close()
+            except Exception:
+                pass
+        if to_close:
+            logger.info(
+                "Closed %d redundant tab(s) for client %s (duplicates / extra about:blank)",
+                len(to_close), client_id,
+            )
 
     async def _tabs_autosave_loop(self, client_id: str) -> None:
         try:

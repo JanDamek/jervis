@@ -353,6 +353,33 @@ class LoginConsentService(
      * resolve the task on respond / release / expiry.
      */
     private suspend fun sendConsentPush(holder: LoginConsentDocument.Holder) {
+        // Cleanup: any stale login_consent tasks from previous holders or
+        // expired requests still sitting in the chat sidebar must be
+        // resolved before we surface fresh ones — otherwise the user
+        // sees N copies and cannot tell which one is live (hit by user
+        // 2026-04-27: 4× "K vyřízení" for the same connection).
+        try {
+            val staleTasks = taskRepository
+                .findByStateOrderByCreatedAtAsc(TaskStateEnum.USER_TASK)
+                .toList()
+                .filter { it.actionType == "login_consent" || it.sourceUrn.value.startsWith("login_consent::") }
+            for (t in staleTasks) {
+                taskRepository.save(t.copy(state = TaskStateEnum.DONE, lastActivityAt = Instant.now()))
+                try {
+                    notificationRpc.emitUserTaskCancelled(
+                        clientId = t.clientId.toString(),
+                        taskId = t.id.toString(),
+                        title = t.pendingUserQuestion ?: "Login consent",
+                    )
+                } catch (_: Exception) {}
+            }
+            if (staleTasks.isNotEmpty()) {
+                logger.info { "LoginConsent: cleaned ${staleTasks.size} stale consent task(s) before promoting ${holder.label}" }
+            }
+        } catch (e: Exception) {
+            logger.warn { "Stale-task cleanup failed: ${e.message}" }
+        }
+
         val title = "JERVIS — login ${holder.label}"
         val body = "Pod potřebuje přihlásit ${holder.label}. OK teď, za 15 min, za 1 hod, nebo zrušit?"
         val connection = try {
