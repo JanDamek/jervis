@@ -157,7 +157,10 @@ class ApnsPushService(
                 val response = client.sendNotification(notification).get()
 
                 if (response.isAccepted) {
-                    logger.debug { "APNs push sent to device=${tokenDoc.deviceId} (topic=$topic)" }
+                    logger.info {
+                        "APNs ACCEPTED device=${tokenDoc.deviceId} topic=$topic " +
+                            "platform=${tokenDoc.platform} apnsId=${response.apnsId}"
+                    }
                 } else {
                     val reason = response.rejectionReason.orElse("unknown")
                     logger.warn { "APNs push rejected for device=${tokenDoc.deviceId} (topic=$topic): $reason" }
