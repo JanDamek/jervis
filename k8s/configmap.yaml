@@ -223,7 +223,7 @@ data:
   # priority and preempts running jobs so user-waiting audio doesn't
   # queue behind background work. Prompt tuned to 30B (coding-strong,
   # handles long-form normalization cleanly).
-  GPU_MODEL_SETS: '{"p40-1":["bge-m3","qwen3-coder-tool:30b"],"p40-2":["bge-m3"]}'
+  GPU_MODEL_SETS: '{"p40-1":["bge-m3","qwen3-coder-tool:30b"],"p40-2":["bge-m3","qwen3:14b","qwen3-vl-tool:latest"]}'
   ORCHESTRATOR_RESERVATION_TIMEOUT_S: "600"
   ORCHESTRATOR_IDLE_TIMEOUT_S: "60"
   MODEL_LOAD_TIMEOUT_S: "300"
