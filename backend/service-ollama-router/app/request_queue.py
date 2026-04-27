@@ -172,14 +172,34 @@ class RequestQueue:
             except (asyncio.CancelledError, Exception):
                 pass
 
-        if cancel_task in done:
-            logger.warning(
-                "QUEUE_CANCEL: id=%s — client disconnected while queued",
-                request.request_id,
-            )
-            raise QueueCancelled("cancelled while queued")
+        # Future result always wins over a simultaneous cancel signal.
+        if future_task in done:
+            return future.result()
 
-        return future.result()
+        # cancel_event fired before the future resolved.
+        if request.state == RequestState.PREEMPTED:
+            # Preempted by a higher-priority request — re-queue instead of
+            # discarding. Reset state so the dispatcher can pick it up again.
+            request.cancel_event.clear()
+            request.state = RequestState.QUEUED
+            group = request.queue_group
+            new_future: asyncio.Future[SubmitResult] = asyncio.get_event_loop().create_future()
+            self._seq_counter += 1
+            self._queues[group].put_nowait(
+                (int(request.priority), self._seq_counter, QueueEntry(request=request, future=new_future))
+            )
+            self._dispatch_events[group].set()
+            logger.info(
+                "QUEUE_REQUEUE: id=%s group=%s — re-queued after preemption",
+                request.request_id, group.value,
+            )
+            return await self._wait_for_result(request, new_future)
+
+        logger.warning(
+            "QUEUE_CANCEL: id=%s — client disconnected while queued",
+            request.request_id,
+        )
+        raise QueueCancelled("cancelled while queued")
 
     def notify_slot_freed(self, group: QueueGroup | None = None) -> None:
         if group is not None:
@@ -256,6 +276,17 @@ class RequestQueue:
             self._router.notify_critical_activity(gpu.name)
 
     async def _resolve_queued(self, backend: str, entry: QueueEntry) -> None:
+        # If preempted between pre_claim_slot and here, skip dispatch and free
+        # the claimed slot so the scheduler can reassign it.
+        if entry.request.state == RequestState.PREEMPTED:
+            logger.info(
+                "QUEUE_SKIP: id=%s — preempted before dispatch; releasing slot",
+                entry.request.request_id,
+            )
+            self._cleanup_backend(backend, entry.request)
+            self.notify_slot_freed()
+            return
+
         wait_time = time.monotonic() - entry.queued_at
         logger.info(
             "QUEUE_DISPATCH: id=%s waited=%.2fs → %s",

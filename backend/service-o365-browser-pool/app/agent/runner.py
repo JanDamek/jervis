@@ -182,7 +182,12 @@ class PodAgent:
                 HumanMessage(content=(
                     f"Pod started for connection_id={self.connection_id}. "
                     f"login_url={self.login_url}. capabilities={self.capabilities}. "
-                    "Cold start — first action: look_at_screen(reason='cold_start')."
+                    "Cold start — follow the COLD START procedure from the system prompt: "
+                    "read the state block below FIRST. "
+                    "If every tab shows about:blank, open Teams directly via open_tab(). "
+                    "If any tab has a known product or login URL, call "
+                    "look_at_screen(reason='cold_start') on that tab. "
+                    "Only call look_at_screen if the URL alone is not decisive."
                 )),
             ],
             "client_id": self.client_id,
@@ -267,7 +272,18 @@ class PodAgent:
 
         Restart-from-ERROR is handled by the existing watcher /
         report_state(STARTING) recovery path — no notify, no task.
+
+        AWAITING_MFA is exempt: the agent intentionally loops while
+        polling for the user to approve the Authenticator push. The
+        stuck detector must not escalate to ERROR in that state.
         """
+        if self.ctx.state_manager.state == PodState.AWAITING_MFA:
+            logger.info(
+                "STUCK: ignoring in AWAITING_MFA state — agent is waiting for MFA approval"
+            )
+            self._recent_tool_calls.clear()
+            return
+
         name, args_repr = self._recent_tool_calls[-1]
         logger.warning(
             "STUCK: agent repeated %s(%s) %d× — breaking out (no user task)",
