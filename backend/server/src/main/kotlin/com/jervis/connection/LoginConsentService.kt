@@ -1,9 +1,17 @@
 package com.jervis.connection
 
 import com.jervis.common.types.ClientId
+import com.jervis.common.types.ConnectionId
+import com.jervis.common.types.SourceUrn
+import com.jervis.common.types.TaskId
+import com.jervis.dto.task.TaskStateEnum
+import com.jervis.dto.task.TaskTypeEnum
 import com.jervis.infrastructure.notification.ApnsPushService
 import com.jervis.infrastructure.notification.FcmPushService
 import com.jervis.preferences.DeviceTokenRepository
+import com.jervis.rpc.NotificationRpcImpl
+import com.jervis.task.TaskDocument
+import com.jervis.task.TaskRepository
 import jakarta.annotation.PostConstruct
 import jakarta.annotation.PreDestroy
 import kotlinx.coroutines.CompletableDeferred
@@ -49,6 +57,9 @@ class LoginConsentService(
     private val repository: LoginConsentRepository,
     private val fcmPushService: FcmPushService,
     private val apnsPushService: ApnsPushService,
+    private val taskRepository: TaskRepository,
+    private val notificationRpc: NotificationRpcImpl,
+    private val connectionRepository: ConnectionRepository,
     private val deviceTokenRepository: DeviceTokenRepository? = null,
 ) {
     private val logger = KotlinLogging.logger {}
@@ -202,12 +213,16 @@ class LoginConsentService(
                     )
                     save(state.copy(currentHolder = null, queue = state.queue + deferredEntry, updatedAt = now))
                     logger.info { "LoginConsent: DEFERRED ${holder.label} by $deltaMin min (req=$requestId, defer#${deferredEntry.deferCount})" }
+                    // Drop the current chat bubble — a new one will appear when the
+                    // entry is promoted again after `availableAt` expires.
+                    resolveConsentTasks(requestId)
                     wake(requestId)
                     promoteIfPossible(now)
                 }
                 "cancel" -> {
                     save(state.copy(currentHolder = null, updatedAt = now))
                     logger.info { "LoginConsent: CANCELLED ${holder.label} (req=$requestId)" }
+                    resolveConsentTasks(requestId)
                     wake(requestId)
                     promoteIfPossible(now)
                 }
@@ -231,6 +246,7 @@ class LoginConsentService(
             }
             save(state.copy(currentHolder = null, updatedAt = Instant.now()))
             logger.info { "LoginConsent: RELEASED ${holder.label} outcome=$outcome (req=$requestId)" }
+            resolveConsentTasks(requestId)
             promoteIfPossible(Instant.now())
             "ok"
         }
@@ -245,6 +261,7 @@ class LoginConsentService(
             if (holder != null && now.isAfter(holder.expiresAt)) {
                 logger.warn { "LoginConsent: holder ${holder.label} EXPIRED — force release" }
                 save(state.copy(currentHolder = null, updatedAt = now))
+                resolveConsentTasks(holder.requestId)
                 wake(holder.requestId)
             }
             promoteIfPossible(Instant.now())
@@ -322,25 +339,76 @@ class LoginConsentService(
     }
 
     /**
-     * Push the consent notification to ALL of the user's registered
-     * devices (FCM + APNs). Notification carries APNs `category` =
-     * `LOGIN_CONSENT` so iOS surfaces the four action buttons that the
-     * user registered in `NotificationDelegate.swift`.
+     * Surface the consent request on user-facing channels:
+     *   1. TaskDocument with `interruptAction = "login_consent"` so the
+     *      chat UI shows a sticky bubble with the four action buttons —
+     *      the user can come back to it after dismissing the push.
+     *   2. kRPC emit (UserTaskCreated) so any active UI session
+     *      reacts immediately.
+     *   3. FCM + APNs push to all registered devices, with
+     *      `category=LOGIN_CONSENT` so iOS / Apple Watch render the
+     *      four action buttons natively.
+     *
+     * sourceUrn is `login_consent::<requestId>` — used to find and
+     * resolve the task on respond / release / expiry.
      */
     private suspend fun sendConsentPush(holder: LoginConsentDocument.Holder) {
         val title = "JERVIS — login ${holder.label}"
-        val body = "Pod potřebuje přihlásit ${holder.label}. OK teď?"
-        val data = mapOf(
-            "type" to "login_consent",
-            "interruptAction" to "login_consent",
-            "requestId" to holder.requestId,
-            "connectionId" to holder.connectionId,
-            "label" to holder.label,
-            "category" to "LOGIN_CONSENT",
-            "reason" to holder.reason,
-        )
+        val body = "Pod potřebuje přihlásit ${holder.label}. OK teď, za 15 min, za 1 hod, nebo zrušit?"
+        val connection = try {
+            connectionRepository.getById(ConnectionId(ObjectId(holder.connectionId)))
+        } catch (_: Exception) {
+            null
+        }
+        val connectionName = connection?.name ?: holder.label
         val clientIds = resolveClientIds()
+
         for (cid in clientIds) {
+            // 1. TaskDocument — sticky chat bubble so the user can come
+            //    back to it after dismissing the push notification.
+            try {
+                val task = TaskDocument(
+                    id = TaskId.generate(),
+                    clientId = cid,
+                    type = TaskTypeEnum.USER_TASK,
+                    state = TaskStateEnum.QUEUED,
+                    sourceUrn = SourceUrn("login_consent::${holder.requestId}"),
+                    pendingUserQuestion = title,
+                    userQuestionContext = buildString {
+                        appendLine(body)
+                        appendLine()
+                        appendLine("**Důvod:** ${holder.reason}")
+                        appendLine("**Connection:** $connectionName")
+                    },
+                    priorityScore = 80, // higher than meeting_invite, lower than urgent_message
+                    lastActivityAt = Instant.now(),
+                    actionType = "login_consent",
+                )
+                taskRepository.save(task)
+
+                notificationRpc.emitUserTaskCreated(
+                    clientId = cid.toString(),
+                    taskId = task.id.toString(),
+                    title = title,
+                    interruptAction = "login_consent",
+                    interruptDescription = "requestId=${holder.requestId}|connectionId=${holder.connectionId}",
+                    connectionName = connectionName,
+                )
+            } catch (e: Exception) {
+                logger.warn { "LoginConsent task surface failed for $cid: ${e.message}" }
+            }
+
+            // 2. Push to phones / watches. Even though the chat bubble
+            //    exists, the push is the primary UX (Apple Watch).
+            val data = mapOf(
+                "type" to "login_consent",
+                "interruptAction" to "login_consent",
+                "requestId" to holder.requestId,
+                "connectionId" to holder.connectionId,
+                "label" to holder.label,
+                "category" to "LOGIN_CONSENT",
+                "reason" to holder.reason,
+            )
             try {
                 fcmPushService.sendPushNotification(cid.toString(), title, body, data)
             } catch (e: Exception) {
@@ -351,6 +419,35 @@ class LoginConsentService(
             } catch (e: Exception) {
                 logger.warn { "LoginConsent APNs push failed for $cid: ${e.message}" }
             }
+        }
+    }
+
+    /**
+     * Resolve any open TaskDocument(s) tracking this consent request.
+     * Called after the holder transitions to a terminal state
+     * (granted-and-released, declined, expired). Drops the chat bubble
+     * and emits UserTaskCancelled to UI subscribers.
+     */
+    private suspend fun resolveConsentTasks(requestId: String) {
+        try {
+            val urn = SourceUrn("login_consent::$requestId")
+            val openTasks = taskRepository.findBySourceUrnAndStateIn(
+                urn, listOf(TaskStateEnum.NEW, TaskStateEnum.QUEUED, TaskStateEnum.INDEXING),
+            ).toList()
+            for (t in openTasks) {
+                taskRepository.save(t.copy(state = TaskStateEnum.DONE, lastActivityAt = Instant.now()))
+                try {
+                    notificationRpc.emitUserTaskCancelled(
+                        clientId = t.clientId.toString(),
+                        taskId = t.id.toString(),
+                        title = t.pendingUserQuestion ?: "Login consent",
+                    )
+                } catch (e: Exception) {
+                    logger.warn { "LoginConsent task cancel emit failed: ${e.message}" }
+                }
+            }
+        } catch (e: Exception) {
+            logger.warn { "LoginConsent task resolve failed for $requestId: ${e.message}" }
         }
     }
 
