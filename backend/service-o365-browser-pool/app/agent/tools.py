@@ -198,6 +198,49 @@ async def inspect_dom(
                 "matches": [],
                 "tried": list(_SHELL_FALLBACK_SELECTORS),
             }
+        # Last-resort DOM stats so the agent always has *something* concrete
+        # about the page state. Counts total elements, samples top-level
+        # tagNames, body class. Lets the agent decide between "page still
+        # hydrating" (few elements) and "page fully loaded but selectors
+        # don't match what we expected" (lots of elements, distinct classes).
+        try:
+            stats = await page.evaluate(
+                """
+                () => {
+                  const all = document.querySelectorAll('*');
+                  const tagCounts = {};
+                  all.forEach(el => {
+                    const t = el.tagName.toLowerCase();
+                    tagCounts[t] = (tagCounts[t] || 0) + 1;
+                  });
+                  const top = Object.entries(tagCounts)
+                    .sort((a, b) => b[1] - a[1]).slice(0, 8)
+                    .map(([t, n]) => `${t}:${n}`);
+                  const bodyClasses = document.body
+                    ? (document.body.className || '').slice(0, 200) : '';
+                  const dataTids = new Set();
+                  for (const el of all) {
+                    const v = el.getAttribute && el.getAttribute('data-tid');
+                    if (v) { dataTids.add(v); if (dataTids.size >= 30) break; }
+                  }
+                  const ariaRoles = new Set();
+                  for (const el of all) {
+                    const v = el.getAttribute && el.getAttribute('role');
+                    if (v) { ariaRoles.add(v); if (ariaRoles.size >= 20) break; }
+                  }
+                  return {
+                    total: all.length,
+                    top_tags: top,
+                    body_class: bodyClasses,
+                    sample_data_tids: [...dataTids],
+                    sample_roles: [...ariaRoles],
+                  };
+                }
+                """
+            )
+            result["dom_stats"] = stats
+        except Exception as e:
+            result["dom_stats"] = {"error": str(e)}
     return result
 
 
