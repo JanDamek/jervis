@@ -86,12 +86,21 @@ class BrowserManager:
         legacy_state = self._legacy_state_path(client_id)
         do_migration = legacy_state.exists() and not (profile_dir / "Default").exists()
 
-        # Suppress "Restore Pages?" prompt on launch. After a pod kill (k8s
-        # restart, OOM, eviction) Chromium considers the previous shutdown
-        # unclean and shows a yellow infobar / dialog asking the user to
-        # restore. The agent has no way to dismiss it without VNC, so the
-        # whole pod is blocked. Tab URLs are owned by `tabs.json` (saved
-        # every 30 s); the in-Chromium session restore is redundant.
+        # Clean stale Chromium singleton locks. After a pod kill (k8s
+        # restart, OOM, eviction) Chromium leaves SingletonLock /
+        # SingletonCookie / SingletonSocket symlinks pointing at the
+        # previous pod's hostname. New Chromium refuses to launch with
+        # `Target page, context or browser has been closed` because it
+        # interprets the lock as another live instance. Safe to remove —
+        # we own the profile dir.
+        self._unlink_stale_singletons(profile_dir)
+
+        # Suppress "Restore Pages?" prompt on launch. After a pod kill
+        # Chromium considers the previous shutdown unclean and shows a
+        # yellow infobar / dialog asking the user to restore. The agent
+        # has no way to dismiss it without VNC. Tab URLs are owned by
+        # `tabs.json` (saved every 30 s); in-Chromium session restore
+        # is redundant.
         self._mark_chromium_exit_clean(profile_dir)
 
         context = await self._playwright.chromium.launch_persistent_context(
@@ -177,6 +186,22 @@ class BrowserManager:
     def _legacy_state_path(self, client_id: str) -> Path:
         # Where the previous BrowserManager wrote `storage_state` JSON.
         return Path(settings.profiles_dir) / client_id / "state.json"
+
+    def _unlink_stale_singletons(self, profile_dir: Path) -> None:
+        """Remove SingletonLock / SingletonCookie / SingletonSocket from
+        the profile dir before relaunching Chromium. They are symlinks
+        to the previous pod's hostname; with the new hostname Chromium
+        treats them as another live instance and aborts.
+
+        Safe because each pod owns its own profile dir (one client per
+        pod) — there cannot be a concurrent Chromium that we would race."""
+        for name in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
+            path = profile_dir / name
+            try:
+                if path.is_symlink() or path.exists():
+                    path.unlink(missing_ok=True)
+            except Exception as e:
+                logger.warning("Failed to unlink %s: %s", path, e)
 
     def _mark_chromium_exit_clean(self, profile_dir: Path) -> None:
         """Edit the Chromium Preferences JSON to declare the last exit as
