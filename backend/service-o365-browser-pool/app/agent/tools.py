@@ -103,6 +103,19 @@ async def _settle_after_action(page, max_wait_ms: int = 2500) -> dict:
 
 # ---- Observation --------------------------------------------------------
 
+_SHELL_FALLBACK_SELECTORS = (
+    "[data-tid='app-bar']",
+    "[data-tid='chat-list']",
+    "[data-tid='chat-list-item']",
+    "[role='treeitem']",
+    "[data-app-section]",
+    "main",
+    "[role='main']",
+    "[data-tid='search-box']",
+    "[data-tid='left-rail']",
+)
+
+
 @tool
 async def inspect_dom(
     selector: str,
@@ -115,11 +128,21 @@ async def inspect_dom(
     iframe pierce. Generic — NO semantic interpretation.
 
     Returns:
-        {matches: [{text, attrs, bbox}], count, url, truncated}
+        {matches: [{text, attrs, bbox}], count, url, truncated, shell_probe}
 
-    Use for fast (~50–200 ms) verification of a known field. When count=0
-    or the shape is unexpected, escalate to `look_at_screen` — do not
-    guess another selector.
+    The agent supplies the primary `selector`. If it matches at least one
+    element, that match-set is returned as before. If it returns count=0,
+    the tool transparently probes a SECOND wave of common Microsoft shell
+    selectors (app-bar, chat-list, treeitem, etc.) so the agent always
+    sees concrete page evidence on the next turn — never an empty hand
+    on a steady product URL. The original `selector` and its empty
+    result stay in the response; the fallback hits land in
+    `shell_probe.matches` with the selector that fired in
+    `shell_probe.matched_selector`.
+
+    Use for fast (~50–200 ms) verification of a known field. When primary
+    + shell_probe both come back empty AND the URL is unknown, then
+    escalate to `look_at_screen`.
 
     Args:
         selector: CSS selector. Pierces shadow-DOM boundaries automatically.
@@ -144,6 +167,37 @@ async def inspect_dom(
     ctx.last_dom_signature = result["url"]
     ctx.last_observation_kind = "dom"
     ctx.last_observation_at = _utcnow_iso()
+
+    # Auto-fallback: if the primary selector found nothing, try the well-
+    # known Microsoft 365 shell selectors so the agent always gets a
+    # concrete shape for the page. Avoids empty-hand loops where the
+    # primary selector is slightly stale (Teams ships new data-tids
+    # often) and the agent would otherwise escalate to VLM.
+    if result.get("count", 0) == 0 and selector not in _SHELL_FALLBACK_SELECTORS:
+        for probe in _SHELL_FALLBACK_SELECTORS:
+            if probe == selector:
+                continue
+            try:
+                probe_result = await _dom_query.query(
+                    page, selector=probe, attrs=attrs or ["data-tid", "aria-label", "role"],
+                    text=text, max_matches=min(max_matches, 50),
+                )
+            except Exception:
+                continue
+            if probe_result.get("count", 0) > 0:
+                result["shell_probe"] = {
+                    "matched_selector": probe,
+                    "count": probe_result["count"],
+                    "matches": probe_result["matches"][:20],
+                }
+                break
+        else:
+            result["shell_probe"] = {
+                "matched_selector": None,
+                "count": 0,
+                "matches": [],
+                "tried": list(_SHELL_FALLBACK_SELECTORS),
+            }
     return result
 
 

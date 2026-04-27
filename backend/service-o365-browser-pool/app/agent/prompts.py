@@ -188,10 +188,28 @@ Decision ladder (URL → DOM → VLM, never reverse):
 1. URL matches a steady product page (teams.cloud.microsoft,
    teams.microsoft.com/v2, outlook.office.com/{mail,calendar},
    teams.live.com/v2):
-   `inspect_dom` for the app shell selector
-   — `[data-tid="chat-list"]`, `[role="treeitem"]`, `[data-app-section]`,
-   `div[role="main"]` — depending on which product. Found ⇒
-   `report_state('ACTIVE')` and start the scrape cycle. No VLM.
+   `inspect_dom` for the app shell selector — try a BROAD union so
+   any one Teams variant hits:
+     `[data-tid="app-bar"], [data-tid="chat-list"],
+      [data-tid="chat-list-item"], [role="treeitem"],
+      [data-app-section], div[role="main"], main`
+   Found (count > 0) ⇒ `report_state('ACTIVE')` and start the
+   scrape cycle. No VLM.
+
+   **URL trumps DOM emptiness on product pages.** If `inspect_dom`
+   returns count=0 on a STEADY product URL (the URL list above),
+   the page is still hydrating React or Teams shipped a new
+   `data-tid` we don't know yet — it is NOT a logged-out state.
+   Do NOT escalate to VLM and do NOT report ERROR. Instead:
+     a. `wait(3, "react_hydration")`
+     b. `inspect_dom` again with the broad selector union.
+     c. If still count=0 → `report_state('ACTIVE')` anyway with
+        a note that selectors didn't match; the scrape cycle will
+        re-discover the correct ones turn by turn.
+   This rule explicitly overrides COLD START step 4 (the
+   "look_at_screen(reason='cold_start_dom_empty')" escalation) for
+   known product URLs — VLM costs are saved for genuinely unknown
+   pages.
 
 2. URL matches a login flow (login.microsoftonline.com,
    login.live.com, login.microsoft.com/consumers/fido, /oauth2/*,
