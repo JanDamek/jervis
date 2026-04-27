@@ -367,19 +367,21 @@ class LoginConsentService(
             // 1. TaskDocument — sticky chat bubble so the user can come
             //    back to it after dismissing the push notification.
             try {
+                val description = buildString {
+                    appendLine(body)
+                    appendLine()
+                    appendLine("**Důvod:** ${holder.reason}")
+                    appendLine("**Connection:** $connectionName")
+                }
                 val task = TaskDocument(
-                    id = TaskId.generate(),
                     clientId = cid,
-                    type = TaskTypeEnum.USER_TASK,
-                    state = TaskStateEnum.QUEUED,
+                    taskName = title,
+                    content = description,
+                    type = TaskTypeEnum.SYSTEM,
+                    state = TaskStateEnum.USER_TASK,
                     sourceUrn = SourceUrn("login_consent::${holder.requestId}"),
                     pendingUserQuestion = title,
-                    userQuestionContext = buildString {
-                        appendLine(body)
-                        appendLine()
-                        appendLine("**Důvod:** ${holder.reason}")
-                        appendLine("**Connection:** $connectionName")
-                    },
+                    userQuestionContext = description,
                     priorityScore = 80, // higher than meeting_invite, lower than urgent_message
                     lastActivityAt = Instant.now(),
                     actionType = "login_consent",
@@ -432,7 +434,7 @@ class LoginConsentService(
         try {
             val urn = SourceUrn("login_consent::$requestId")
             val openTasks = taskRepository.findBySourceUrnAndStateIn(
-                urn, listOf(TaskStateEnum.NEW, TaskStateEnum.QUEUED, TaskStateEnum.INDEXING),
+                urn, listOf(TaskStateEnum.USER_TASK, TaskStateEnum.QUEUED, TaskStateEnum.NEW),
             ).toList()
             for (t in openTasks) {
                 taskRepository.save(t.copy(state = TaskStateEnum.DONE, lastActivityAt = Instant.now()))
