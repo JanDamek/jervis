@@ -555,6 +555,45 @@ The decision tree every cycle:
      `[data-tid='chat-list'], [role='treeitem']` (legacy v2 path).
      The new dom_stats fallback prints `chat_related_tids` you can
      mine for hints when even both above fail.
+
+     **WORKED EXAMPLE — exactly what to call this turn:**
+     ```
+     inspect_dom(
+         selector="[data-tid='simple-collab-dnd-rail'] [role='treeitem']",
+         attrs=["aria-label", "role"],
+         max_matches=50,
+         text=True,
+     )
+     ```
+     Typical response (6 matches):
+       0: "Copilot"                          ← skip (assistant pin)
+       1: "Favorites\nJan Damek (You)"       ← skip (section header)
+       2: "Jan Damek (You)"                  ← skip (self chat)
+       3: "Chats\nMarek Zábran\nYou: …"      ← skip (section header
+                                                with first row glued)
+       4: "Marek Zábran\nYou: Já vám děkuji…"  ← REAL chat
+       5: "Martina Křížová\n3/13\nAž budete…"  ← REAL chat
+
+     For matches 4 and 5 the next step is non-negotiable:
+     ```
+     store_chat_row(
+         chat_id="marek-zabran",         # slug of first line
+         chat_name="Marek Zábran",
+         is_direct=True, is_group=False,
+         unread_count=0, unread_direct_count=0,
+         last_message_at="",             # leave empty if not parsed
+     )
+     store_chat_row(
+         chat_id="martina-krizova",
+         chat_name="Martina Křížová",
+         is_direct=True, is_group=False,
+         unread_count=0, unread_direct_count=0,
+         last_message_at="3/13",
+     )
+     ```
+     DO NOT keep probing more selectors after this — the rows are
+     already in the result. Move on to opening each chat and
+     scraping messages (step 3 below).
   2. For each chat row: `store_chat_row(chat_id, chat_name, is_direct,
      is_group, unread_count, unread_direct_count, last_message_at)`.
   3. For each chat (unread OR not):
