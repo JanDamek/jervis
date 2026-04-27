@@ -537,13 +537,24 @@ scrape itself ignores the unread flag — a chat the user already
 "read" on their phone is still missing from Mongo. Scrape all chats.
 
 The decision tree every cycle:
-  1. inspect_dom on the sidebar → chat rows. Teams v2
-     (teams.cloud.microsoft / teams.microsoft.com/v2) often exposes
-     the row but with NULL `data-chat-id` / `data-tid` attributes —
-     the `text` field is still reliable. If the DOM has no stable
-     id, derive `chat_id` by slugifying the chat name (lowercase,
-     non-alnum → `-`, trim). Example: "Marek Zábran" → "marek-zabran".
-     Keep the slug consistent across cycles so dedup holds.
+  1. inspect_dom on the sidebar → chat rows.
+     **Teams Cloud (teams.cloud.microsoft) confirmed selector:**
+       `[data-tid='simple-collab-dnd-rail'] [role='treeitem']`
+     This returns the full chat sidebar list — direct chats, group
+     chats, "Favorites", "Chats" header, plus pinned items like
+     "Copilot" and "Jan Damek (You)" (skip those — not real chats).
+     Each match's `text` is multi-line:
+       "<Sender / Group Name>\n[<time>\n]<Last message preview>"
+     Teams v2 exposes the row with NULL `data-chat-id` / `data-tid`
+     attributes — derive `chat_id` by slugifying the first text line
+     (lowercase, non-alnum → `-`, trim). Example: "Marek Zábran" →
+     "marek-zabran". Keep the slug consistent across cycles so dedup
+     holds.
+
+     If the confirmed selector returns 0 matches, fall back to
+     `[data-tid='chat-list'], [role='treeitem']` (legacy v2 path).
+     The new dom_stats fallback prints `chat_related_tids` you can
+     mine for hints when even both above fail.
   2. For each chat row: `store_chat_row(chat_id, chat_name, is_direct,
      is_group, unread_count, unread_direct_count, last_message_at)`.
   3. For each chat (unread OR not):
