@@ -164,10 +164,17 @@ class ApnsPushService(
         for ((tokenDoc, topic) in tokens) {
             try {
                 val sanitizedToken = TokenUtil.sanitizeTokenString(tokenDoc.token)
-                val expiration = if (isUrgent) {
-                    java.time.Instant.now().plusSeconds(120) // 2 min TTL for MFA
-                } else {
-                    java.time.Instant.now().plusSeconds(86400)
+                val expiration = when {
+                    // Login consent has a 10-minute server-side hold; push TTL
+                    // must match so the alert survives until the user opens the
+                    // device. iOS keeps the push in apsd's queue until the
+                    // device's APNs connection wakes up (background app open,
+                    // screen unlock) — but only within this TTL.
+                    isLoginConsent -> java.time.Instant.now().plusSeconds(600) // 10 min
+                    // MFA challenges from Microsoft expire in ~60-90 s; keep
+                    // the TTL tight so a stale code doesn't surface.
+                    isUrgent -> java.time.Instant.now().plusSeconds(120) // 2 min
+                    else -> java.time.Instant.now().plusSeconds(86400)
                 }
                 val priority = if (isUrgent) {
                     com.eatthepath.pushy.apns.DeliveryPriority.IMMEDIATE
