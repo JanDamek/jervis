@@ -594,6 +594,20 @@ The decision tree every cycle:
      DO NOT keep probing more selectors after this — the rows are
      already in the result. Move on to opening each chat and
      scraping messages (step 3 below).
+
+     **HARD RULE — chat list write-through.** Whenever `inspect_dom`
+     returns 3+ matches AND any match's `text` field starts with
+     a person/group-shaped first line followed by either a date
+     ("3/29", "Yesterday", "10:14 AM") or "You: …" / "<sender>: …"
+     on the next line, your **VERY NEXT tool call** must be
+     `store_chat_row` for each REAL chat row (skip section headers
+     like "Chats", "Favorites", "Copilot", "Jan Damek (You)").
+     Forbidden between matching chat-list inspect_dom and the
+     store_chat_row batch: no more inspect_dom probes, no
+     look_at_screen, no click_text, no wait. Just store. Each
+     store call is one turn; 2-5 turns total covers a typical
+     chat sidebar. Only after the store batch may you click into
+     a chat or move on.
   2. For each chat row: `store_chat_row(chat_id, chat_name, is_direct,
      is_group, unread_count, unread_direct_count, last_message_at)`.
   3. For each chat (unread OR not):
