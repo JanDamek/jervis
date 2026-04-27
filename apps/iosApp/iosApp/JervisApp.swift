@@ -35,8 +35,13 @@ class AppDelegate: NSObject, UIApplicationDelegate {
             print("Failed to configure audio session: \(error)")
         }
 
-        // Request notification permission and register for remote notifications
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
+        // Request notification permission and register for remote notifications.
+        // .timeSensitive is REQUIRED so Apple actually applies our
+        // `aps.interruption-level: "time-sensitive"` (login_consent / MFA).
+        // Without it iOS silently degrades to .active and Focus / Do Not
+        // Disturb filters the alert — APNs returns ACCEPTED with apnsId
+        // but the device never displays a banner.
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound, .timeSensitive]) { granted, error in
             if let error = error {
                 print("Notification permission error: \(error)")
                 return

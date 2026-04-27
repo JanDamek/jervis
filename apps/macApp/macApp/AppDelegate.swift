@@ -27,8 +27,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         bridge.start()
         registerNotificationCategories()
 
+        // .timeSensitive REQUIRED for `aps.interruption-level: "time-sensitive"`
+        // to bypass Focus / Do Not Disturb on macOS. Without it Apple silently
+        // degrades to active level and the alert is filtered.
         UNUserNotificationCenter.current().requestAuthorization(
-            options: [.alert, .badge, .sound]
+            options: [.alert, .badge, .sound, .timeSensitive]
         ) { granted, error in
             if let error = error {
                 appLog("[Jervis/macApp] Notification permission error: \(error)")
