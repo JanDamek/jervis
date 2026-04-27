@@ -246,7 +246,7 @@ spec:
               # Same DEVELOPMENT_TEAM + .p8 key as iOS; different apns-topic.
               value: com.jervis.macApp
             - name: APNS_PRODUCTION
-              value: "false"
+              value: "true"
           volumeMounts:
             - name: jervis-data
               mountPath: /opt/jervis/data
