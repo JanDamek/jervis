@@ -244,12 +244,24 @@ async def inspect_dom(
                   const dataTids = new Set();
                   for (const el of all) {
                     const v = el.getAttribute && el.getAttribute('data-tid');
-                    if (v) { dataTids.add(v); if (dataTids.size >= 30) break; }
+                    if (v) { dataTids.add(v); if (dataTids.size >= 100) break; }
                   }
                   const ariaRoles = new Set();
                   for (const el of all) {
                     const v = el.getAttribute && el.getAttribute('role');
-                    if (v) { ariaRoles.add(v); if (ariaRoles.size >= 20) break; }
+                    if (v) { ariaRoles.add(v); if (ariaRoles.size >= 30) break; }
+                  }
+                  // Find any element labeled with chat-list-related data-tids
+                  // so the agent has a hard pointer to where chats actually live.
+                  // Teams Cloud renames data-tids often; we surface the live names.
+                  const chatHints = new Set();
+                  const chatRe = /(chat|conversation|list|item)/i;
+                  for (const el of all) {
+                    const v = el.getAttribute && el.getAttribute('data-tid');
+                    if (v && chatRe.test(v)) {
+                      chatHints.add(v);
+                      if (chatHints.size >= 40) break;
+                    }
                   }
                   return {
                     total: all.length,
@@ -257,6 +269,7 @@ async def inspect_dom(
                     body_class: bodyClasses,
                     sample_data_tids: [...dataTids],
                     sample_roles: [...ariaRoles],
+                    chat_related_tids: [...chatHints],
                   };
                 }
                 """
