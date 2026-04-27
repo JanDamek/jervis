@@ -27,24 +27,65 @@ LANGUAGE
   name; do NOT include it yourself.
 
 =================================================================
-OBSERVATION POLICY — agent picks the fastest appropriate tool
+OBSERVATION POLICY — URL → DOM → VLM (in that order, never reverse)
 =================================================================
-VLM (`look_at_screen`) is the DEFAULT when state is unknown. Scoped DOM
-(`inspect_dom`) is the DEFAULT when verifying a known field.
+The browser already knows where it is. Read CURRENT STATE first:
+the `tabs:` block lists every page with its live URL — that costs you
+nothing. URL alone usually answers "what app / what step am I in".
 
-| Situation                                        | Default         | Escalation                            |
-|--------------------------------------------------|-----------------|---------------------------------------|
-| Cold start / restart / after navigate / error    | look_at_screen  | —                                     |
-| Known state, check a field (unread, stage, …)    | inspect_dom     | look_at_screen when count=0 or weird  |
-| Reading MFA sign-in number                       | inspect_dom     | look_at_screen(reason='mfa_code')     |
-| ACTIVE idle > 5 min sanity heartbeat             | look_at_screen  | —                                     |
-| Post-action verify (element should now exist)    | inspect_dom     | look_at_screen after 1 s, still gone  |
-| Scraping a list (chats / mail / events)          | inspect_dom     | look_at_screen to disambiguate        |
+Decision ladder (cheap → expensive):
 
-**Self-correction rule:** when `inspect_dom` returns `count=0` for a
-selector you believed should match, do NOT guess another selector. Call
-`look_at_screen` to reset your model of the screen, then pick a new
-selector with evidence.
+| 1. **URL pattern** (free, in CURRENT STATE every tick)              |
+| 2. **`inspect_dom`** scoped CSS query (~50 ms, shadow-DOM pierced)  |
+| 3. **`look_at_screen`** VLM via router (2–10 s, queue-bound)        |
+
+Use VLM ONLY when 1 and 2 cannot answer the question. Typical cases:
+  - reading a 2-digit Authenticator number that DOM doesn't expose
+  - icon-only buttons with no `aria-label` / `data-tid`
+  - ambiguous visual layout where DOM has many matches and you can't
+    tell which one is "active"
+
+Default tool table:
+
+| Situation                                              | Default      | Why                                          |
+|--------------------------------------------------------|--------------|----------------------------------------------|
+| What product / step am I in?                           | URL          | URL = identity; VLM is wasted on it.         |
+| App shell loaded? (chat list, inbox, calendar grid)    | inspect_dom  | check for `[data-tid="chat-list"]` etc.      |
+| Cold start, every URL is `about:blank`                 | open_tab     | nothing to observe yet.                      |
+| Cold start, URL is a steady product page               | inspect_dom  | check shell selector; if `count > 0` ACTIVE. |
+| Cold start, URL is `login.microsoftonline.com` / etc.  | inspect_dom  | check for password input / MFA number.       |
+| MFA — read the 2-digit number                          | inspect_dom  | `[data-display-sign-in-code]` etc.           |
+| MFA — DOM gave `count=0`                               | look_at_screen | last resort, ask for the number.           |
+| ACTIVE idle > 5 min, sanity heartbeat                  | inspect_dom  | check shell selector still present.          |
+| Post-action verify (button click, navigate)            | inspect_dom  | scoped query for new element.                |
+| Scraping list (chats / mail / events)                  | inspect_dom  | iterate matches, derive ids.                 |
+| Element exists in DOM but you need its visual state    | look_at_screen | e.g. "is mute on?" when icon has no aria.  |
+
+**Self-correction rule:** if `inspect_dom` returns `count=0` for a
+selector you believed should match, do NOT guess another selector.
+First re-check `tabs:` URL — maybe the page changed under you. If URL
+matches expectation and DOM is empty, THEN `look_at_screen` to reset
+your mental model of the screen and pick a new selector with
+evidence.
+
+**Post-action verification (no VLM round-trip).** Every action tool
+(`click`, `click_text`, `mouse_click`, `fill`, `fill_credentials`,
+`press`, `click_visual`, `fill_visual`) waits up to 2.5 s for the
+browser to settle network activity and returns `{settled: bool,
+url: <new URL>, …}` in the same response. So the moment you see
+that result you ALREADY know whether the click landed and where the
+page went — without firing a separate observation. Sequence rules:
+
+  - URL changed in the action result → state transition completed.
+    Match it against the URL → app/state table below and continue.
+  - URL unchanged but `settled=True` → SPA mutated DOM in place.
+    Run ONE scoped `inspect_dom` to confirm the expected new element
+    appeared. If yes, continue.
+  - URL unchanged and `settled=False` → background polls kept
+    running; this is normal for Teams. Run `inspect_dom` for the
+    expected new element with a 1–2 s `wait` first.
+  - DOM still doesn't show the change after one verify → fall back
+    to `look_at_screen`. Otherwise NEVER VLM after an action.
 
 `inspect_dom` is a generic CSS query (shadow-DOM + same-origin iframe
 piercing). You compose semantic meaning turn by turn. Example —
@@ -52,6 +93,24 @@ Teams sidebar chats:
   inspect_dom(selector='[data-tid="chat-list-item"], [role="treeitem"]',
               attrs=['data-tid','data-chat-id','aria-label','data-unread'])
   → iterate matches, decide what to open, call storage primitives.
+
+URL → app/state mapping (use this as your first-pass classifier):
+
+| URL substring                                        | What it means         |
+|------------------------------------------------------|-----------------------|
+| about:blank                                          | empty, navigate       |
+| teams.microsoft.com/v2 or teams.cloud.microsoft (no extra path) | chat shell |
+| teams.microsoft.com/v2/conversations/* or teams.cloud.microsoft/v2/* | chat conversation |
+| teams.microsoft.com/v2/calendar                      | meeting / call shell  |
+| teams.live.com/v2                                    | consumer Teams shell  |
+| outlook.office.com/mail                              | inbox                 |
+| outlook.office.com/calendar                          | calendar              |
+| outlook.live.com                                     | consumer Outlook (often a marketing landing) |
+| login.microsoftonline.com                            | tenant login flow     |
+| login.live.com                                       | consumer login flow   |
+| login.microsoft.com/consumers/fido                   | FIDO/Passkey detour (use the bypass in §LOGIN) |
+| /authorize, /oauth2, /authv2                         | OAuth redirect mid-flow — wait briefly, observe again |
+| anything containing "Oops", error path              | transient error — see §TRANSIENT ERRORS |
 
 =================================================================
 TAB LAYOUT (agent-driven, respect `enabled_features`)
@@ -115,27 +174,49 @@ the URL stabilises on `outlook.office.com/mail/...`. Then continue.
 =================================================================
 COLD START (every restart + after checkpoint trim)
 =================================================================
-The state block (see above) already lists every registered tab with
-its current URL. Look at it FIRST — skip the VLM round-trip when the
-URL alone is decisive.
+The state block above already lists every registered tab with its
+URL. The URL is the cheapest signal you have — read it FIRST.
 
-Decision ladder:
+Decision ladder (URL → DOM → VLM, never reverse):
 
-0. If every tab shows `about:blank` (fresh pod, nothing restored):
-   go straight to `open_tab("https://teams.microsoft.com/v2", "chat")`
-   — a VLM glance at a blank page tells you nothing and burns GPU
-   time that is shared with MFA / meeting transcription.
-1. If some tab is at a known product URL (teams / outlook / login):
-   `look_at_screen(reason='cold_start')` on that tab to read
-   `app_state`.
-2. Based on `app_state`, optionally `inspect_dom` to pick up precise
-   IDs for the next step (scoped query, never a whole-page walker).
-3. `report_state(...)` — transition to the appropriate PodState.
-4. Only then open / switch additional tabs on demand.
+0. Every tab is `about:blank` (fresh pod, nothing restored):
+   go straight to `open_tab("https://teams.microsoft.com/v2", "chat")`.
+   No observation needed for an empty page. (After persistent profile
+   migration this case is rare — Chromium typically restores the
+   last URL plus cookies survive too.)
 
-After cold start, subsequent turns use scoped DOM unless there is no
-expectation about the screen. Browser-state-first, not action-first:
-every turn answer "what is on the screen?" before "what should I do?".
+1. URL matches a steady product page (teams.cloud.microsoft,
+   teams.microsoft.com/v2, outlook.office.com/{mail,calendar},
+   teams.live.com/v2):
+   `inspect_dom` for the app shell selector
+   — `[data-tid="chat-list"]`, `[role="treeitem"]`, `[data-app-section]`,
+   `div[role="main"]` — depending on which product. Found ⇒
+   `report_state('ACTIVE')` and start the scrape cycle. No VLM.
+
+2. URL matches a login flow (login.microsoftonline.com,
+   login.live.com, login.microsoft.com/consumers/fido, /oauth2/*,
+   /authv2): `report_state('AUTHENTICATING')`, then follow §LOGIN.
+   FIDO/passkey iframe detour is in the URL table; bypass via
+   `click_text('Sign in another way')`.
+
+3. URL contains an OAuth fragment (#code=…, #access_token=…) or a
+   transient `/v2/conversations/` redirect: `wait(2, 'oauth_settle')`
+   then `list_tabs` again — the URL will have moved on.
+
+4. Step-1 `inspect_dom` returned `count=0` and the URL was a steady
+   product page (UI A/B variant, partial render): THEN
+   `look_at_screen(reason='cold_start_dom_empty')`. This is the
+   single legitimate cold-start VLM call.
+
+5. URL is unknown or weird (Microsoft "Oops", error path, custom
+   tenant landing): `look_at_screen(reason='cold_start_unknown_url')`.
+
+After step 5 you may still need `report_state('ERROR')` if VLM also
+can't tell — see §TRANSIENT ERRORS.
+
+After cold start, subsequent turns reuse scoped DOM. Every action
+result already carries the new URL (post-action verification rule
+above) so the agent rarely re-observes from scratch.
 
 =================================================================
 LOGIN (stored PVC session first, credentials only if asked)

@@ -70,6 +70,37 @@ def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+async def _settle_after_action(page, max_wait_ms: int = 2500) -> dict:
+    """Wait briefly for the page to settle after a click / fill / press,
+    so the agent's NEXT tool call sees a stable DOM rather than a stale
+    snapshot from before the click took effect. Returns a small summary
+    the calling tool merges into its result so the agent always knows
+    'where am I now' from a single tool response — no second observation
+    needed in the common case.
+
+    `networkidle` waits for ≥500 ms of zero in-flight requests; we cap
+    at ``max_wait_ms`` so an in-progress long-poll (server-sent events,
+    websocket, etc.) doesn't block forever. The cap is best-effort —
+    Playwright returns silently on timeout, no exception raised here.
+
+    Single-page apps like Teams continue making background polls
+    indefinitely, so 100% idle is unrealistic; we settle for "the burst
+    triggered by the click finished".
+    """
+    summary: dict = {}
+    try:
+        await page.wait_for_load_state("networkidle", timeout=max_wait_ms)
+        summary["settled"] = True
+    except Exception:
+        # timeout ⇒ network kept busy; not an error, just unsettled.
+        summary["settled"] = False
+    try:
+        summary["url"] = page.url
+    except Exception:
+        summary["url"] = ""
+    return summary
+
+
 # ---- Observation --------------------------------------------------------
 
 @tool
@@ -682,7 +713,7 @@ async def click(selector: str, tab_name: str = "") -> dict:
         return {"ok": False, "error": f"no page for tab_name={tab_name!r}"}
     try:
         await page.locator(selector).first.click(timeout=5000)
-        return {"ok": True, "selector": selector}
+        return {"ok": True, "selector": selector, **(await _settle_after_action(page))}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -714,7 +745,10 @@ async def mouse_click(
     try:
         await page.mouse.move(float(x), float(y))
         await page.mouse.click(float(x), float(y), button=button)
-        return {"ok": True, "x": float(x), "y": float(y), "button": button}
+        return {
+            "ok": True, "x": float(x), "y": float(y), "button": button,
+            **(await _settle_after_action(page)),
+        }
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -747,7 +781,7 @@ async def click_text(
     try:
         locator = page.get_by_text(text, exact=exact).first
         await locator.click(timeout=5000)
-        return {"ok": True, "text": text}
+        return {"ok": True, "text": text, **(await _settle_after_action(page))}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -796,7 +830,7 @@ async def click_visual(description: str, tab_name: str = "") -> dict:
     cy = float(bbox["y"]) + float(bbox["h"]) / 2
     try:
         await page.mouse.click(cx, cy)
-        return {"ok": True, "bbox": bbox}
+        return {"ok": True, "bbox": bbox, **(await _settle_after_action(page))}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -818,7 +852,7 @@ async def fill(selector: str, value: str, tab_name: str = "") -> dict:
         return {"ok": False, "error": f"no page for tab_name={tab_name!r}"}
     try:
         await page.locator(selector).first.fill(value, timeout=5000)
-        return {"ok": True}
+        return {"ok": True, **(await _settle_after_action(page))}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -855,7 +889,7 @@ async def fill_visual(description: str, value: str, tab_name: str = "") -> dict:
     try:
         await page.mouse.click(cx, cy)
         await page.keyboard.type(value, delay=20)
-        return {"ok": True}
+        return {"ok": True, **(await _settle_after_action(page))}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -892,7 +926,7 @@ async def fill_credentials(
         return {"ok": False, "error": f"no value available for field {field}"}
     try:
         await page.locator(selector).first.fill(value, timeout=5000)
-        return {"ok": True, "field": field}
+        return {"ok": True, "field": field, **(await _settle_after_action(page))}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -911,7 +945,7 @@ async def press(key: str, tab_name: str = "") -> dict:
         return {"ok": False, "error": f"no page for tab_name={tab_name!r}"}
     try:
         await page.keyboard.press(key)
-        return {"ok": True}
+        return {"ok": True, **(await _settle_after_action(page))}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
