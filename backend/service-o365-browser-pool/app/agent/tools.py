@@ -503,6 +503,24 @@ async def report_capabilities(capabilities: list[str]) -> dict:
         return {"ok": False, "error": str(e)}
 
 
+@tool
+async def get_enabled_features() -> dict:
+    """Return the user-configured list of features this pod is allowed to
+    scrape. Subset of ['CHAT_READ', 'EMAIL_READ', 'CALENDAR_READ'].
+
+    Per-connection user preference — always trust this list. If
+    EMAIL_READ is missing, do NOT open the Outlook mail tab even when
+    cookies would technically work. Mail may be handled separately
+    (e.g. dedicated IMAP connection on the same account).
+
+    The same list is always echoed in `enabled_features:` line of the
+    CURRENT STATE block — call this tool only when you need to
+    re-check explicitly (e.g. inside a chained tool call where state
+    block isn't visible)."""
+    ctx = get_pod_context()
+    return {"enabled_features": list(ctx.capabilities or [])}
+
+
 # ---- Actions ------------------------------------------------------------
 
 @tool
@@ -1429,7 +1447,8 @@ ALL_TOOLS = [
     # Observation
     inspect_dom, look_at_screen,
     # Navigation
-    list_tabs, open_tab, switch_tab, close_tab, navigate, report_capabilities,
+    list_tabs, open_tab, switch_tab, close_tab, navigate,
+    report_capabilities, get_enabled_features,
     # Actions
     click, click_text, click_visual, mouse_click, fill, fill_visual,
     fill_credentials, press, wait,

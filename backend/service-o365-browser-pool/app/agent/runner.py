@@ -90,6 +90,7 @@ class PodAgent:
             storage=storage,
             credentials=credentials or {},
             meeting_recorder=meeting_recorder,
+            capabilities=list(capabilities or []),
         )
         self._stop = asyncio.Event()
         self._task: asyncio.Task | None = None
@@ -336,12 +337,18 @@ class PodAgent:
         ]
         tab_block = "\n".join(tab_lines) if tab_lines else "- (no tabs registered)"
         login_email = (self.ctx.credentials or {}).get("email", "") or "(none)"
+        caps = self.ctx.capabilities or []
+        caps_str = ", ".join(caps) if caps else "(none — pod has no enabled features, idle)"
         return (
             "CURRENT STATE:\n"
             f"  pod_state: {sm.state.value}\n"
             f"  login_email: {login_email}  # the account this pod owns — if "
             f"an account-picker page asks which account to use, select the "
             f"tile matching this email.\n"
+            f"  enabled_features: [{caps_str}]  # ONLY open tabs / scrape "
+            f"products listed here. Subset of CHAT_READ, EMAIL_READ, "
+            f"CALENDAR_READ. User-configured per connection — never "
+            f"override based on what you observe in the browser.\n"
             f"  last_app_state: {self.ctx.last_app_state}\n"
             f"  last_observation_kind: {self.ctx.last_observation_kind or 'none'}\n"
             f"  last_observation_at: {self.ctx.last_observation_at or 'never'}\n"

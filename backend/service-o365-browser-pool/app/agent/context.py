@@ -33,6 +33,7 @@ class ToolContext:
     credentials: dict[str, str] = field(default_factory=dict)
     meeting_recorder: object | None = None
     watcher: object | None = None
+    capabilities: list[str] = field(default_factory=list)
     last_dom_delta_ts: float = 0.0
     last_dom_signature: str = ""
     last_app_state: str = "unknown"
