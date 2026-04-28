@@ -42,6 +42,15 @@ class Settings(BaseSettings):
     proxy_connect_timeout_s: float = 10.0
     proxy_write_timeout_s: float = 30.0
 
+    # Stale active-request reaper — failsafe for stream cleanup race
+    # (HTTP client disconnects mid-stream → asyncio task killed before
+    # `finally` cleanup runs → zombie left in gpu.active_requests, blocks
+    # all subsequent slot acquisition because active_request_count >=
+    # max_concurrent_llm). Reaper sweeps on this interval and evicts any
+    # request older than the threshold so dispatcher resumes.
+    stale_request_max_age_s: int = 600               # 10 min: any live LLM call past this is dead
+    stale_request_check_interval_s: int = 30         # sweep every 30s
+
     # ── Model keep_alive ────────────────────────────────────────────────
     # "-1" = never auto-unload. Router explicitly manages model lifecycle.
     default_keep_alive: str = "-1"

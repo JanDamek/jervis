@@ -177,6 +177,7 @@ class OllamaRouter:
         self._watchdog_task = asyncio.create_task(self._reservation_watchdog())
         self._active_requests_task = asyncio.create_task(self._active_requests_logger())
         self._idle_notify_task = asyncio.create_task(self._idle_notify_watchdog())
+        self._stale_reaper_task = asyncio.create_task(self._stale_request_reaper())
         # Start warmup loop (keeps models in VRAM)
         if settings.warmup_enabled:
             self._warmup_task = asyncio.create_task(self._warmup_loop())
@@ -198,6 +199,8 @@ class OllamaRouter:
             self._gpu_recovery_task.cancel()
         if self._idle_notify_task:
             self._idle_notify_task.cancel()
+        if getattr(self, "_stale_reaper_task", None):
+            self._stale_reaper_task.cancel()
         if self._warmup_task:
             self._warmup_task.cancel()
         for task in self._bg_load_tasks.values():
@@ -826,6 +829,55 @@ class OllamaRouter:
                 return
             except Exception as e:
                 logger.error("Active requests logger error: %s", e)
+
+    async def _stale_request_reaper(self) -> None:
+        """Evict zombie active_requests left behind by mid-stream client disconnects.
+
+        Failsafe for the stream cleanup race: when an HTTP client drops the
+        connection, the asyncio task wrapping `_stream_with_cleanup` can be
+        garbage-collected before its `finally` runs (we see "Task exception
+        was never retrieved" with ReadError). The request stays in
+        `gpu.active_requests`, `_find_slot` keeps returning None because
+        `active_request_count() >= max_concurrent_llm`, and the dispatcher
+        loop stops draining the queue.
+
+        Sweep evicts any entry older than `stale_request_max_age_s` and
+        wakes the dispatcher so it picks up queued work.
+        """
+        interval = settings.stale_request_check_interval_s
+        max_age = settings.stale_request_max_age_s
+        logger.info(
+            "Stale request reaper started (interval=%ds, max_age=%ds)",
+            interval, max_age,
+        )
+        while True:
+            try:
+                await asyncio.sleep(interval)
+                now = time.monotonic()
+                evicted_any = False
+                for gpu in self.gpu_pool.all_backends:
+                    for req_id, req in list(gpu.active_requests.items()):
+                        age = now - req.created_at
+                        if age <= max_age:
+                            continue
+                        logger.warning(
+                            "STALE_REQUEST_EVICT: id=%s gpu=%s model=%s priority=%s "
+                            "age=%ds state=%s — evicting zombie (stream cleanup race)",
+                            req_id, gpu.name, req.model, req.priority.name,
+                            int(age), req.state,
+                        )
+                        gpu.active_requests.pop(req_id, None)
+                        try:
+                            req.cancel_event.set()
+                        except Exception:
+                            pass
+                        evicted_any = True
+                if evicted_any and self._queue:
+                    self._queue.notify_slot_freed()
+            except asyncio.CancelledError:
+                return
+            except Exception as e:
+                logger.error("Stale request reaper error: %s", e)
 
     async def _idle_notify_watchdog(self) -> None:
         """Notify Kotlin server when GPU has been idle for gpu_idle_notify_after_s.
