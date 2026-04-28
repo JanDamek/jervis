@@ -297,6 +297,16 @@ class RequestQueue:
             if not entry.future.done():
                 entry.future.set_result(result)
         except BaseException as e:
+            # `_pre_claim_slot` already added the request to gpu.active_requests
+            # before this task started. If `_dispatch_to_backend` raised (most
+            # commonly _prepare_gpu's model load / VRAM exhaust path) we never
+            # got far enough to return a stream/dict, so neither
+            # `_stream_with_cleanup`'s finally nor the unary finally on line
+            # 414 will run. Without explicit cleanup here the slot lingers
+            # until the stale-request reaper sweeps it 600s later, blocking
+            # the dispatcher (max_concurrent_llm=1) the entire time.
+            self._cleanup_backend(backend, entry.request)
+            self.notify_slot_freed()
             if not entry.future.done():
                 entry.future.set_exception(e)
 
