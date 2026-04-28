@@ -33,9 +33,14 @@ RUN pip install --no-cache-dir \
     --index-url https://download.pytorch.org/whl/cu124
 
 # --- Whisper + diarization stack ---
+# `av` (PyAV) is required by pyannote.audio>=4.0 — without it the optional
+# `from pyannote.audio.io import AudioDecoder` silently fails and a downstream
+# call to `AudioDecoder(file["audio"]).metadata` raises NameError, which the
+# old whisper_rest_server logged as "Diarization failed: name 'AudioDecoder'
+# is not defined" and dropped speakers across all meetings (2026-04-26 → 28).
 RUN pip install --no-cache-dir \
     faster-whisper \
-    pyannote.audio \
+    pyannote.audio av \
     'grpcio>=1.66.0,<1.80' 'grpcio-reflection>=1.66.0,<1.80' 'protobuf>=5.28.0,<7' \
     fastapi uvicorn python-multipart sse-starlette
 

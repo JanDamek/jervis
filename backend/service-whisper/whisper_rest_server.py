@@ -93,27 +93,27 @@ def _load_diarization_pipeline():
     support for pyannote's neural network operations. Whisper uses CTranslate2
     which has its own Pascal-compatible CUDA kernels, but PyTorch (used by pyannote)
     ships without Pascal support in modern wheels.
+
+    With HF_TOKEN set, a load failure is fatal — silently disabling diarization
+    here meant we shipped meetings without speakers for two days before anyone
+    noticed (2026-04-28 incident, root cause: missing `av` PyAV dependency
+    surfaced as `NameError: name 'AudioDecoder' is not defined`).
     """
     global _diarization_pipeline, _diarization_available
     if not HF_TOKEN:
         print("HF_TOKEN not set — speaker diarization disabled", flush=True)
         return
-    try:
-        from pyannote.audio import Pipeline
-        import torch
-        print("Loading pyannote speaker diarization pipeline (CPU mode)...", flush=True)
-        _diarization_pipeline = Pipeline.from_pretrained(
-            "pyannote/speaker-diarization-3.1",
-            token=HF_TOKEN,
-        )
-        # Force CPU — P40 Pascal lacks CUDA kernels for PyTorch ops used by pyannote
-        _diarization_pipeline.to(torch.device("cpu"))
-        print("Diarization pipeline loaded on CPU (Pascal GPU not supported for pyannote)", flush=True)
-        _diarization_available = True
-    except Exception as e:
-        print(f"Failed to load diarization pipeline: {e}", flush=True)
-        print("Speaker diarization will be disabled", flush=True)
-        _diarization_available = False
+    from pyannote.audio import Pipeline
+    import torch
+    print("Loading pyannote speaker diarization pipeline (CPU mode)...", flush=True)
+    _diarization_pipeline = Pipeline.from_pretrained(
+        "pyannote/speaker-diarization-3.1",
+        token=HF_TOKEN,
+    )
+    # Force CPU — P40 Pascal lacks CUDA kernels for PyTorch ops used by pyannote
+    _diarization_pipeline.to(torch.device("cpu"))
+    print("Diarization pipeline loaded on CPU (Pascal GPU not supported for pyannote)", flush=True)
+    _diarization_available = True
 
 
 def _router_notify_gpu():
