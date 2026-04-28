@@ -265,11 +265,14 @@ async def lifespan(app: FastAPI):
     await grpc_server.stop(grace=5.0)
     logger.info("gRPC server stopped")
 
-    # Compact + stop any running Claude client sessions.
+    # Compact + stop any running Claude sessions (Klient + Project) via
+    # the broker. PR-C5: SessionBroker.shutdown_all() runs parallel
+    # force-compact for every active session under K8s grace.
     try:
-        await client_session_manager.shutdown()
+        from app.sessions.session_broker import session_broker
+        await session_broker.shutdown_all()
     except Exception:
-        logger.exception("client_session_manager.shutdown failed")
+        logger.exception("session_broker.shutdown_all failed")
 
     # Proactive scheduler moved to Kotlin — nothing to stop here.
 

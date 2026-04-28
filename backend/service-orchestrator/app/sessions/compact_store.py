@@ -102,6 +102,11 @@ def scope_for_client(client_id: str) -> str:
     return f"client:{client_id}"
 
 
+def scope_for_project(client_id: str, project_id: str) -> str:
+    """Compact / scratchpad scope for a per-(client, project) session."""
+    return f"project:{client_id}:{project_id}"
+
+
 SCOPE_GLOBAL = "global"
 
 
