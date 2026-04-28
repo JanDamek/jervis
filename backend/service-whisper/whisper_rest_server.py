@@ -106,12 +106,12 @@ def _load_diarization_pipeline():
     from pyannote.audio import Pipeline
     import torch
     print("Loading pyannote speaker diarization pipeline (CPU mode)...", flush=True)
-    # pyannote.audio 3.x uses `use_auth_token=`; 4.x renamed it to `token=`.
-    # We pin to <4 in Dockerfile.gpu (torchcodec libs missing on base image).
-    _diarization_pipeline = Pipeline.from_pretrained(
-        "pyannote/speaker-diarization-3.1",
-        use_auth_token=HF_TOKEN,
-    )
+    # Don't pass an auth kwarg — pyannote 3.x calls hf_hub_download(use_auth_token=…)
+    # which fails on huggingface_hub>=0.30 (kwarg removed), and pyannote 4.x renamed
+    # it to token=. The HF token is read automatically from the HF_TOKEN /
+    # HUGGING_FACE_HUB_TOKEN env var (set on the container by deploy_whisper_gpu.sh).
+    os.environ.setdefault("HUGGING_FACE_HUB_TOKEN", HF_TOKEN)
+    _diarization_pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1")
     # Force CPU — P40 Pascal lacks CUDA kernels for PyTorch ops used by pyannote
     _diarization_pipeline.to(torch.device("cpu"))
     print("Diarization pipeline loaded on CPU (Pascal GPU not supported for pyannote)", flush=True)
