@@ -61,12 +61,22 @@ class _FunctionCall:
     name: str = ""
     arguments: str = ""
 
+    def model_dump(self) -> dict:
+        return {"name": self.name, "arguments": self.arguments}
+
 
 @dataclass
 class _ToolCall:
     id: str = ""
     type: str = "function"
     function: _FunctionCall = field(default_factory=_FunctionCall)
+
+    def model_dump(self) -> dict:
+        return {
+            "id": self.id,
+            "type": self.type,
+            "function": self.function.model_dump(),
+        }
 
 
 @dataclass
@@ -75,6 +85,19 @@ class _Message:
     content: str | None = ""
     tool_calls: list[_ToolCall] | None = None
     thinking: str | None = None
+
+    def model_dump(self) -> dict:
+        # Mirror pydantic's `model_dump()` since multiple callers
+        # (qualification_handler.py, plan.py, respond.py, design.py)
+        # round-trip messages through this method to feed them back to
+        # the LLM. Drop None tool_calls / thinking so the OpenAI shape
+        # matches what providers expect when re-fed.
+        out: dict = {"role": self.role, "content": self.content}
+        if self.tool_calls:
+            out["tool_calls"] = [tc.model_dump() for tc in self.tool_calls]
+        if self.thinking is not None:
+            out["thinking"] = self.thinking
+        return out
 
 
 @dataclass

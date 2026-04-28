@@ -69,7 +69,10 @@ async def _run_graph_agent_background(
     try:
         state = await run_graph_agent(request, thread_id)
     except Exception as e:
-        logger.error("GRAPH_AGENT_CRASHED | task_id=%s | %s", request.task_id, e)
+        # logger.exception attaches the traceback so we can see *which*
+        # `.vertices` access on None blew up; without it the message is just
+        # "'NoneType' object has no attribute 'vertices'" with no source line.
+        logger.exception("GRAPH_AGENT_CRASHED | task_id=%s | %s", request.task_id, e)
         agent_failed = True
         state = {"final_result": f"Agent crashed: {e}", "task_graph": {"status": "failed"}}
 
