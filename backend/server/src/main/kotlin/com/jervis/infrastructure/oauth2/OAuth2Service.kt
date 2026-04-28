@@ -96,7 +96,7 @@ class OAuth2Service(
             com.jervis.dto.connection.ProviderEnum.ATLASSIAN -> return OAuth2Provider.ATLASSIAN
             com.jervis.dto.connection.ProviderEnum.SLACK -> return OAuth2Provider.SLACK
             com.jervis.dto.connection.ProviderEnum.GOOGLE_WORKSPACE -> return OAuth2Provider.GMAIL
-            com.jervis.dto.connection.ProviderEnum.MICROSOFT_TEAMS -> return OAuth2Provider.MICROSOFT
+            // MICROSOFT_TEAMS uses browser-pool login, not server-side OAuth2 — see OAuth2Provider docstring.
             else -> {
                 // provider is not one of the OAuth2 ones, continue with other checks
             }
@@ -138,7 +138,6 @@ class OAuth2Service(
             OAuth2Provider.ATLASSIAN -> oauth2Properties.atlassian
             OAuth2Provider.SLACK -> oauth2Properties.slack
             OAuth2Provider.GMAIL -> oauth2Properties.gmail
-            OAuth2Provider.MICROSOFT -> oauth2Properties.microsoft
         }
 
     /**
@@ -225,7 +224,6 @@ class OAuth2Service(
                 OAuth2Provider.ATLASSIAN -> "https://auth.atlassian.com/authorize"
                 OAuth2Provider.SLACK -> "https://slack.com/oauth/v2/authorize"
                 OAuth2Provider.GMAIL -> "https://accounts.google.com/o/oauth2/v2/auth"
-                OAuth2Provider.MICROSOFT -> "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
             }
 
         // Fetch scopes from the provider service
@@ -242,11 +240,6 @@ class OAuth2Service(
                 // Google requires access_type=offline for refresh_token
                 val prompt = if (forceLogin) "consent%20select_account" else "consent"
                 "$baseUrl?client_id=$clientId&redirect_uri=${redirectUri.encodeURLParameter()}&state=$state&scope=${scope.encodeURLParameter()}&response_type=code&access_type=offline&prompt=$prompt"
-            }
-            OAuth2Provider.MICROSOFT -> {
-                // Microsoft uses common tenant for multi-tenant apps
-                val promptParam = if (forceLogin) "&prompt=login" else ""
-                "$baseUrl?client_id=$clientId&redirect_uri=${redirectUri.encodeURLParameter()}&state=$state&scope=${scope.encodeURLParameter()}&response_type=code$promptParam"
             }
             OAuth2Provider.GITLAB -> {
                 val promptParam = if (forceLogin) "&prompt=login" else ""
@@ -289,11 +282,6 @@ class OAuth2Service(
                         // Google: Gmail + Calendar + user info
                         return "https://mail.google.com/ https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/gmail.send openid email profile"
                     }
-
-                    OAuth2Provider.MICROSOFT -> {
-                        // Microsoft Graph: Teams, calendar, mail — user-consent only (no admin approval needed)
-                        return "offline_access User.Read Chat.Read Chat.ReadWrite ChannelMessage.Send Calendars.Read Calendars.ReadWrite Mail.Read Mail.Send"
-                    }
                 }
 
             val response = httpClient.get(serviceUrl)
@@ -313,7 +301,6 @@ class OAuth2Service(
                 OAuth2Provider.BITBUCKET -> "account team repository webhook pullrequest:write issue:write wiki snippet project"
                 OAuth2Provider.SLACK -> "channels:history channels:read groups:history groups:read im:history im:read mpim:history mpim:read chat:write users:read"
                 OAuth2Provider.GMAIL -> "https://mail.google.com/ https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/gmail.send openid email profile"
-                OAuth2Provider.MICROSOFT -> "offline_access User.Read Chat.Read Chat.ReadWrite ChannelMessage.Send Calendars.Read Calendars.ReadWrite Mail.Read Mail.Send"
             }
         }
     }
@@ -412,7 +399,6 @@ class OAuth2Service(
             OAuth2Provider.ATLASSIAN -> "https://auth.atlassian.com/oauth/token"
             OAuth2Provider.SLACK -> "https://slack.com/api/oauth.v2.access"
             OAuth2Provider.GMAIL -> "https://oauth2.googleapis.com/token"
-            OAuth2Provider.MICROSOFT -> "https://login.microsoftonline.com/common/oauth2/v2.0/token"
         }
 
     private suspend fun exchangeCodeForToken(

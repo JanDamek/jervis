@@ -17,7 +17,8 @@ data class OAuth2Properties(
     var atlassian: OAuth2ProviderConfig = OAuth2ProviderConfig(),
     var slack: OAuth2ProviderConfig = OAuth2ProviderConfig(),
     var gmail: OAuth2ProviderConfig = OAuth2ProviderConfig(),
-    var microsoft: OAuth2ProviderConfig = OAuth2ProviderConfig(),
+    // Microsoft / Microsoft 365 / Teams uses browser-pool login, not server-side OAuth2.
+    // No `microsoft` field — see OAuth2Provider.kt for context.
 )
 
 data class OAuth2ProviderConfig(
