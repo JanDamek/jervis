@@ -105,11 +105,19 @@ def _load_diarization_pipeline():
         return
     from pyannote.audio import Pipeline
     import torch
+    # PyTorch 2.6 changed torch.load(weights_only=True) by default, and pyannote's
+    # checkpoint contains a TorchVersion object that isn't on the default allow-list,
+    # so loading the pretrained pipeline blows up with UnpicklingError. Allow-list it
+    # explicitly — pyannote checkpoints come from a trusted source (HF + license).
+    try:
+        from torch.torch_version import TorchVersion
+        torch.serialization.add_safe_globals([TorchVersion])
+    except (ImportError, AttributeError):
+        pass
     print("Loading pyannote speaker diarization pipeline (CPU mode)...", flush=True)
     # Don't pass an auth kwarg — pyannote 3.x calls hf_hub_download(use_auth_token=…)
-    # which fails on huggingface_hub>=0.30 (kwarg removed), and pyannote 4.x renamed
-    # it to token=. The HF token is read automatically from the HF_TOKEN /
-    # HUGGING_FACE_HUB_TOKEN env var (set on the container by deploy_whisper_gpu.sh).
+    # which fails on huggingface_hub>=0.30, and 4.x renamed it to token=. The HF
+    # token is read automatically from HF_TOKEN / HUGGING_FACE_HUB_TOKEN env vars.
     os.environ.setdefault("HUGGING_FACE_HUB_TOKEN", HF_TOKEN)
     _diarization_pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1")
     # Force CPU — P40 Pascal lacks CUDA kernels for PyTorch ops used by pyannote
