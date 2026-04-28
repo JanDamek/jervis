@@ -113,7 +113,9 @@ def _load_diarization_pipeline():
     # globally, before pyannote pulls the model.
     _orig_torch_load = torch.load
     def _torch_load_compat(*args, **kwargs):
-        kwargs.setdefault("weights_only", False)
+        # Force weights_only=False — setdefault wasn't enough because
+        # lightning_fabric._load passes weights_only=True explicitly.
+        kwargs["weights_only"] = False
         return _orig_torch_load(*args, **kwargs)
     torch.load = _torch_load_compat
 
