@@ -57,7 +57,15 @@ data:
         Path              /var/log/containers/*.log
         multiline.parser  docker, cri
         DB                /tmp/flb_kube.db
-        Mem_Buf_Limit     10MB
+        # Mem_Buf_Limit raised from 10MB — concatenated multiline events
+        # (Java stack traces, Python tracebacks) are an order of magnitude
+        # bigger than single docker JSON lines, so the input was throttling.
+        Mem_Buf_Limit     50MB
+        # Buffer_Chunk_Size default 32k truncates long single-line entries
+        # (some KB / orchestrator logs are 100k+); align with the larger
+        # post-merge events.
+        Buffer_Chunk_Size 1MB
+        Buffer_Max_Size   2MB
         Skip_Long_Lines   On
         Refresh_Interval  5
 
@@ -84,6 +92,12 @@ data:
         Match                 kube.*
         multiline.key_content log
         multiline.parser      jvm_logback, java, python, go
+        # Multiline filter has its own internal emitter that re-injects the
+        # concatenated events back into the pipeline. Default emitter buffer
+        # is 10MB cluster-wide; with full Java/Python stack traces from many
+        # pods at once this overflows and emits "error registering chunk"
+        # — and the records get dropped. Bumped to 100MB to absorb bursts.
+        emitter_mem_buf_limit 100M
 
     [OUTPUT]
         Name            es
