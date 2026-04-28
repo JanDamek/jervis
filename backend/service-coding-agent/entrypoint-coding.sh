@@ -238,16 +238,104 @@ if [ -f "$MCP_CONFIG_PATH" ]; then
 fi
 
 CLAUDE_STREAM_FILE="$WORKSPACE/.jervis/claude-stream.jsonl"
-: > "$CLAUDE_STREAM_FILE"
+
+# ---- PR-C3: detect prior run and bootstrap a restart context --------------
+# On first launch the stream file does not exist (or is empty) — the
+# parser short-circuits to `has_prior_run=false` and we simply feed
+# brief.md to Claude.
+#
+# On restart (K8s restartPolicy=OnFailure, backoffLimit=3) the workspace
+# is the same PVC path; the previous run left .jervis/claude-stream.jsonl
+# and possibly .jervis/compact.md behind. We:
+#   1. Parse the stream to find the last compact_checkpoint event.
+#   2. If the stream is over the emergency threshold (~150k tokens ≈
+#      450KB on disk) and no usable compact.md exists, run a one-shot
+#      compaction-agent API call to land .jervis/compact.md atomically
+#      before resuming.
+#   3. Write a composite bootstrap stdin (brief + compact + post-checkpoint
+#      digest + restart warnings) and feed *that* to Claude CLI.
+RESTART_INFO_FILE="/tmp/jervis-restart-info.json"
+RESTART_BOOT_FILE="/tmp/jervis-restart-bootstrap.txt"
+EMERGENCY_COMPACT_BYTES=450000  # ≈ 150k tokens (chars/3 heuristic).
+
+PYHELPER_DIR="/opt/jervis"
+export PYTHONPATH="$PYHELPER_DIR:${PYTHONPATH:-}"
+
+# 1. Inspect prior on-disk state.
+set +e
+python3 -m restart_state "$WORKSPACE" "$RESTART_INFO_FILE"
+RP_EC=$?
+set -e
+if [ "$RP_EC" -ne 0 ]; then
+    log "WARN: restart_state inspection failed (exit $RP_EC) — falling back to brief-only bootstrap"
+fi
+
+# 2. Decide whether to run an emergency mid-restart compact.
+if [ -f "$RESTART_INFO_FILE" ]; then
+    HAS_PRIOR=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("has_prior_run", False))' "$RESTART_INFO_FILE")
+    HAS_COMPACT=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("has_compact", False))' "$RESTART_INFO_FILE")
+    STREAM_BYTES=$(python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1])).get("stream_byte_size", 0)))' "$RESTART_INFO_FILE")
+    log "restart_state | has_prior_run=$HAS_PRIOR has_compact=$HAS_COMPACT stream_bytes=$STREAM_BYTES"
+    if [ "$HAS_PRIOR" = "True" ] && [ "$HAS_COMPACT" = "False" ] && [ "$STREAM_BYTES" -gt "$EMERGENCY_COMPACT_BYTES" ]; then
+        log "stream over emergency threshold without compact — running one-shot compaction agent"
+        set +e
+        python3 -m compact_writer emergency "$WORKSPACE"
+        EMG_EC=$?
+        set -e
+        if [ "$EMG_EC" -eq 0 ]; then
+            # Re-run the parser so the bootstrap_text now includes the
+            # freshly-written compact.md base.
+            python3 -m restart_state "$WORKSPACE" "$RESTART_INFO_FILE" || true
+        else
+            log "WARN: emergency compact failed (exit $EMG_EC) — proceeding with raw stream digest"
+        fi
+    fi
+fi
+
+# 3. Build the stdin payload Claude reads on resume.
+if [ -f "$RESTART_INFO_FILE" ]; then
+    python3 - <<'PYEOF'
+import json, os
+info_path = "/tmp/jervis-restart-info.json"
+out_path = "/tmp/jervis-restart-bootstrap.txt"
+brief_path = os.path.join(os.environ["WORKSPACE"], ".jervis", "brief.md")
+with open(info_path, "r", encoding="utf-8") as fh:
+    info = json.load(fh)
+text = info.get("bootstrap_text") or ""
+if not text.strip():
+    # Defensive fallback — if the parser produced an empty bootstrap (file
+    # corruption?), at minimum feed the original brief so Claude has a
+    # task description.
+    try:
+        with open(brief_path, "r", encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError:
+        text = ""
+with open(out_path, "w", encoding="utf-8") as fh:
+    fh.write(text)
+    fh.flush()
+    os.fsync(fh.fileno())
+PYEOF
+else
+    cp "$BRIEF_FILE" "$RESTART_BOOT_FILE"
+fi
+
+# Touch the stream file so `tee` can open it append-only on first run too.
+# Subsequent restarts append to the existing stream so the next parser run
+# sees the full pre-restart history alongside post-restart events.
+[ -f "$CLAUDE_STREAM_FILE" ] || : > "$CLAUDE_STREAM_FILE"
 
 set +e
-# Brief flows via stdin, NOT as positional argv. Claude CLI 2.x has a
-# quirk where long positional prompt arguments are interpreted as
+# Bootstrap text flows via stdin, NOT as positional argv. Claude CLI 2.x
+# has a quirk where long positional prompt arguments are interpreted as
 # relative file paths (open() with cwd prefix → ENAMETOOLONG when the
 # "filename" exceeds 255 bytes). Stdin avoids the argv parser entirely.
 # Same family of quirks as --append-system-prompt → --append-system-prompt-file
 # (commit ff4556e15) and the .jervis/ tee permission fix (commit c9511e9a0).
-claude "${CLAUDE_ARGS[@]}" < "$BRIEF_FILE" | tee "$CLAUDE_STREAM_FILE"
+#
+# `tee -a` appends so a restart preserves the pre-restart stream, which
+# the PR-C3 parser needs to determine the last compact_checkpoint.
+claude "${CLAUDE_ARGS[@]}" < "$RESTART_BOOT_FILE" | tee -a "$CLAUDE_STREAM_FILE"
 CLAUDE_EC=${PIPESTATUS[0]}
 set -e
 

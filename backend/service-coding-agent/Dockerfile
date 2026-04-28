@@ -57,8 +57,15 @@ RUN npm install -g @anthropic-ai/claude-code
 # --- Claude Agent SDK (Python) — used by entrypoint to drive Claude headless ---
 RUN pip install claude-agent-sdk
 
-# --- Entrypoint ---
+# --- Entrypoint + Python helpers (PR-C3 restart parser) ---
+# The bash entrypoint shells out to `python3 -m restart_state` /
+# `python3 -m compact_writer` on startup to detect a prior run on the
+# PVC, atomically write `.jervis/compact.md`, and feed Claude CLI the
+# composite bootstrap stdin. Both modules live next to the entrypoint
+# under /opt/jervis with PYTHONPATH=/opt/jervis.
 COPY backend/service-coding-agent/entrypoint-coding.sh /opt/jervis/entrypoint-coding.sh
+COPY backend/service-coding-agent/restart_state.py     /opt/jervis/restart_state.py
+COPY backend/service-coding-agent/compact_writer.py    /opt/jervis/compact_writer.py
 RUN chmod +x /opt/jervis/entrypoint-coding.sh
 
 # --- Non-root user per uid-map.md (Claude CLI refuses
