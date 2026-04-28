@@ -83,6 +83,7 @@ class BackgroundEngine(
     private val idleTaskRegistry: IdleTaskRegistry,
     private val kbMaintenanceService: com.jervis.maintenance.KbMaintenanceService,
     private val preferenceService: com.jervis.preferences.PreferenceService,
+    private val proposalDispatchHandler: ProposalDispatchHandler,
 ) {
     private val logger = KotlinLogging.logger {}
     private val supervisor = SupervisorJob()
@@ -579,6 +580,44 @@ class BackgroundEngine(
                             "GPU_TASK_PICKUP: id=${claimed.id} correlationId=${claimed.correlationId} " +
                                 "type=${claimed.type} state=${claimed.state} processingMode=${claimed.processingMode} " +
                                 "queuePosition=${claimed.queuePosition}"
+                        }
+
+                        // PR-Q4 — Approved Claude proposals route through the
+                        // proposal dispatch handler instead of the standard
+                        // orchestrator/agent path. The handler is responsible
+                        // for the side-effect (mail/Teams/calendar/bug-tracker
+                        // entry/coding agent dispatch/meeting attend) and
+                        // transitions the task to its terminal state on its
+                        // own. Tasks without a proposal flow (legacy /
+                        // user-created — proposalStage=null) fall through to
+                        // the existing executeTask() path.
+                        if (claimed.proposalStage == ProposalStage.APPROVED &&
+                            claimed.proposalTaskType != null
+                        ) {
+                            try {
+                                logger.info {
+                                    "PROPOSAL_DISPATCH_PICKUP: id=${claimed.id} " +
+                                        "proposalTaskType=${claimed.proposalTaskType} " +
+                                        "proposedBy=${claimed.proposedBy}"
+                                }
+                                proposalDispatchHandler.dispatch(claimed)
+                            } catch (e: Exception) {
+                                logger.error(e) {
+                                    "PROPOSAL_DISPATCH_UNCAUGHT: id=${claimed.id} " +
+                                        "proposalTaskType=${claimed.proposalTaskType}"
+                                }
+                                taskService.markAsError(
+                                    claimed,
+                                    "Proposal dispatch selhal nečekanou výjimkou: ${e.message ?: e::class.simpleName}",
+                                )
+                            } finally {
+                                taskService.setRunningTask(null)
+                            }
+                            logger.info {
+                                "PROPOSAL_DISPATCH_FINISHED: id=${claimed.id} " +
+                                    "processingMode=${claimed.processingMode}"
+                            }
+                            continue
                         }
 
                         executeTask(claimed)
