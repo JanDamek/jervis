@@ -3,7 +3,6 @@ package com.jervis.teams
 import com.jervis.common.types.ClientId
 import com.jervis.common.types.ConnectionId
 import com.jervis.common.types.ProjectId
-import com.jervis.dto.connection.AuthTypeEnum
 import com.jervis.dto.connection.ConnectionStateEnum
 import com.jervis.dto.connection.ConnectionCapability
 import com.jervis.dto.connection.ProviderEnum
@@ -11,22 +10,14 @@ import com.jervis.client.ClientDocument
 import com.jervis.project.ProjectDocument
 import com.jervis.connection.ConnectionDocument
 import com.jervis.connection.ConnectionService
-import com.jervis.infrastructure.oauth2.OAuth2Service
 import com.jervis.infrastructure.polling.PollingResult
 import com.jervis.infrastructure.polling.PollingStateService
 import com.jervis.infrastructure.polling.handler.PollingContext
 import com.jervis.infrastructure.polling.handler.PollingHandler
 import com.jervis.infrastructure.polling.handler.ResourceFilter
-import io.ktor.client.HttpClient
-import io.ktor.client.call.body
-import io.ktor.client.request.get
-import io.ktor.client.request.header
-import io.ktor.http.isSuccess
 import kotlinx.coroutines.flow.toList
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import mu.KotlinLogging
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate
@@ -41,10 +32,15 @@ private val logger = KotlinLogging.logger {}
 /**
  * Polling handler for Microsoft Teams / Microsoft 365.
  *
- * Triple-mode:
- * - **OAuth2 connections**: call Microsoft Graph API directly with bearer token
- * - **Browser Session (with token)**: call O365 Gateway (which uses browser pool tokens)
- * - **Browser Session (VLM scraping)**: read from o365_scrape_messages collection
+ * The server **never** talks to Microsoft Graph directly. Two data paths,
+ * both flowing through the O365 browser-pool pod:
+ * - **VLM-scraped messages**: read from `o365_scrape_messages` Mongo
+ *   collection (the browser pod scrapes Teams Cloud Fluent UI 9 and writes
+ *   the rows there).
+ * - **Live gateway RPC**: call `o365GatewayGrpc.listChats / readChat /
+ *   listTeams / listChannels / readChannel` for chats/channels not yet in
+ *   the scrape collection. The gateway pod proxies to Graph using the
+ *   browser-pool token internally.
  *
  * Messages are stored as TeamsMessageIndexDocument (NEW state).
  * TeamsContinuousIndexer picks them up for KB indexing.
@@ -54,8 +50,6 @@ class O365PollingHandler(
     private val repository: TeamsMessageIndexRepository,
     private val scrapeMessageRepository: O365ScrapeMessageRepository,
     private val pollingStateService: PollingStateService,
-    private val httpClient: HttpClient,
-    private val oauth2Service: OAuth2Service,
     private val connectionService: ConnectionService,
     private val mongoTemplate: ReactiveMongoTemplate,
     private val o365CalendarPoller: O365CalendarPoller,
@@ -77,159 +71,95 @@ class O365PollingHandler(
         connectionDocument: ConnectionDocument,
         context: PollingContext,
     ): PollingResult {
-        // OAuth2 connections -> call Graph API directly with bearer token
-        val isOAuth2 = connectionDocument.authType == AuthTypeEnum.OAUTH2 &&
-            !connectionDocument.bearerToken.isNullOrBlank()
-
-        // Browser Session connections (authType=NONE) -> read VLM scrape data from MongoDB
-        val isBrowserScraping = connectionDocument.authType == AuthTypeEnum.NONE &&
-            !connectionDocument.o365ClientId.isNullOrBlank()
-
+        // Server side never talks to Microsoft Graph directly. Every Microsoft
+        // data path goes through the O365 browser-pool pod (`o365GatewayGrpc`
+        // for live RPCs, `o365BrowserPoolGrpc` for session control) which owns
+        // the user's browser session. The poller just needs the per-connection
+        // `o365ClientId` handle.
         val o365ClientId = connectionDocument.o365ClientId
-        if (!isOAuth2 && !isBrowserScraping && o365ClientId.isNullOrBlank()) {
-            logger.warn { "O365 connection '${connectionDocument.name}' has no o365ClientId and no OAuth2 token" }
+        if (o365ClientId.isNullOrBlank()) {
+            logger.warn { "O365 connection '${connectionDocument.name}' has no o365ClientId" }
             return PollingResult(errors = 1, authenticationError = true)
         }
 
-        // Browser scraping mode -- read from o365_scrape_messages collection
-        if (isBrowserScraping) {
-            // Skip polling if connection is invalid or new (no session yet)
-            if (connectionDocument.state in listOf(ConnectionStateEnum.INVALID, ConnectionStateEnum.NEW)) {
-                logger.debug { "Skipping O365 poll for '${connectionDocument.name}' -- state=${connectionDocument.state}" }
-                return PollingResult()
-            }
+        // Skip polling if connection is invalid or new (no session yet)
+        if (connectionDocument.state in listOf(ConnectionStateEnum.INVALID, ConnectionStateEnum.NEW)) {
+            logger.debug { "Skipping O365 poll for '${connectionDocument.name}' -- state=${connectionDocument.state}" }
+            return PollingResult()
+        }
 
-            // Proactive health check: verify browser pool session is alive
-            // If session is EXPIRED/ERROR, mark connection INVALID immediately
-            if (connectionDocument.state in listOf(ConnectionStateEnum.VALID, ConnectionStateEnum.DISCOVERING)) {
-                try {
-                    val status = o365BrowserPoolGrpc.getSession(connectionDocument.id, o365ClientId)
-                    if (status.state in listOf("EXPIRED", "ERROR")) {
-                        logger.warn { "Browser pool session ${status.state} for '${connectionDocument.name}' -- marking INVALID" }
-                        connectionService.save(connectionDocument.copy(state = ConnectionStateEnum.INVALID))
-                        return PollingResult()
-                    }
-                } catch (e: Exception) {
-                    logger.warn { "Browser pool unreachable for '${connectionDocument.name}' -- marking INVALID: ${e.message}" }
+        // Proactive health check: verify browser pool session is alive.
+        // If session is EXPIRED/ERROR, mark connection INVALID immediately.
+        if (connectionDocument.state in listOf(ConnectionStateEnum.VALID, ConnectionStateEnum.DISCOVERING)) {
+            try {
+                val status = o365BrowserPoolGrpc.getSession(connectionDocument.id, o365ClientId)
+                if (status.state in listOf("EXPIRED", "ERROR")) {
+                    logger.warn { "Browser pool session ${status.state} for '${connectionDocument.name}' -- marking INVALID" }
                     connectionService.save(connectionDocument.copy(state = ConnectionStateEnum.INVALID))
                     return PollingResult()
                 }
-            }
-
-            // DISCOVERING passed health check (session alive) -- skip polling, wait for capabilities callback
-            if (connectionDocument.state == ConnectionStateEnum.DISCOVERING) {
-                logger.debug { "Skipping O365 poll for '${connectionDocument.name}' -- still discovering" }
+            } catch (e: Exception) {
+                logger.warn { "Browser pool unreachable for '${connectionDocument.name}' -- marking INVALID: ${e.message}" }
+                connectionService.save(connectionDocument.copy(state = ConnectionStateEnum.INVALID))
                 return PollingResult()
             }
-
-            logger.debug { "O365 Teams polling for '${connectionDocument.name}' (VLM scraping/${o365ClientId})" }
-            var combined = PollingResult()
-            // VLM-scraped chat/channel messages
-            try {
-                val scrapeResult = pollFromScrapeMessages(connectionDocument, context)
-                combined = mergeResults(combined, scrapeResult)
-            } catch (e: Exception) {
-                logger.error(e) { "Error polling scrape messages for ${connectionDocument.name}" }
-                combined = mergeResults(combined, PollingResult(errors = 1))
-            }
-            // Calendar via O365 Gateway (browser pool tokens) — Graph calendarView is
-            // a regular Graph API call, the browser pool token works exactly the
-            // same as a normal OAuth2 access token. We route through the gateway
-            // so the per-clientId session is reused.
-            if (connectionDocument.availableCapabilities.contains(ConnectionCapability.CALENDAR_READ)) {
-                try {
-                    val calResult = o365CalendarPoller.poll(
-                        connection = connectionDocument,
-                        context = context,
-                        accessToken = null,
-                        o365ClientId = o365ClientId,
-                    )
-                    combined = mergeResults(combined, calResult)
-                } catch (e: Exception) {
-                    logger.error(e) { "Error polling O365 calendar (gateway) for ${connectionDocument.name}" }
-                    combined = mergeResults(combined, PollingResult(errors = 1))
-                }
-            }
-            return combined
         }
 
-        // For OAuth2, refresh token if needed
-        val accessToken = if (isOAuth2) {
-            refreshOAuth2Token(connectionDocument)
-        } else null
-
-        if (isOAuth2 && accessToken == null) {
-            logger.warn { "OAuth2 token refresh failed for '${connectionDocument.name}'" }
-            return PollingResult(errors = 1, authenticationError = true)
+        // DISCOVERING passed health check (session alive) -- skip polling, wait for capabilities callback
+        if (connectionDocument.state == ConnectionStateEnum.DISCOVERING) {
+            logger.debug { "Skipping O365 poll for '${connectionDocument.name}' -- still discovering" }
+            return PollingResult()
         }
 
-        val mode = if (isOAuth2) "OAuth2/GraphAPI" else "Gateway/$o365ClientId"
-        logger.debug { "O365 Teams polling for '${connectionDocument.name}' ($mode)" }
-
-        var totalDiscovered = 0
-        var totalCreated = 0
-        var totalSkipped = 0
-        var totalErrors = 0
-
+        logger.debug { "O365 Teams polling for '${connectionDocument.name}' (browser pool/${o365ClientId})" }
         val hasChatRead = connectionDocument.availableCapabilities.contains(ConnectionCapability.CHAT_READ)
         val hasCalendarRead = connectionDocument.availableCapabilities.contains(ConnectionCapability.CALENDAR_READ)
 
-        // Poll chats (1:1 and group chats) — only if CHAT_READ enabled
+        var combined = PollingResult()
+
+        // VLM-scraped chat/channel messages from Mongo (`o365_scrape_messages`).
+        try {
+            val scrapeResult = pollFromScrapeMessages(connectionDocument, context)
+            combined = mergeResults(combined, scrapeResult)
+        } catch (e: Exception) {
+            logger.error(e) { "Error polling scrape messages for ${connectionDocument.name}" }
+            combined = mergeResults(combined, PollingResult(errors = 1))
+        }
+
+        // Live Teams chats / channels via gateway gRPC (browser-pool tokens).
         if (hasChatRead) {
             try {
-                val chatResult = pollChats(connectionDocument, context, o365ClientId, accessToken)
-                totalDiscovered += chatResult.itemsDiscovered
-                totalCreated += chatResult.itemsCreated
-                totalSkipped += chatResult.itemsSkipped
-                totalErrors += chatResult.errors
+                val chatResult = pollChats(connectionDocument, context, o365ClientId)
+                combined = mergeResults(combined, chatResult)
             } catch (e: Exception) {
                 logger.error(e) { "Error polling Teams chats for ${connectionDocument.name}" }
-                totalErrors++
+                combined = mergeResults(combined, PollingResult(errors = 1))
             }
-
-            // Poll team channels
             try {
-                val channelResult = pollChannels(connectionDocument, context, o365ClientId, accessToken)
-                totalDiscovered += channelResult.itemsDiscovered
-                totalCreated += channelResult.itemsCreated
-                totalSkipped += channelResult.itemsSkipped
-                totalErrors += channelResult.errors
+                val channelResult = pollChannels(connectionDocument, context, o365ClientId)
+                combined = mergeResults(combined, channelResult)
             } catch (e: Exception) {
                 logger.error(e) { "Error polling Teams channels for ${connectionDocument.name}" }
-                totalErrors++
+                combined = mergeResults(combined, PollingResult(errors = 1))
             }
         }
 
-        // Poll calendar (Graph /me/calendarView via OAuth2 token) — only if CALENDAR_READ enabled
+        // Calendar via gateway (browser pool tokens, gateway proxies to Graph).
         if (hasCalendarRead) {
             try {
                 val calResult = o365CalendarPoller.poll(
                     connection = connectionDocument,
                     context = context,
-                    accessToken = accessToken,
-                    o365ClientId = null,
+                    o365ClientId = o365ClientId,
                 )
-                totalDiscovered += calResult.itemsDiscovered
-                totalCreated += calResult.itemsCreated
-                totalSkipped += calResult.itemsSkipped
-                totalErrors += calResult.errors
+                combined = mergeResults(combined, calResult)
             } catch (e: Exception) {
-                logger.error(e) { "Error polling O365 calendar for ${connectionDocument.name}" }
-                totalErrors++
+                logger.error(e) { "Error polling O365 calendar (gateway) for ${connectionDocument.name}" }
+                combined = mergeResults(combined, PollingResult(errors = 1))
             }
         }
 
-        // If all calls failed and nothing was discovered, treat as auth error
-        // This stops CentralPoller from retrying indefinitely
-        val isAuthError = totalErrors > 0 && totalDiscovered == 0 && totalCreated == 0
-
-        return PollingResult(
-            itemsDiscovered = totalDiscovered,
-            itemsCreated = totalCreated,
-            itemsSkipped = totalSkipped,
-            errors = totalErrors,
-            authenticationError = isAuthError,
-        )
+        return combined
     }
 
     private fun mergeResults(a: PollingResult, b: PollingResult) = PollingResult(
@@ -358,33 +288,14 @@ class O365PollingHandler(
     }
 
     /**
-     * Refresh OAuth2 access token if needed. Returns current valid access token.
-     */
-    private suspend fun refreshOAuth2Token(connection: ConnectionDocument): String? {
-        try {
-            oauth2Service.refreshAccessToken(connection)
-        } catch (e: Exception) {
-            logger.warn { "Token refresh failed for ${connection.name}: ${e.message}" }
-        }
-        // Re-read connection to get potentially refreshed token
-        val refreshed = connectionService.findById(connection.id) ?: connection
-        return refreshed.bearerToken?.takeIf { it.isNotBlank() }
-    }
-
-    /**
      * Poll 1:1 and group chats -- always at client level (not channel-specific).
      */
     private suspend fun pollChats(
         connection: ConnectionDocument,
         context: PollingContext,
-        o365ClientId: String?,
-        accessToken: String?,
+        o365ClientId: String,
     ): PollingResult {
-        val chats = if (accessToken != null) {
-            fetchChatsGraphApi(accessToken)
-        } else {
-            fetchChats(o365ClientId!!)
-        } ?: return PollingResult(errors = 1)
+        val chats = fetchChats(o365ClientId) ?: return PollingResult(errors = 1)
         if (chats.isEmpty()) return PollingResult()
 
         var discovered = 0
@@ -393,11 +304,7 @@ class O365PollingHandler(
 
         for (chat in chats.take(20)) {
             val chatId = chat.id ?: continue
-            val messages = if (accessToken != null) {
-                fetchChatMessagesGraphApi(accessToken, chatId)
-            } else {
-                fetchChatMessages(o365ClientId!!, chatId)
-            } ?: continue
+            val messages = fetchChatMessages(o365ClientId, chatId) ?: continue
 
             for (msg in messages) {
                 val msgId = msg.id ?: continue
@@ -437,14 +344,9 @@ class O365PollingHandler(
     private suspend fun pollChannels(
         connection: ConnectionDocument,
         context: PollingContext,
-        o365ClientId: String?,
-        accessToken: String?,
+        o365ClientId: String,
     ): PollingResult {
-        val teams = if (accessToken != null) {
-            fetchTeamsGraphApi(accessToken)
-        } else {
-            fetchTeams(o365ClientId!!)
-        } ?: return PollingResult(errors = 1)
+        val teams = fetchTeams(o365ClientId) ?: return PollingResult(errors = 1)
         if (teams.isEmpty()) return PollingResult()
 
         var discovered = 0
@@ -453,11 +355,7 @@ class O365PollingHandler(
 
         for (team in teams) {
             val teamId = team.id ?: continue
-            val channels = if (accessToken != null) {
-                fetchChannelsGraphApi(accessToken, teamId)
-            } else {
-                fetchChannels(o365ClientId!!, teamId)
-            } ?: continue
+            val channels = fetchChannels(o365ClientId, teamId) ?: continue
 
             for (channel in channels) {
                 val channelId = channel.id ?: continue
@@ -469,11 +367,7 @@ class O365PollingHandler(
                 )
                 if (targetClientId == null) continue
 
-                val messages = if (accessToken != null) {
-                    fetchChannelMessagesGraphApi(accessToken, teamId, channelId)
-                } else {
-                    fetchChannelMessages(o365ClientId!!, teamId, channelId)
-                } ?: continue
+                val messages = fetchChannelMessages(o365ClientId, teamId, channelId) ?: continue
 
                 for (msg in messages) {
                     val msgId = msg.id ?: continue
@@ -537,85 +431,7 @@ class O365PollingHandler(
         return Pair(null, null)
     }
 
-    // -- Graph API direct calls (for OAuth2 connections) -----------------------
-
-    private val graphBaseUrl = "https://graph.microsoft.com/v1.0"
-
-    private suspend fun fetchChatsGraphApi(token: String): List<GatewayChat>? {
-        return try {
-            val response = httpClient.get("$graphBaseUrl/me/chats?\$top=20") {
-                header("Authorization", "Bearer $token")
-            }
-            if (!response.status.isSuccess()) {
-                logger.warn { "Graph API /me/chats returned ${response.status}" }
-                return null
-            }
-            response.body<GraphListResponse<GatewayChat>>().value
-        } catch (e: Exception) {
-            logger.error(e) { "Error fetching chats from Graph API" }
-            null
-        }
-    }
-
-    private suspend fun fetchChatMessagesGraphApi(token: String, chatId: String): List<GatewayMessage>? {
-        return try {
-            val response = httpClient.get("$graphBaseUrl/me/chats/$chatId/messages?\$top=20") {
-                header("Authorization", "Bearer $token")
-            }
-            if (!response.status.isSuccess()) return null
-            response.body<GraphListResponse<GatewayMessage>>().value
-        } catch (e: Exception) {
-            logger.error(e) { "Error fetching chat messages from Graph API" }
-            null
-        }
-    }
-
-    private suspend fun fetchTeamsGraphApi(token: String): List<GatewayTeam>? {
-        return try {
-            val response = httpClient.get("$graphBaseUrl/me/joinedTeams") {
-                header("Authorization", "Bearer $token")
-            }
-            if (!response.status.isSuccess()) return null
-            response.body<GraphListResponse<GatewayTeam>>().value
-        } catch (e: Exception) {
-            logger.error(e) { "Error fetching Teams from Graph API" }
-            null
-        }
-    }
-
-    private suspend fun fetchChannelsGraphApi(token: String, teamId: String): List<GatewayChannel>? {
-        return try {
-            val response = httpClient.get("$graphBaseUrl/teams/$teamId/channels") {
-                header("Authorization", "Bearer $token")
-            }
-            if (!response.status.isSuccess()) return null
-            response.body<GraphListResponse<GatewayChannel>>().value
-        } catch (e: Exception) {
-            logger.error(e) { "Error fetching channels from Graph API" }
-            null
-        }
-    }
-
-    private suspend fun fetchChannelMessagesGraphApi(
-        token: String,
-        teamId: String,
-        channelId: String,
-    ): List<GatewayMessage>? {
-        return try {
-            val response = httpClient.get(
-                "$graphBaseUrl/teams/$teamId/channels/$channelId/messages?\$top=20",
-            ) {
-                header("Authorization", "Bearer $token")
-            }
-            if (!response.status.isSuccess()) return null
-            response.body<GraphListResponse<GatewayMessage>>().value
-        } catch (e: Exception) {
-            logger.error(e) { "Error fetching channel messages from Graph API" }
-            null
-        }
-    }
-
-    // -- O365 Gateway gRPC calls (for Browser Session connections) --------------
+    // -- O365 Gateway gRPC calls (browser session pool — only path) ------------
 
     private suspend fun fetchChats(clientId: String): List<GatewayChat>? =
         runCatching { o365GatewayGrpc.listChats(clientId, top = 20) }

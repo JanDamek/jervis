@@ -367,43 +367,22 @@ class ConnectionRpcImpl(
     }
 
     private suspend fun testMicrosoftConnection(connection: ConnectionDocument): ConnectionTestResultDto {
-        val refreshed = refreshTokenIfNeeded(connection)
-        val token = refreshed.bearerToken
-        if (token.isNullOrBlank()) {
-            // Browser Session: check if O365 Gateway can reach the browser pool
-            val clientId = connection.o365ClientId
-            if (!clientId.isNullOrBlank()) {
-                return try {
-                    o365BrowserPoolGrpc.getSession(connection.id, clientId)
-                    val withIdentity = detectSelfIdentity(connection.copy(state = ConnectionStateEnum.VALID))
-                    connectionService.save(withIdentity)
-                    ConnectionTestResultDto(true, "Browser session aktivní")
-                } catch (e: Exception) {
-                    connectionService.save(connection.copy(state = ConnectionStateEnum.INVALID))
-                    ConnectionTestResultDto(false, "Browser session neaktivní — přihlaste se přes noVNC")
-                }
-            }
-            return ConnectionTestResultDto(false, "Žádný token ani browser session")
+        // Microsoft connections always go through the O365 browser-pool pod —
+        // the server never talks to Graph directly. Test = check that the
+        // browser session for this connection is alive.
+        val clientId = connection.o365ClientId
+        if (clientId.isNullOrBlank()) {
+            connectionService.save(connection.copy(state = ConnectionStateEnum.INVALID))
+            return ConnectionTestResultDto(false, "Chybí o365ClientId — přihlaste se přes noVNC")
         }
-        // OAuth2: test with /me endpoint
-        val response = httpClient.get("https://graph.microsoft.com/v1.0/me") {
-            header("Authorization", "Bearer $token")
-        }
-        return if (response.status.isSuccess()) {
-            // Auto-detect self-identity from /me response
-            val body = runCatching { Json.parseToJsonElement(response.bodyAsText()).jsonObject }.getOrNull()
-            val withIdentity = refreshed.copy(
-                state = ConnectionStateEnum.VALID,
-                selfUsername = body?.get("userPrincipalName")?.jsonPrimitive?.contentOrNull ?: refreshed.selfUsername,
-                selfDisplayName = body?.get("displayName")?.jsonPrimitive?.contentOrNull ?: refreshed.selfDisplayName,
-                selfId = body?.get("id")?.jsonPrimitive?.contentOrNull ?: refreshed.selfId,
-                selfEmail = body?.get("mail")?.jsonPrimitive?.contentOrNull ?: refreshed.selfEmail,
-            )
+        return try {
+            o365BrowserPoolGrpc.getSession(connection.id, clientId)
+            val withIdentity = detectSelfIdentity(connection.copy(state = ConnectionStateEnum.VALID))
             connectionService.save(withIdentity)
-            ConnectionTestResultDto(true, "Microsoft Graph API OK")
-        } else {
-            connectionService.save(refreshed.copy(state = ConnectionStateEnum.AUTH_EXPIRED))
-            ConnectionTestResultDto(false, "Microsoft Graph API: ${response.status}")
+            ConnectionTestResultDto(true, "Browser session aktivní")
+        } catch (e: Exception) {
+            connectionService.save(connection.copy(state = ConnectionStateEnum.INVALID))
+            ConnectionTestResultDto(false, "Browser session neaktivní — přihlaste se přes noVNC")
         }
     }
 
@@ -953,8 +932,12 @@ class ConnectionRpcImpl(
     }
 
     /**
-     * List available O365 resources via O365 Gateway (browser pool) or Graph API (OAuth2).
+     * List available O365 resources via O365 Gateway (browser pool).
      * Supports CHAT_READ (teams/channels/chats), EMAIL_READ (mail folders), CALENDAR_READ (calendars).
+     *
+     * Server never talks to Microsoft Graph directly — every Microsoft path
+     * flows through the browser-pool pod, which holds the per-connection
+     * session and proxies Graph requests internally.
      */
     private suspend fun listO365Resources(
         connection: ConnectionDocument,
@@ -964,11 +947,6 @@ class ConnectionRpcImpl(
         if (capability !in connection.availableCapabilities) {
             logger.info { "Capability $capability not available for connection ${connection.id} — skipping" }
             return emptyList()
-        }
-
-        // For OAuth2 connections, use Graph API directly with access token
-        if (connection.authType == com.jervis.dto.connection.AuthTypeEnum.OAUTH2) {
-            return listO365ResourcesViaGraphApi(connection, capability)
         }
 
         // For browser pool connections, first check persistent cache
@@ -1041,161 +1019,6 @@ class ConnectionRpcImpl(
     } catch (e: Exception) {
         logger.error(e) { "Failed to list O365 resources via Gateway" }
         emptyList()
-    }
-
-    /**
-     * List O365 resources directly via Microsoft Graph API using OAuth2 access token.
-     * Returns resources for the requested capability:
-     * - CHAT_READ/CHAT_SEND: joined teams + channels + recent chats
-     * - EMAIL_READ: mail folders
-     * - CALENDAR_READ: calendars
-     * - EMAIL_SEND/CALENDAR_WRITE: empty (no resource selection needed)
-     */
-    private suspend fun listO365ResourcesViaGraphApi(
-        connection: ConnectionDocument,
-        capability: ConnectionCapability,
-    ): List<ConnectionResourceDto> {
-        val refreshed = refreshTokenIfNeeded(connection)
-        val accessToken = refreshed.bearerToken
-        if (accessToken.isNullOrBlank()) {
-            logger.warn { "OAuth2 connection ${connection.id} has no access token" }
-            return emptyList()
-        }
-
-        return try {
-            when (capability) {
-                ConnectionCapability.CHAT_READ, ConnectionCapability.CHAT_SEND ->
-                    listGraphTeamsAndChats(accessToken, capability)
-                ConnectionCapability.EMAIL_READ ->
-                    listGraphMailFolders(accessToken)
-                ConnectionCapability.EMAIL_SEND ->
-                    emptyList() // Send doesn't need resource selection
-                ConnectionCapability.CALENDAR_READ, ConnectionCapability.CALENDAR_WRITE ->
-                    listGraphCalendars(accessToken)
-                else -> emptyList()
-            }
-        } catch (e: Exception) {
-            logger.error(e) { "Failed to list O365 resources via Graph API for ${connection.id}: ${e.message}" }
-            // Return error indicator so UI can show "not available on this account"
-            listOf(
-                ConnectionResourceDto(
-                    id = "__error__",
-                    name = "Nedostupné na tomto účtu",
-                    description = "Chyba: ${e.message?.take(100)}",
-                    capability = capability,
-                ),
-            )
-        }
-    }
-
-    private suspend fun listGraphTeamsAndChats(
-        accessToken: String,
-        capability: ConnectionCapability,
-    ): List<ConnectionResourceDto> {
-        val graphBaseUrl = "https://graph.microsoft.com/v1.0"
-        val resources = mutableListOf<ConnectionResourceDto>()
-
-        // List joined teams + channels
-        try {
-            val teamsResponse = httpClient.get("$graphBaseUrl/me/joinedTeams") {
-                header("Authorization", "Bearer $accessToken")
-            }
-            if (teamsResponse.status.isSuccess()) {
-                val teamsJson = teamsResponse.body<GraphListResponse<O365TeamDto>>()
-                for (team in teamsJson.value) {
-                    val teamId = team.id ?: continue
-                    val teamName = team.displayName ?: "Team"
-
-                    val channelsResponse = httpClient.get("$graphBaseUrl/teams/$teamId/channels") {
-                        header("Authorization", "Bearer $accessToken")
-                    }
-                    if (channelsResponse.status.isSuccess()) {
-                        val channelsJson = channelsResponse.body<GraphListResponse<O365ChannelDto>>()
-                        for (channel in channelsJson.value) {
-                            val channelId = channel.id ?: continue
-                            resources.add(
-                                ConnectionResourceDto(
-                                    id = "$teamId/$channelId",
-                                    name = "$teamName / ${channel.displayName ?: "Channel"}",
-                                    description = channel.description,
-                                    capability = capability,
-                                ),
-                            )
-                        }
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            logger.warn { "Failed to list Teams: ${e.message}" }
-        }
-
-        // List recent chats
-        try {
-            val chatsResponse = httpClient.get("$graphBaseUrl/me/chats?\$top=50&\$expand=members") {
-                header("Authorization", "Bearer $accessToken")
-            }
-            if (chatsResponse.status.isSuccess()) {
-                val chatsJson = chatsResponse.body<GraphListResponse<GraphChatDto>>()
-                for (chat in chatsJson.value) {
-                    val chatId = chat.id ?: continue
-                    val chatName = chat.topic
-                        ?: chat.members?.filter { it.displayName != null }?.joinToString(", ") { it.displayName!! }
-                        ?: "Chat"
-                    resources.add(
-                        ConnectionResourceDto(
-                            id = "chat:$chatId",
-                            name = chatName,
-                            description = chat.chatType,
-                            capability = capability,
-                        ),
-                    )
-                }
-            }
-        } catch (e: Exception) {
-            logger.warn { "Failed to list Chats: ${e.message}" }
-        }
-
-        return resources
-    }
-
-    private suspend fun listGraphMailFolders(accessToken: String): List<ConnectionResourceDto> {
-        val graphBaseUrl = "https://graph.microsoft.com/v1.0"
-        val response = httpClient.get("$graphBaseUrl/me/mailFolders?\$top=50") {
-            header("Authorization", "Bearer $accessToken")
-        }
-        if (!response.status.isSuccess()) {
-            throw IllegalStateException("Mail folders API returned ${response.status}")
-        }
-
-        val foldersJson = response.body<GraphListResponse<GraphMailFolderDto>>()
-        return foldersJson.value.map { folder ->
-            ConnectionResourceDto(
-                id = folder.id ?: "",
-                name = "${folder.displayName ?: "Folder"} (${folder.totalItemCount ?: 0})",
-                description = "${folder.unreadItemCount ?: 0} nepřečtených",
-                capability = ConnectionCapability.EMAIL_READ,
-            )
-        }
-    }
-
-    private suspend fun listGraphCalendars(accessToken: String): List<ConnectionResourceDto> {
-        val graphBaseUrl = "https://graph.microsoft.com/v1.0"
-        val response = httpClient.get("$graphBaseUrl/me/calendars") {
-            header("Authorization", "Bearer $accessToken")
-        }
-        if (!response.status.isSuccess()) {
-            throw IllegalStateException("Calendars API returned ${response.status}")
-        }
-
-        val calendarsJson = response.body<GraphListResponse<GraphCalendarDto>>()
-        return calendarsJson.value.map { calendar ->
-            ConnectionResourceDto(
-                id = calendar.id ?: "",
-                name = calendar.name ?: "Calendar",
-                description = if (calendar.isDefaultCalendar == true) "Výchozí kalendář" else null,
-                capability = ConnectionCapability.CALENDAR_READ,
-            )
-        }
     }
 
     // ─── Google Workspace (Gmail API + Google Calendar API) ───

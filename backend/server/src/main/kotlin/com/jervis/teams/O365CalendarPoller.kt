@@ -13,16 +13,9 @@ import com.jervis.infrastructure.polling.PollingStateService
 import com.jervis.infrastructure.polling.PollingStatusEnum
 import com.jervis.infrastructure.polling.handler.PollingContext
 import com.jervis.infrastructure.polling.handler.ResourceFilter
-import io.ktor.client.HttpClient
-import io.ktor.client.call.body
-import io.ktor.client.request.get
-import io.ktor.client.request.header
-import io.ktor.http.isSuccess
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import mu.KotlinLogging
-import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -38,13 +31,11 @@ private val logger = KotlinLogging.logger {}
  * inside one `PollingHandler` because the central poller registry is keyed by
  * provider.
  *
- * Dual-mode:
- * - **OAuth2 / Graph API**: when the connection has a fresh bearer token,
- *   call `https://graph.microsoft.com/v1.0/me/calendarView` directly with
- *   `Prefer: outlook.timezone="UTC"` so we get UTC `dateTime` strings.
- * - **Browser session via O365 Gateway**: when the connection has an
- *   `o365ClientId` and no bearer token, call `<gateway>/calendar/{clientId}`
- *   which proxies to Graph using browser-pool tokens (Conditional Access path).
+ * Single-mode: **Browser session via O365 Gateway**. The server never talks to
+ * Microsoft Graph directly — every Microsoft Graph call goes through the
+ * O365 gateway pod (which holds the browser session and the Conditional
+ * Access path). The poller hands `o365ClientId` to the gateway gRPC client
+ * and the gateway returns calendar events via its `listCalendarEvents` RPC.
  *
  * Persistence is shared with Google calendar via `CalendarEventIndexDocument`.
  * `provider = CalendarProvider.MICROSOFT_OUTLOOK`. Etag-based upsert mirrors
@@ -62,22 +53,19 @@ private val logger = KotlinLogging.logger {}
 class O365CalendarPoller(
     private val calendarRepository: CalendarEventIndexRepository,
     private val pollingStateService: PollingStateService,
-    private val httpClient: HttpClient,
     private val o365GatewayGrpc: com.jervis.infrastructure.grpc.O365GatewayGrpcClient,
 ) {
-    private val json = Json { ignoreUnknownKeys = true; isLenient = true; explicitNulls = false }
-
     /**
-     * Run a calendar polling cycle for an O365 connection. At least one of
-     * [accessToken] (OAuth2) or [o365ClientId] (browser pool) must be non-null.
+     * Run a calendar polling cycle for an O365 connection. The O365 gateway
+     * pod owns the browser session and proxies Graph requests, so the only
+     * thing the poller needs is the [o365ClientId] handle.
      */
     suspend fun poll(
         connection: ConnectionDocument,
         context: PollingContext,
-        accessToken: String?,
         o365ClientId: String?,
     ): PollingResult {
-        if (accessToken == null && o365ClientId.isNullOrBlank()) {
+        if (o365ClientId.isNullOrBlank()) {
             return PollingResult(errors = 1, authenticationError = true)
         }
 
@@ -96,7 +84,6 @@ class O365CalendarPoller(
                     connection = connection,
                     client = client,
                     projectId = clientLevelProjectId,
-                    accessToken = accessToken,
                     o365ClientId = o365ClientId,
                     calendarKey = "primary",
                     resourceFilter = clientFilter,
@@ -117,7 +104,6 @@ class O365CalendarPoller(
                         connection = connection,
                         client = client,
                         projectId = project.id,
-                        accessToken = accessToken,
                         o365ClientId = o365ClientId,
                         calendarKey = "primary",
                         resourceFilter = projectFilter,
@@ -142,7 +128,6 @@ class O365CalendarPoller(
         connection: ConnectionDocument,
         client: ClientDocument,
         projectId: ProjectId?,
-        accessToken: String?,
         o365ClientId: String?,
         calendarKey: String,
         @Suppress("UNUSED_PARAMETER") resourceFilter: ResourceFilter,
@@ -154,11 +139,8 @@ class O365CalendarPoller(
         val timeMin = state?.lastSeenUpdatedAt ?: Instant.now().minus(1, ChronoUnit.DAYS)
         val timeMax = Instant.now().plus(7, ChronoUnit.DAYS)
 
-        val events = if (accessToken != null) {
-            fetchEventsGraphApi(accessToken, timeMin, timeMax)
-        } else {
-            fetchEventsGateway(o365ClientId!!, timeMin, timeMax)
-        } ?: return PollingResult(errors = 1)
+        val events = fetchEventsGateway(o365ClientId!!, timeMin, timeMax)
+            ?: return PollingResult(errors = 1)
 
         if (events.isEmpty()) {
             pollingStateService.updateWithTimestamp(connection.id, ProviderEnum.MICROSOFT_TEAMS, Instant.now(), tool)
@@ -246,37 +228,6 @@ class O365CalendarPoller(
             itemsCreated = created + updated,
             itemsSkipped = skipped,
         )
-    }
-
-    // -- Graph API direct (OAuth2) --------------------------------------------
-
-    private val graphBaseUrl = "https://graph.microsoft.com/v1.0"
-
-    private suspend fun fetchEventsGraphApi(
-        token: String,
-        timeMin: Instant,
-        timeMax: Instant,
-    ): List<O365GraphEvent>? {
-        return try {
-            val url = "$graphBaseUrl/me/calendarView" +
-                "?startDateTime=$timeMin" +
-                "&endDateTime=$timeMax" +
-                "&\$top=100" +
-                "&\$orderby=start/dateTime"
-            val response = httpClient.get(url) {
-                header("Authorization", "Bearer $token")
-                // Force UTC dateTime strings instead of the user's preferred timezone.
-                header("Prefer", "outlook.timezone=\"UTC\"")
-            }
-            if (!response.status.isSuccess()) {
-                logger.warn { "O365_CALENDAR: Graph /me/calendarView returned ${response.status}" }
-                return null
-            }
-            response.body<GraphListResponse<O365GraphEvent>>().value
-        } catch (e: Exception) {
-            logger.error(e) { "O365_CALENDAR: Error fetching events from Graph API" }
-            null
-        }
     }
 
     // -- Gateway proxy (browser session pool) ---------------------------------
