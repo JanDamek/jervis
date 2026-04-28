@@ -26,6 +26,7 @@
 | `docs/thought-map-spec.md` | **Thought Map spec** – navigation layer over KB graph, spreading activation, ThoughtNodes/Edges/Anchors, maintenance, cold start |
 | `docs/inter-service-contracts.md` | **SSOT** for pod-to-pod APIs – Protobuf + Buf + gRPC over h2c, grpc-kotlin + grpcio codegen, RequestContext payload (no X-* headers), CI drift/breaking enforcement |
 | `docs/tts-normalization.md` | **SSOT** for XTTS normalization – rule-based dictionary in MongoDB (`ttsRules`), acronym/strip/replace types, scope precedence PROJECT>CLIENT>GLOBAL, CPU pipeline, no LLM |
+| `docs/claude-cli-hierarchy.md` | **SSOT** for the per-(client,project) Claude SDK session hierarchy – ClientSessionManager / ProjectSessionManager, SessionBroker (LRU + parent-TTL + agent_job_holds), proposal lifecycle (DRAFT → AWAITING_APPROVAL → APPROVED/REJECTED) with atomic CAS, `dispatchTriggeredBy` audit invariant, qualifier inbox, executor handler routing, coding-agent restart parser |
 
 ## Workflow Rules
 
