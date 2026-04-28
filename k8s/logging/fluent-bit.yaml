@@ -55,7 +55,7 @@ data:
         Name              tail
         Tag               kube.*
         Path              /var/log/containers/*.log
-        Parser            docker
+        multiline.parser  docker, cri
         DB                /tmp/flb_kube.db
         Mem_Buf_Limit     10MB
         Skip_Long_Lines   On
@@ -73,6 +73,17 @@ data:
         K8S-Logging.Exclude Off
         Labels              On
         Annotations         Off
+
+    # Concatenate multi-line stack traces into a single event so the entire
+    # exception lands in one Kibana hit. Without this every "at com.foo.Bar"
+    # frame becomes its own document and the original error message loses
+    # its trail. Built-in parsers cover JVM (java) and Python (python).
+    # Go is included for any future Go services on the cluster.
+    [FILTER]
+        Name                  multiline
+        Match                 kube.*
+        multiline.key_content log
+        multiline.parser      jvm_logback, java, python, go
 
     [OUTPUT]
         Name            es
@@ -101,6 +112,23 @@ data:
         Regex       ^\<(?<pri>[0-9]+)\>(?<time>[^ ]* {1,2}[^ ]* [^ ]*) (?<host>[^ ]*) (?<ident>[a-zA-Z0-9_\/\.\-]*)(?:\[(?<pid>[0-9]+)\])?(?:[^\:]*\:)? *(?<message>.*)$
         Time_Key    time
         Time_Format %b %d %H:%M:%S
+
+    # Custom multiline parser for Logback / Spring Boot output. The
+    # built-in `java` parser only continues on lines that start with
+    # whitespace ("\s+at ...") or "Caused by:". Logback's default pattern
+    # prints the exception class on its own line right after the message
+    # ("io.grpc.StatusException: UNKNOWN") with no leading whitespace, so
+    # the built-in parser breaks the trace there. Anchor instead on the
+    # ISO-8601 timestamp every Logback line begins with: any line NOT
+    # starting with `YYYY-MM-DD HH:MM:SS` is treated as continuation of
+    # the previous record. Same trick works for Python tracebacks emitted
+    # via the `logging` module with a timestamp prefix.
+    [MULTILINE_PARSER]
+        name          jvm_logback
+        type          regex
+        flush_timeout 1000
+        rule          "start_state"   "/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/"  "cont"
+        rule          "cont"          "/^(?!\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}).*/"  "cont"
 ---
 apiVersion: apps/v1
 kind: DaemonSet
@@ -110,6 +138,14 @@ metadata:
   labels:
     app: fluent-bit
 spec:
+  # Stateless log shipper -- if a node is NotReady we still want the rolling
+  # update to drain and replace the rest of the fleet rather than block
+  # forever waiting on the unreachable pod. Default (1) caused a stall the
+  # day worker2 went NotReady; 2 lets master1 + worker1 update in parallel.
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 2
   selector:
     matchLabels:
       app: fluent-bit
