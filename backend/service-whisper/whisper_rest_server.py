@@ -103,17 +103,21 @@ def _load_diarization_pipeline():
     if not HF_TOKEN:
         print("HF_TOKEN not set — speaker diarization disabled", flush=True)
         return
-    from pyannote.audio import Pipeline
     import torch
-    # PyTorch 2.6 changed torch.load(weights_only=True) by default, and pyannote's
-    # checkpoint contains a TorchVersion object that isn't on the default allow-list,
-    # so loading the pretrained pipeline blows up with UnpicklingError. Allow-list it
-    # explicitly — pyannote checkpoints come from a trusted source (HF + license).
-    try:
-        from torch.torch_version import TorchVersion
-        torch.serialization.add_safe_globals([TorchVersion])
-    except (ImportError, AttributeError):
-        pass
+    # PyTorch 2.6 flipped torch.load(weights_only) default to True. pyannote
+    # checkpoints carry a long tail of pyannote/torch internals (TorchVersion,
+    # Specifications, …) that aren't on the default allow-list, so loading
+    # blows up with UnpicklingError on each one in turn (whack-a-mole). The
+    # weights come from HuggingFace under license — same trust boundary as
+    # before — so monkey-patch torch.load to force weights_only=False once,
+    # globally, before pyannote pulls the model.
+    _orig_torch_load = torch.load
+    def _torch_load_compat(*args, **kwargs):
+        kwargs.setdefault("weights_only", False)
+        return _orig_torch_load(*args, **kwargs)
+    torch.load = _torch_load_compat
+
+    from pyannote.audio import Pipeline
     print("Loading pyannote speaker diarization pipeline (CPU mode)...", flush=True)
     # Don't pass an auth kwarg — pyannote 3.x calls hf_hub_download(use_auth_token=…)
     # which fails on huggingface_hub>=0.30, and 4.x renamed it to token=. The HF
