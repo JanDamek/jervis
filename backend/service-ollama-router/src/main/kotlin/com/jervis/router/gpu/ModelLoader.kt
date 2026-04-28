@@ -65,7 +65,11 @@ class ModelLoader(
             }
             if (!response.status.isSuccess()) {
                 val errBody = response.bodyAsText()
-                logger.error { "Load $model on ${backend.name} failed: HTTP ${response.status} $errBody" }
+                // Load failure is a signal to the dispatcher (retry on another
+                // GPU), not a fatal error. Common case: 30b model on a GPU
+                // without VRAM headroom — dispatcher falls back to GPU with
+                // the model preloaded.
+                logger.warn { "Load $model on ${backend.name} failed: HTTP ${response.status} $errBody" }
                 return@runCatching false
             }
             backend.loadedModels[model] = ModelCatalog.estimateVram(model)
@@ -73,7 +77,7 @@ class ModelLoader(
             logger.info { "Model $model loaded on ${backend.name} (${"%.1f".format(backend.usedVramGb)}GB used)" }
             true
         }.getOrElse {
-            logger.error(it) { "Failed to load model $model on GPU ${backend.name}" }
+            logger.warn(it) { "Failed to load model $model on GPU ${backend.name}: ${it.message}" }
             false
         }
     }

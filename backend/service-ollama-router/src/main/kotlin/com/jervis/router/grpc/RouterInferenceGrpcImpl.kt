@@ -25,6 +25,7 @@ import com.jervis.router.model.Capability
 import com.jervis.router.model.Priority
 import io.grpc.Status
 import io.grpc.StatusException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.json.JsonArray
@@ -69,7 +70,7 @@ class RouterInferenceGrpcImpl(
         val clientId = request.ctx.scope.clientId.takeIf { it.isNotBlank() }
 
         val body = buildOllamaChatBody(request)
-        val result = runCatching {
+        val result = try {
             router.dispatchInference(
                 apiPath = ApiPath.CHAT,
                 body = body,
@@ -80,7 +81,18 @@ class RouterInferenceGrpcImpl(
                 deadlineIso = deadlineIso,
                 maxTierOverride = maxTier,
             )
-        }.getOrElse { error ->
+        } catch (cancel: CancellationException) {
+            // gRPC client closed the stream — structured concurrency cleanup
+            // already ran in upstream `coroutineScope { ... }` blocks.
+            throw cancel
+        } catch (sre: io.grpc.StatusRuntimeException) {
+            // Cancellation surfaces as Status.CANCELLED through gRPC's server
+            // interceptors. It is the normal outcome of a client disconnect,
+            // not an error.
+            if (sre.status.code == io.grpc.Status.Code.CANCELLED) throw sre
+            logger.error(sre) { "dispatch failed: ${sre.message}" }
+            throw sre
+        } catch (error: Throwable) {
             logger.error(error) { "chat dispatch failed: ${error.message}" }
             throw StatusException(Status.INTERNAL.withDescription(error.message).withCause(error))
         }
@@ -100,7 +112,7 @@ class RouterInferenceGrpcImpl(
         val clientId = request.ctx.scope.clientId.takeIf { it.isNotBlank() }
 
         val body = buildOllamaGenerateBody(request)
-        val result = runCatching {
+        val result = try {
             router.dispatchInference(
                 apiPath = ApiPath.GENERATE,
                 body = body,
@@ -111,7 +123,9 @@ class RouterInferenceGrpcImpl(
                 deadlineIso = deadlineIso,
                 maxTierOverride = maxTier,
             )
-        }.getOrElse { error ->
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (error: Throwable) {
             logger.error(error) { "generate dispatch failed: ${error.message}" }
             throw StatusException(Status.INTERNAL.withDescription(error.message).withCause(error))
         }
@@ -126,7 +140,7 @@ class RouterInferenceGrpcImpl(
         val maxTier = mapMaxTier(request.ctx.maxTier)
         val clientId = request.ctx.scope.clientId.takeIf { it.isNotBlank() }
         val body = buildOllamaEmbedBody(request)
-        val result = runCatching {
+        val result = try {
             router.dispatchInference(
                 apiPath = ApiPath.EMBED,
                 body = body,
@@ -135,7 +149,9 @@ class RouterInferenceGrpcImpl(
                 priority = Priority.NORMAL,
                 maxTierOverride = maxTier,
             )
-        }.getOrElse { error ->
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (error: Throwable) {
             logger.error(error) { "embed dispatch failed: ${error.message}" }
             throw StatusException(Status.INTERNAL.withDescription(error.message).withCause(error))
         }

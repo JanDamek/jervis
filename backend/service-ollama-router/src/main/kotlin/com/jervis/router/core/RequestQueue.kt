@@ -380,6 +380,9 @@ class RequestQueue(
             when (response.status) {
                 HttpStatusCode.OK -> logger.info { "WHISPER_GPU_RELEASE: ok" }
                 HttpStatusCode.Conflict -> logger.info { "WHISPER_GPU_RELEASE: busy (transcription in progress)" }
+                // 404 = whisper REST endpoint not present (whisper migrated
+                // fully to gRPC WhisperNotify/Done). Expected, not a warning.
+                HttpStatusCode.NotFound -> logger.debug { "WHISPER_GPU_RELEASE: endpoint absent (gRPC-only whisper)" }
                 else -> logger.warn { "WHISPER_GPU_RELEASE: HTTP ${response.status.value}" }
             }
         }.onFailure {
