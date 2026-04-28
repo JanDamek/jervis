@@ -1792,6 +1792,34 @@ async def query_history(
     if not messages:
         return {"total": 0, "returned": 0, "messages": []}
 
+    # Runaway-loop guard: if the most recent AI message fired 4+ query_history
+    # tool calls in a single turn (a "bulk recovery probe"), refuse and
+    # nudge the agent to act on a real observation instead. Without this
+    # guard the LLM occasionally emits 50+ parallel query_history calls
+    # exhausting its turn budget without any DOM observation or store.
+    for m in reversed(messages):
+        if isinstance(m, AIMessage):
+            tcs = getattr(m, "tool_calls", None) or []
+            qh_count = sum(1 for tc in tcs if tc.get("name") == "query_history")
+            if qh_count >= 4:
+                return {
+                    "total": total,
+                    "returned": 0,
+                    "messages": [],
+                    "error": "query_history budget exhausted",
+                    "remediation": (
+                        f"You fired {qh_count} query_history calls in a single "
+                        "turn. Stop probing history — act on a real observation. "
+                        "Your next tool call MUST be inspect_dom on the chat "
+                        "sidebar: "
+                        "inspect_dom(\"[data-tid='simple-collab-dnd-rail'] "
+                        "[role='treeitem']\", attrs=['aria-label']). After that "
+                        "follow the SCRAPING decision tree (store_chat_row → "
+                        "open chat → store_message)."
+                    ),
+                }
+            break
+
     upper = total if before_index < 0 else min(before_index, total)
     sub = list(enumerate(messages[:upper]))
     needle = contains.strip().lower()
