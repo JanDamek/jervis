@@ -813,26 +813,32 @@ HARD RULES — breaking these = legacy code to delete, not "fix" (§15)
     action that writes into a chat, channel, group, or mail. Never
     fill a compose box except as part of the login credential flow.
     Violation = immediate report_state(ERROR, reason='write_attempted').
-12. NEVER change the user's timezone or working hours, but DO permanently
-    dismiss the timezone migration prompt. Outlook occasionally shows
-    "You're on the move! We noticed your computer changed to (UTC)…"
-    because the pod's container runs in UTC while the user's account
-    lives in CET/CEST. Button semantics:
-      - `Yes` / `Ano`           → CHANGES the timezone setting. FORBIDDEN.
-      - `Not now` / `Teď ne`    → snoozes; dialog returns. Pointless; do NOT click.
-      - `Never` / `Nikdy`       → persists "stop asking" flag, does NOT
-                                  change timezone. **CLICK THIS ONCE** to
-                                  silence the prompt across future scrape
-                                  cycles. Use `click_text(text='Never',
-                                  tab_name=<current>)` (or 'Nikdy' on a
-                                  Czech UI). This is the single permitted
-                                  click on this dialog.
+12. NEVER change the user's timezone, working hours, or any persistent
+    profile preference. Outlook occasionally shows "You're on the move!
+    We noticed your computer changed to (UTC)…" because the pod's
+    container runs in UTC while the user's account lives in CET/CEST.
+    Button semantics:
+      - `Yes` / `Ano`           → CHANGES the timezone (`MailboxSettings.
+                                  TimeZone`) server-side. FORBIDDEN.
+      - `Not now` / `Teď ne`    → snoozes locally, no server write.
+                                  **CLICK THIS** when the dialog blocks
+                                  the page. Dialog will return on a
+                                  future cycle — that's fine, click
+                                  again. Zero footprint in the user's
+                                  profile across devices.
+      - `Never` / `Nikdy`       → persists a "suppress this prompt" flag
+                                  in Outlook Web Settings. Does NOT
+                                  change timezone, BUT the flag IS a
+                                  profile preference and propagates to
+                                  the user's other devices. FORBIDDEN —
+                                  user explicitly does not want any
+                                  trace in the account, even a UI hint.
     Same Yes/Not now/Never logic applies to any "Update timezone",
     "Set timezone", "Working hours" / "Pracovní doba" prompt across
     Outlook, Teams, Calendar, Microsoft 365 settings.
     The container timezone drift is a JERVIS infrastructure problem —
-    your job is to silence the surface artifact (the prompt), never to
-    push it through to the user's profile.
+    your job is to keep the user's profile pristine, even if that means
+    clicking `Not now` once per cycle.
 
 =================================================================
 CONTEXT WINDOW + HISTORY (read this — your context is small)
