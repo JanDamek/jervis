@@ -60,6 +60,12 @@ data class PendingTaskDto(
     val deadlineIso: String? = null,
     /** Observed user presence snapshot at task creation; null when not recorded. */
     val userPresence: String? = null,
+    /**
+     * Claude CLI proposal lifecycle metadata. Non-null = task originated
+     * from a Claude session (or qualifier) and may be in the approval flow.
+     * See [TaskProposalInfoDto].
+     */
+    val proposalInfo: TaskProposalInfoDto? = null,
 )
 
 /** Paginated result for PendingTasksScreen — merges listTasks + countTasks into a single RPC call. */

@@ -1,10 +1,27 @@
 package com.jervis.task
 
 import com.jervis.dto.task.PendingTaskDto
+import com.jervis.dto.task.TaskProposalInfoDto
 import com.jervis.dto.user.UserTaskDto
 import com.jervis.dto.user.UserTaskListItemDto
 import com.jervis.chat.toDto
 import com.jervis.task.TaskDocument
+
+/**
+ * Build the proposal-lifecycle DTO from a TaskDocument. Returns `null`
+ * for legacy/user-created tasks (proposalStage == null), which is the
+ * UI's "no badge / no approval flow" signal.
+ */
+internal fun TaskDocument.toProposalInfoDto(): TaskProposalInfoDto? {
+    val stage = this.proposalStage ?: return null
+    return TaskProposalInfoDto(
+        proposedBy = this.proposedBy.orEmpty(),
+        proposalReason = this.proposalReason.orEmpty(),
+        proposalStage = stage.name,
+        proposalRejectionReason = this.proposalRejectionReason,
+        proposalTaskType = this.proposalTaskType?.name,
+    )
+}
 
 fun TaskDocument.toUserTaskDto(): UserTaskDto =
     UserTaskDto(
@@ -20,6 +37,7 @@ fun TaskDocument.toUserTaskDto(): UserTaskDto =
         pendingQuestion = this.pendingUserQuestion,
         questionContext = this.userQuestionContext,
         priorityScore = this.priorityScore,
+        proposalInfo = this.toProposalInfoDto(),
     )
 
 /** Lightweight mapper for list view — skips content, attachments, agentCheckpointJson. */
@@ -41,6 +59,7 @@ fun TaskDocument.toUserTaskListItemDto(
         completedChildCount = completedChildCount,
         phase = this.phase,
         priorityScore = this.priorityScore,
+        proposalInfo = this.toProposalInfoDto(),
     )
 
 fun TaskDocument.toPendingTaskDto(
@@ -93,5 +112,6 @@ fun TaskDocument.toPendingTaskDto(
         summary = this.summary,
         deadlineIso = this.deadline?.toString(),
         userPresence = this.userPresence,
+        proposalInfo = this.toProposalInfoDto(),
     )
 }

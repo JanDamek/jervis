@@ -209,14 +209,23 @@ fun MainScreen(
         sidebarRemovedTaskIds = viewModel.chat.sidebarRemovedTaskIds.collectAsState().value,
         sidebarBackgroundContent = {
             // Fáze K — coding agents + VNC sessions section, global scope.
+            // PR4 — also surfaces "Návrhy ke schválení (N)" row when
+            // there are Claude proposals waiting for the user. Click
+            // handler is `null` here until a host route is wired (no
+            // UserTasksScreen route in AppNavigator yet); the row stays
+            // informational until then.
             val agentJobs = viewModel.background.agentJobs.collectAsState().value
             val vncSessions = viewModel.background.vncSessions.collectAsState().value
+            val pendingProposals = viewModel.background.pendingProposalsCount
+                .collectAsState().value
             com.jervis.ui.sidebar.BackgroundSection(
                 snapshot = agentJobs,
                 vncSessions = vncSessions,
                 onAgentJobSelected = { snap -> viewModel.background.openNarrative(snap) },
                 onVncSessionEmbed = { snap -> viewModel.background.openVncEmbed(snap) },
                 onVncSessionExternal = { snap -> viewModel.background.openVncExternal(snap) },
+                pendingProposalsCount = pendingProposals,
+                onProposalsClick = null,
             )
         },
         chatAreaOverride = run {

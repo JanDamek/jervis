@@ -252,6 +252,13 @@ fun App(
                     onToggleTts = { meetingViewModel.toggleTts() },
                 )
             }
+
+            Screen.Dashboard -> {
+                com.jervis.ui.dashboard.SessionDashboardScreen(
+                    connectionManager = connectionManager,
+                    onBack = { appNavigator.goBack() },
+                )
+            }
         }
         } // Column
 

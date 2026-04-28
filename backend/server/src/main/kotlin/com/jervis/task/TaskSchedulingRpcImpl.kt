@@ -130,6 +130,7 @@ class TaskSchedulingRpcImpl(
                 isOverdue = task.scheduledAt != null && task.scheduledAt.isBefore(now)
                     && task.state !in setOf(TaskStateEnum.DONE, TaskStateEnum.ERROR),
                 contentPreview = task.content.take(120),
+                proposalInfo = task.toProposalInfoDto(),
             )
         }.sortedBy { it.startEpochMs }
     }

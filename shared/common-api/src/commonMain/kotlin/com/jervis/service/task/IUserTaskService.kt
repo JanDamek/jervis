@@ -15,8 +15,22 @@ interface IUserTaskService {
 
     suspend fun listAll(query: String? = null, offset: Int = 0, limit: Int = 20): UserTaskPageDto
 
-    /** Lightweight paginated list — excludes content, attachments. Uses text index for search. */
-    suspend fun listAllLightweight(query: String? = null, offset: Int = 0, limit: Int = 20): UserTaskListPageDto
+    /**
+     * Lightweight paginated list — excludes content, attachments. Uses text
+     * index for search.
+     *
+     * @param proposalStageFilter When non-null, switches discriminator
+     *   from `state=USER_TASK` to `proposalStage=<stage>` so the UI's
+     *   "Čekající schválení" chip can surface AWAITING_APPROVAL proposals
+     *   (which sit in `state=NEW`, see ServerTaskProposalGrpcImpl).
+     *   Accepted enum names: DRAFT / AWAITING_APPROVAL / APPROVED / REJECTED.
+     */
+    suspend fun listAllLightweight(
+        query: String? = null,
+        offset: Int = 0,
+        limit: Int = 20,
+        proposalStageFilter: String? = null,
+    ): UserTaskListPageDto
 
     /** Get a single user task by ID with full details (content, attachments, chat context). */
     suspend fun getById(taskId: String): UserTaskDto?

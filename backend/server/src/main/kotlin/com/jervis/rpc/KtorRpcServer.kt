@@ -130,6 +130,8 @@ class KtorRpcServer(
     private val agentJobRpcImpl: com.jervis.agentjob.AgentJobRpcImpl,
     private val vncRpcImpl: com.jervis.vnc.VncRpcImpl,
     private val loginConsentService: com.jervis.connection.LoginConsentService,
+    private val dashboardRpcImpl: com.jervis.dashboard.DashboardRpcImpl,
+    private val proposalActionRpcImpl: com.jervis.task.ProposalActionRpcImpl,
 ) {
     private val logger = KotlinLogging.logger {}
     private var server: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration>? = null
@@ -408,6 +410,8 @@ class KtorRpcServer(
                                 registerService<com.jervis.service.tts.ITtsRuleService> { ttsRuleRpcImpl }
                                 registerService<com.jervis.service.agentjob.IAgentJobService> { agentJobRpcImpl }
                                 registerService<com.jervis.service.vnc.IVncService> { vncRpcImpl }
+                                registerService<com.jervis.service.dashboard.IDashboardService> { dashboardRpcImpl }
+                                registerService<com.jervis.service.proposal.IProposalActionService> { proposalActionRpcImpl }
                             }
                         }
                     }

@@ -111,6 +111,8 @@ class JervisRepository private constructor(
     val ttsRules: com.jervis.service.tts.ITtsRuleService get() = servicesProvider().ttsRuleService
     val agentJobs: com.jervis.service.agentjob.IAgentJobService get() = servicesProvider().agentJobService
     val vnc: com.jervis.service.vnc.IVncService get() = servicesProvider().vncService
+    val dashboard: com.jervis.service.dashboard.IDashboardService get() = servicesProvider().dashboardService
+    val proposalAction: com.jervis.service.proposal.IProposalActionService get() = servicesProvider().proposalActionService
 
     // ─── Resilient call wrapper ─────────────────────────────────────
 

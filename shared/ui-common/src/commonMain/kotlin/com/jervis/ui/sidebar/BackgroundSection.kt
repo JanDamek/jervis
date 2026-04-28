@@ -68,6 +68,19 @@ fun BackgroundSection(
     onAgentJobSelected: (AgentJobSnapshot) -> Unit,
     onVncSessionEmbed: (VncSessionSnapshot) -> Unit,
     onVncSessionExternal: (VncSessionSnapshot) -> Unit,
+    /**
+     * PR4 — count of Claude proposals in stage AWAITING_APPROVAL. When
+     * positive, an extra collapsible row "Návrhy ke schválení (N)" is
+     * rendered above the agent-job groups. Source = kRPC push stream
+     * `IProposalActionService.subscribePendingProposalsCount` (replay=1).
+     */
+    pendingProposalsCount: Int = 0,
+    /**
+     * Click handler for the proposals row. Host wires it to navigation
+     * that opens `UserTasksScreen` with the "Čekající schválení" filter
+     * pre-applied. `null` = row stays inert (no click target).
+     */
+    onProposalsClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(true) }
@@ -99,8 +112,14 @@ fun BackgroundSection(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
+                val proposalsSegment = if (pendingProposalsCount > 0) {
+                    ", $pendingProposalsCount návrhů"
+                } else {
+                    ""
+                }
                 Text(
-                    text = "Background  ($runningCount running, $queuedCount queued, $recentCount recent, $vncCount VNC)",
+                    text = "Background  ($runningCount running, $queuedCount queued, " +
+                        "$recentCount recent, $vncCount VNC$proposalsSegment)",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -111,6 +130,43 @@ fun BackgroundSection(
                 )
             }
             if (!expanded) return@Column
+
+            // PR4 — Claude proposal queue. Single clickable row (no
+            // sub-list) — clicking navigates to UserTasksScreen with the
+            // AWAITING_APPROVAL filter pre-applied. Renders only when
+            // there's at least one pending proposal so the section stays
+            // compact for the common "no proposals" case.
+            if (pendingProposalsCount > 0) {
+                val proposalsClick = onProposalsClick
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(
+                            if (proposalsClick != null) {
+                                Modifier.clickable(onClick = proposalsClick)
+                            } else {
+                                Modifier
+                            },
+                        )
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = "Návrhy ke schválení ($pendingProposalsCount)",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color(0xFF00695C),
+                        fontWeight = FontWeight.Medium,
+                    )
+                    if (proposalsClick != null) {
+                        Text(
+                            text = "→",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color(0xFF00695C),
+                        )
+                    }
+                }
+            }
 
             if (runningCount > 0) {
                 SubGroupHeader("Running", runningCount, showRunning) { showRunning = !showRunning }

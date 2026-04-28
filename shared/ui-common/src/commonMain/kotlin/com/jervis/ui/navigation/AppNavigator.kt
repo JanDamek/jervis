@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.asStateFlow
 /**
  * Navigation screens available in the app.
  *
- * Minimal set: Main (chat), Meetings, Calendar, Settings.
+ * Minimal set: Main (chat), Meetings, Calendar, Settings, Dashboard.
  * All other views are sidebars or inline in chat.
  */
 sealed class Screen {
@@ -17,6 +17,8 @@ sealed class Screen {
     object Calendar : Screen()
     /** Full-screen Assistant view: live transcript + hints during an active meeting. */
     object Assistant : Screen()
+    /** Read-only orchestrator session metrics (PR-D1). */
+    object Dashboard : Screen()
 }
 
 /**

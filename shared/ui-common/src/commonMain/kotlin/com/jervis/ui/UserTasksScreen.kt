@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Icon
@@ -34,6 +36,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.jervis.dto.chat.ChatMessageDto
 import com.jervis.dto.chat.ChatRole
+import com.jervis.dto.proposal.UpdateProposalRequestDto
+import com.jervis.dto.task.TaskProposalInfoDto
 import com.jervis.dto.user.TaskRoutingMode
 import com.jervis.dto.user.UserTaskDto
 import com.jervis.dto.user.UserTaskListItemDto
@@ -45,7 +49,16 @@ import com.jervis.ui.util.RefreshIconButton
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.DayOfWeek
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.LocalTime
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.plus
+import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Clock
 
 private const val PAGE_SIZE = 20
 
@@ -73,6 +86,30 @@ private fun userTaskStateBadge(state: String): Pair<String, Color> = when (state
     else -> state to Color(0xFF757575)
 }
 
+/**
+ * Render a "Návrh Claude" / "Návrh Qualifier" badge based on
+ * `proposedBy` prefix. Color = teal accent. Returned label is a
+ * Czech UI string per project convention.
+ */
+private fun proposalBadgeLabel(info: TaskProposalInfoDto): Pair<String, Color> {
+    val label = when {
+        info.proposedBy.startsWith("qualifier", ignoreCase = true) -> "Návrh Qualifier"
+        info.proposedBy.startsWith("claude", ignoreCase = true) -> "Návrh Claude"
+        else -> "Návrh"
+    }
+    // Teal — distinct from existing state palette (blue/green/red/orange/purple).
+    return label to Color(0xFF00897B)
+}
+
+/** Czech label for [TaskProposalInfoDto.proposalStage] enum names. */
+private fun proposalStageLabel(stage: String): String = when (stage) {
+    "DRAFT" -> "Koncept"
+    "AWAITING_APPROVAL" -> "Čeká na schválení"
+    "APPROVED" -> "Schváleno"
+    "REJECTED" -> "Zamítnuto"
+    else -> stage
+}
+
 @Composable
 fun UserTasksScreen(
     repository: JervisRepository,
@@ -89,6 +126,10 @@ fun UserTasksScreen(
     var isLoadingMore by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var filterText by remember { mutableStateOf("") }
+    // PR4 — chip toggling AWAITING_APPROVAL filter (Claude proposals).
+    // Mutually exclusive with default "K reakci" view (state=USER_TASK)
+    // because backend uses the field as a single discriminator.
+    var pendingApprovalOnly by remember { mutableStateOf(false) }
 
     // Selected item in lightweight list + full DTO loaded on demand
     var selectedListItem by remember { mutableStateOf<UserTaskListItemDto?>(null) }
@@ -108,7 +149,13 @@ fun UserTasksScreen(
             try {
                 val offset = if (append) listItems.size else 0
                 val serverQuery = query?.takeIf { it.isNotBlank() }
-                val page = repository.userTasks.listAllLightweight(serverQuery, offset, PAGE_SIZE)
+                val stageFilter = if (pendingApprovalOnly) "AWAITING_APPROVAL" else null
+                val page = repository.userTasks.listAllLightweight(
+                    query = serverQuery,
+                    offset = offset,
+                    limit = PAGE_SIZE,
+                    proposalStageFilter = stageFilter,
+                )
                 listItems = if (append) listItems + page.items else page.items
                 hasMore = page.hasMore
                 totalCount = page.totalCount
@@ -238,6 +285,12 @@ fun UserTasksScreen(
         }
     }
 
+    // Reload immediately when the proposal-filter chip flips (no debounce —
+    // it's a binary toggle, not a typing event).
+    LaunchedEffect(pendingApprovalOnly) {
+        loadTasks(filterText)
+    }
+
     if (errorMessage != null && selectedListItem == null) {
         Column {
             JTopBar(title = "Uživatelské úlohy")
@@ -264,6 +317,28 @@ fun UserTasksScreen(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = JervisSpacing.outerPadding),
                     singleLine = true,
                 )
+
+                // PR4 — proposal-stage filter chip. Toggles between
+                // "K reakci" (state=USER_TASK) and "Čekající schválení"
+                // (proposalStage=AWAITING_APPROVAL). Server-side
+                // discriminator is single-field so chips can't combine.
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = JervisSpacing.outerPadding, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    FilterChip(
+                        selected = pendingApprovalOnly,
+                        onClick = { pendingApprovalOnly = !pendingApprovalOnly },
+                        label = { Text("Čekající schválení") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color(0xFF00897B).copy(alpha = 0.2f),
+                            selectedLabelColor = Color(0xFF00695C),
+                        ),
+                    )
+                }
             },
             listFooter = if (hasMore) {
                 {
@@ -376,6 +451,10 @@ private fun UserTaskListRow(
                     if (item.hasPendingQuestion) {
                         Badge(containerColor = Color(0xFFF57C00)) { Text("❓") }
                     }
+                    item.proposalInfo?.let { info ->
+                        val (label, color) = proposalBadgeLabel(info)
+                        Badge(containerColor = color) { Text(label) }
+                    }
                     Text(
                         text = formatInstant(item.createdAtEpochMillis),
                         style = MaterialTheme.typography.bodySmall,
@@ -427,6 +506,14 @@ private fun UserTaskDetail(
     var chatHistory by remember(task.id) { mutableStateOf<List<ChatMessageDto>>(emptyList()) }
     var isChatLoading by remember(task.id) { mutableStateOf(true) }
     var chatError by remember(task.id) { mutableStateOf<String?>(null) }
+    // PR4 — proposal action state
+    var isProposalActing by remember(task.id) { mutableStateOf(false) }
+    var showRejectDialog by remember(task.id) { mutableStateOf(false) }
+    var rejectReason by remember(task.id) { mutableStateOf("") }
+    // PR-Q5 — edit dialog state. Single boolean — fields live inside
+    // the dialog composable as remember-with-key state because there's
+    // only one edit session at a time per task.
+    var showEditDialog by remember(task.id) { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
 
@@ -461,6 +548,105 @@ private fun UserTaskDetail(
                 onError(e.message ?: "Selhalo odeslání úlohy")
             } finally {
                 isSending = false
+            }
+        }
+    }
+
+    // PR4 — single-click approve. No bulk approve (anti-pattern); user
+    // commits one proposal at a time so each gets a deliberate decision.
+    fun approveProposal() {
+        scope.launch {
+            isProposalActing = true
+            try {
+                val result = repository.proposalAction.approveProposal(task.id)
+                if (result.ok) {
+                    // Approved → proposal moves to APPROVED + state=QUEUED;
+                    // it leaves the AWAITING_APPROVAL list. Treat like a
+                    // task removal so the next item is selected.
+                    onTaskSent(TaskRoutingMode.BACK_TO_PENDING)
+                } else {
+                    onError(result.error ?: "Schválení selhalo")
+                }
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                onError(e.message ?: "Schválení selhalo")
+            } finally {
+                isProposalActing = false
+            }
+        }
+    }
+
+    fun rejectProposal(reason: String) {
+        scope.launch {
+            isProposalActing = true
+            try {
+                val result = repository.proposalAction.rejectProposal(task.id, reason)
+                if (result.ok) {
+                    showRejectDialog = false
+                    rejectReason = ""
+                    // Rejected — proposal stays in list, but stage flips
+                    // to REJECTED. Trigger reload so the badge updates.
+                    onTaskSent(TaskRoutingMode.BACK_TO_PENDING)
+                } else {
+                    onError(result.error ?: "Zamítnutí selhalo")
+                }
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                onError(e.message ?: "Zamítnutí selhalo")
+            } finally {
+                isProposalActing = false
+            }
+        }
+    }
+
+    // PR-Q5 — edit a DRAFT/REJECTED proposal. Server merges only
+    // non-null fields; on REJECTED the stage flips back to DRAFT and
+    // the rejection reason is cleared. After save we reload the list
+    // (via onTaskSent) so the badge + stage label reflect the new
+    // state — same flow as approve/reject above.
+    fun submitEdit(patch: UpdateProposalRequestDto) {
+        scope.launch {
+            isProposalActing = true
+            try {
+                val result = repository.proposalAction.updateProposal(task.id, patch)
+                if (result.ok) {
+                    showEditDialog = false
+                    onTaskSent(TaskRoutingMode.BACK_TO_PENDING)
+                } else {
+                    onError(result.error ?: "Uložení selhalo")
+                }
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                onError(e.message ?: "Uložení selhalo")
+            } finally {
+                isProposalActing = false
+            }
+        }
+    }
+
+    // PR-Q5 — DRAFT → AWAITING_APPROVAL. Used after the user finishes
+    // editing a draft (or a previously REJECTED proposal that was
+    // edited and is now back in DRAFT) and wants to surface it for
+    // approval.
+    fun sendForApproval() {
+        scope.launch {
+            isProposalActing = true
+            try {
+                val result = repository.proposalAction.sendForApproval(task.id)
+                if (result.ok) {
+                    onTaskSent(TaskRoutingMode.BACK_TO_PENDING)
+                } else {
+                    onError(result.error ?: "Odeslání ke schválení selhalo")
+                }
+            } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                onError(e.message ?: "Odeslání ke schválení selhalo")
+            } finally {
+                isProposalActing = false
             }
         }
     }
@@ -500,6 +686,13 @@ private fun UserTaskDetail(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Badge(containerColor = stateColor) { Text(stateLabel) }
+                            task.proposalInfo?.let { info ->
+                                val (label, color) = proposalBadgeLabel(info)
+                                Badge(containerColor = color) { Text(label) }
+                                Badge(containerColor = color.copy(alpha = 0.5f)) {
+                                    Text(proposalStageLabel(info.proposalStage))
+                                }
+                            }
                             Text(
                                 text = formatInstant(task.createdAtEpochMillis),
                                 style = MaterialTheme.typography.bodySmall,
@@ -513,6 +706,31 @@ private fun UserTaskDetail(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                        }
+                    }
+
+                    // PR4 — proposal-flow sections. Always rendered when
+                    // the task has proposal metadata, regardless of stage,
+                    // so the user sees Claude's rationale before deciding.
+                    task.proposalInfo?.let { info ->
+                        if (info.proposalReason.isNotBlank()) {
+                            JSection(title = "Důvod návrhu") {
+                                Text(
+                                    text = info.proposalReason,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                        }
+                        if (info.proposalStage == "REJECTED" &&
+                            !info.proposalRejectionReason.isNullOrBlank()
+                        ) {
+                            JSection(title = "Důvod zamítnutí") {
+                                Text(
+                                    text = info.proposalRejectionReason!!,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
                         }
                     }
 
@@ -581,26 +799,466 @@ private fun UserTaskDetail(
             Spacer(Modifier.height(16.dp))
         }
 
+        // PR4 + PR-Q5 — action bar branches on proposalStage:
+        //  * AWAITING_APPROVAL : Schválit / Zamítnout (immutable —
+        //    no edit; user must Reject first if a change is needed,
+        //    aligns with the server invariant that AWAITING_APPROVAL
+        //    proposals are not mutable).
+        //  * DRAFT             : Upravit / Odeslat ke schválení.
+        //    DRAFT means the qualifier or a Claude session hasn't sent
+        //    it for approval yet, so the user can polish it. Discard
+        //    is intentionally absent — server `rejectTask` only
+        //    accepts AWAITING_APPROVAL → REJECTED transitions, so a
+        //    "Zahodit" button here would just produce INVALID_STATE.
+        //    To drop a DRAFT proposal user uses the row-level Delete
+        //    icon instead.
+        //  * REJECTED          : Upravit / Odeslat ke schválení.
+        //    Editing a REJECTED proposal flips it back to DRAFT
+        //    server-side, then "Odeslat ke schválení" pushes it to
+        //    AWAITING_APPROVAL.
+        //  * APPROVED / null   : regular USER_TASK reply flow (Hotovo
+        //    / Převzít do chatu / Odpovědět).
+        val proposalStage = task.proposalInfo?.proposalStage
         JActionBar(modifier = Modifier.padding(vertical = JervisSpacing.outerPadding)) {
-            JSecondaryButton(
-                onClick = onDismiss,
-                enabled = !isSending,
-            ) {
-                Text("Hotovo")
-            }
-            JSecondaryButton(
-                onClick = { sendReply(TaskRoutingMode.DIRECT_TO_AGENT) },
-                enabled = !isSending,
-            ) {
-                Text("Převzít do chatu")
-            }
-            JPrimaryButton(
-                onClick = { sendReply(TaskRoutingMode.BACK_TO_PENDING) },
-                enabled = !isSending && replyInput.isNotBlank(),
-            ) {
-                Text("Odpovědět")
+            when (proposalStage) {
+                "AWAITING_APPROVAL" -> {
+                    JSecondaryButton(
+                        onClick = { showRejectDialog = true },
+                        enabled = !isProposalActing,
+                    ) {
+                        Text("Zamítnout", color = MaterialTheme.colorScheme.error)
+                    }
+                    JPrimaryButton(
+                        onClick = { approveProposal() },
+                        enabled = !isProposalActing,
+                    ) {
+                        Text("Schválit")
+                    }
+                }
+
+                "DRAFT" -> {
+                    JSecondaryButton(
+                        onClick = { showEditDialog = true },
+                        enabled = !isProposalActing,
+                    ) {
+                        Text("Upravit")
+                    }
+                    JPrimaryButton(
+                        onClick = { sendForApproval() },
+                        enabled = !isProposalActing,
+                    ) {
+                        Text("Odeslat ke schválení")
+                    }
+                }
+
+                "REJECTED" -> {
+                    JSecondaryButton(
+                        onClick = { showEditDialog = true },
+                        enabled = !isProposalActing,
+                    ) {
+                        Text("Upravit")
+                    }
+                    JPrimaryButton(
+                        onClick = { sendForApproval() },
+                        enabled = !isProposalActing,
+                    ) {
+                        Text("Odeslat ke schválení")
+                    }
+                }
+
+                else -> {
+                    JSecondaryButton(
+                        onClick = onDismiss,
+                        enabled = !isSending,
+                    ) {
+                        Text("Hotovo")
+                    }
+                    JSecondaryButton(
+                        onClick = { sendReply(TaskRoutingMode.DIRECT_TO_AGENT) },
+                        enabled = !isSending,
+                    ) {
+                        Text("Převzít do chatu")
+                    }
+                    JPrimaryButton(
+                        onClick = { sendReply(TaskRoutingMode.BACK_TO_PENDING) },
+                        enabled = !isSending && replyInput.isNotBlank(),
+                    ) {
+                        Text("Odpovědět")
+                    }
+                }
             }
         }
+    }
+
+    // Reject dialog — server enforces min 5 chars on `reason`, mirror in
+    // UI so the user gets immediate feedback rather than an RPC roundtrip.
+    // Uses AlertDialog directly (not ConfirmDialog) because we need a
+    // text field inline with the message body.
+    if (showRejectDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = {
+                if (!isProposalActing) {
+                    showRejectDialog = false
+                    rejectReason = ""
+                }
+            },
+            title = { Text("Zamítnout návrh") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Zadejte stručný důvod (min. $MIN_REJECT_REASON_LENGTH znaků). " +
+                            "Důvod uvidí Claude session, aby mohla návrh upravit " +
+                            "a znovu nabídnout.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    JTextField(
+                        value = rejectReason,
+                        onValueChange = { rejectReason = it },
+                        label = "Důvod zamítnutí",
+                        placeholder = "Např. už řešíme jinou cestou; prosím zúžit scope...",
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = false,
+                        minLines = 3,
+                        maxLines = 6,
+                        enabled = !isProposalActing,
+                    )
+                }
+            },
+            confirmButton = {
+                JDestructiveButton(
+                    onClick = {
+                        if (rejectReason.trim().length >= MIN_REJECT_REASON_LENGTH &&
+                            !isProposalActing
+                        ) {
+                            rejectProposal(rejectReason.trim())
+                        }
+                    },
+                    enabled = !isProposalActing &&
+                        rejectReason.trim().length >= MIN_REJECT_REASON_LENGTH,
+                ) {
+                    Text("Zamítnout")
+                }
+            },
+            dismissButton = {
+                JTextButton(
+                    onClick = {
+                        if (!isProposalActing) {
+                            showRejectDialog = false
+                            rejectReason = ""
+                        }
+                    },
+                    enabled = !isProposalActing,
+                ) {
+                    Text("Zrušit")
+                }
+            },
+        )
+    }
+
+    // PR-Q5 — edit dialog. Rendered only for DRAFT/REJECTED proposals
+    // (action bar above only shows the "Upravit" button there). The
+    // dialog itself owns its TextField state so re-opening always
+    // starts from the current task snapshot rather than stale buffer.
+    if (showEditDialog) {
+        ProposalEditDialog(
+            task = task,
+            isSaving = isProposalActing,
+            onConfirm = { patch -> submitEdit(patch) },
+            onDismiss = {
+                if (!isProposalActing) showEditDialog = false
+            },
+        )
+    }
+}
+
+private const val MIN_REJECT_REASON_LENGTH = 5
+
+// ── PR-Q5 — proposal edit dialog ────────────────────────────────────────
+
+/** Czech label for [TaskProposalInfoDto.proposalTaskType] enum names. */
+private fun proposalTaskTypeLabel(type: String?): String = when (type) {
+    "CODING" -> "Kódování"
+    "MAIL_REPLY" -> "Odpověď na e-mail"
+    "TEAMS_REPLY" -> "Odpověď v Teams"
+    "CALENDAR_RESPONSE" -> "Odpověď na pozvánku"
+    "BUGTRACKER_ENTRY" -> "Issue v bug-trackeru"
+    "MEETING_ATTEND" -> "Účast na schůzce"
+    "OTHER" -> "Jiné (manuální review)"
+    null -> "Nezvoleno"
+    else -> type
+}
+
+/**
+ * Stable ordering for the dropdown — most-likely picks first so users
+ * don't have to scroll. Mirrors the enum order in the orchestrator
+ * `ProposalTaskType`.
+ */
+private val PROPOSAL_TASK_TYPE_OPTIONS = listOf(
+    "CODING",
+    "MAIL_REPLY",
+    "TEAMS_REPLY",
+    "CALENDAR_RESPONSE",
+    "BUGTRACKER_ENTRY",
+    "MEETING_ATTEND",
+    "OTHER",
+)
+
+/**
+ * Edit dialog for a Claude/qualifier-proposed task in DRAFT or REJECTED
+ * stage. Only non-null fields in the resulting patch are forwarded to
+ * the server (server merges); blank or unchanged values map to `null`
+ * so the server doesn't overwrite identical text.
+ *
+ * Validation client-side:
+ *  - title.isNotBlank() — server-side `taskName` is required
+ *  - description.isNotBlank() — body is the actual draft reply / mail /
+ *    Teams message; an empty body is never useful
+ *  - reason / scheduledAt / proposalTaskType — optional
+ *
+ * Material 3 [androidx.compose.material3.DatePicker] is not yet stable
+ * on Compose Multiplatform (1.9.x ships an experimental API but iOS
+ * targets routinely break on it). To keep the dialog portable we use
+ * preset chips ("Dnes 18:00", "Zítra 9:00", "Pondělí 9:00") + a free-
+ * text ISO field. When richer pickers land in CMP we can swap the
+ * inner [ScheduledAtPicker] body without touching the rest.
+ */
+@Composable
+private fun ProposalEditDialog(
+    task: UserTaskDto,
+    isSaving: Boolean,
+    onConfirm: (UpdateProposalRequestDto) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val originalTitle = task.title
+    val originalDescription = task.description ?: ""
+    val originalReason = task.proposalInfo?.proposalReason ?: ""
+    val originalType = task.proposalInfo?.proposalTaskType
+
+    var titleState by remember(task.id) { mutableStateOf(originalTitle) }
+    var descriptionState by remember(task.id) { mutableStateOf(originalDescription) }
+    var reasonState by remember(task.id) { mutableStateOf(originalReason) }
+    var typeState by remember(task.id) { mutableStateOf(originalType) }
+    var scheduledAtIsoState by remember(task.id) { mutableStateOf<String?>(null) }
+
+    val canSave = titleState.isNotBlank() && descriptionState.isNotBlank() && !isSaving
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Upravit návrh") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(JervisSpacing.itemGap),
+            ) {
+                Text(
+                    "Server přepíše pouze pole, která se reálně změnila. " +
+                        "Návrh ve stavu \"Zamítnuto\" se po uložení vrátí do " +
+                        "\"Koncept\" a ztratí původní důvod zamítnutí.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                JTextField(
+                    value = titleState,
+                    onValueChange = { titleState = it },
+                    label = "Název",
+                    placeholder = "Krátký výstižný název návrhu",
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    enabled = !isSaving,
+                    isError = titleState.isBlank(),
+                    errorMessage = if (titleState.isBlank()) "Název nesmí být prázdný" else null,
+                )
+                JTextField(
+                    value = descriptionState,
+                    onValueChange = { descriptionState = it },
+                    label = "Obsah / odpověď / popis",
+                    placeholder = "Tělo zprávy, kódovací zadání nebo popis úkolu...",
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = false,
+                    minLines = 6,
+                    maxLines = 20,
+                    enabled = !isSaving,
+                    isError = descriptionState.isBlank(),
+                    errorMessage = if (descriptionState.isBlank()) "Obsah nesmí být prázdný" else null,
+                )
+                JTextField(
+                    value = reasonState,
+                    onValueChange = { reasonState = it },
+                    label = "Důvod návrhu (volitelné)",
+                    placeholder = "Proč Claude tuto akci navrhuje",
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = false,
+                    minLines = 2,
+                    maxLines = 5,
+                    enabled = !isSaving,
+                )
+                ProposalTaskTypeDropdown(
+                    selected = typeState,
+                    onSelect = { typeState = it },
+                    enabled = !isSaving,
+                )
+                ScheduledAtPicker(
+                    value = scheduledAtIsoState,
+                    onChange = { scheduledAtIsoState = it },
+                    enabled = !isSaving,
+                )
+            }
+        },
+        confirmButton = {
+            JPrimaryButton(
+                onClick = {
+                    if (!canSave) return@JPrimaryButton
+                    // Diff against original — null = "leave unchanged".
+                    // For scheduledAt we only ever push a non-null ISO
+                    // because the server treats blank as "no change"
+                    // (existing scheduledAt is preserved); a future
+                    // "clear schedule" UI would need a server-side
+                    // sentinel value.
+                    val patch = UpdateProposalRequestDto(
+                        title = titleState.takeIf { it != originalTitle },
+                        description = descriptionState.takeIf { it != originalDescription },
+                        reason = reasonState.takeIf { it != originalReason },
+                        scheduledAtIso = scheduledAtIsoState?.takeIf { it.isNotBlank() },
+                        proposalTaskType = typeState?.takeIf { it != originalType },
+                    )
+                    // No-change save — close without an RPC roundtrip.
+                    val isNoOp = patch.title == null &&
+                        patch.description == null &&
+                        patch.reason == null &&
+                        patch.scheduledAtIso == null &&
+                        patch.proposalTaskType == null
+                    if (isNoOp) {
+                        onDismiss()
+                    } else {
+                        onConfirm(patch)
+                    }
+                },
+                enabled = canSave,
+            ) {
+                Text("Uložit")
+            }
+        },
+        dismissButton = {
+            JTextButton(onClick = onDismiss, enabled = !isSaving) {
+                Text("Zrušit")
+            }
+        },
+    )
+}
+
+@Composable
+private fun ProposalTaskTypeDropdown(
+    selected: String?,
+    onSelect: (String) -> Unit,
+    enabled: Boolean,
+) {
+    JDropdown(
+        items = PROPOSAL_TASK_TYPE_OPTIONS,
+        selectedItem = selected,
+        onItemSelected = onSelect,
+        label = "Typ návrhu",
+        itemLabel = { proposalTaskTypeLabel(it) },
+        enabled = enabled,
+        placeholder = proposalTaskTypeLabel(null),
+    )
+}
+
+/**
+ * Lightweight scheduled-at picker. Compose Multiplatform doesn't ship
+ * a stable cross-platform DateTimePicker yet (Material 3 DatePicker
+ * works on Android/Desktop but iOS support is in flux), so we offer
+ * three preset chips ("Dnes 18:00", "Zítra 9:00", "Pondělí 9:00") plus
+ * a free-text ISO-8601 field for custom values. The result is an
+ * RFC 3339 string the server parses with `Instant.parse`. Selecting
+ * a preset overwrites the text field, picking "Vlastní…" focuses it.
+ */
+@Composable
+private fun ScheduledAtPicker(
+    value: String?,
+    onChange: (String?) -> Unit,
+    enabled: Boolean,
+) {
+    val tz = remember { TimeZone.currentSystemDefault() }
+    val now = remember { Clock.System.now() }
+    val today = remember(now, tz) { now.toLocalDateTime(tz).date }
+
+    fun atIso(date: LocalDate, hour: Int, minute: Int = 0): String {
+        val ldt = LocalDateTime(date, LocalTime(hour, minute))
+        return ldt.toInstant(tz).toString()
+    }
+
+    val tonightIso = remember(today) { atIso(today, 18) }
+    val tomorrowIso = remember(today) {
+        atIso(today.plus(1, DateTimeUnit.DAY), 9)
+    }
+    val nextMondayIso = remember(today) {
+        // Days until next Monday (1..7 — never "today" so the chip is
+        // useful when today is already Monday).
+        val daysAhead = ((DayOfWeek.MONDAY.ordinal - today.dayOfWeek.ordinal + 7) % 7)
+            .let { if (it == 0) 7 else it }
+        atIso(today.plus(daysAhead, DateTimeUnit.DAY), 9)
+    }
+
+    var customIso by remember { mutableStateOf(value ?: "") }
+
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            "Plánovaný čas (volitelné)",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FilterChip(
+                selected = value == tonightIso,
+                onClick = {
+                    val next = if (value == tonightIso) null else tonightIso
+                    onChange(next)
+                    customIso = next ?: ""
+                },
+                label = { Text("Dnes 18:00") },
+                enabled = enabled,
+            )
+            FilterChip(
+                selected = value == tomorrowIso,
+                onClick = {
+                    val next = if (value == tomorrowIso) null else tomorrowIso
+                    onChange(next)
+                    customIso = next ?: ""
+                },
+                label = { Text("Zítra 9:00") },
+                enabled = enabled,
+            )
+            FilterChip(
+                selected = value == nextMondayIso,
+                onClick = {
+                    val next = if (value == nextMondayIso) null else nextMondayIso
+                    onChange(next)
+                    customIso = next ?: ""
+                },
+                label = { Text("Po 9:00") },
+                enabled = enabled,
+            )
+        }
+        JTextField(
+            value = customIso,
+            onValueChange = {
+                customIso = it
+                // Bubble up only when the user has typed something
+                // resembling an ISO timestamp; otherwise treat as
+                // "no schedule" so saving an unrecognised string
+                // doesn't fail server-side parse.
+                onChange(it.trim().takeIf { v -> v.isNotEmpty() })
+            },
+            label = "Vlastní (ISO 8601)",
+            placeholder = "2026-05-01T09:00:00+02:00",
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            enabled = enabled,
+        )
     }
 }
 

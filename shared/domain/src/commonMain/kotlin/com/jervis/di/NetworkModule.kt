@@ -213,6 +213,8 @@ object NetworkModule {
             ttsRuleService = rpcClient.withService<com.jervis.service.tts.ITtsRuleService>(),
             agentJobService = rpcClient.withService<com.jervis.service.agentjob.IAgentJobService>(),
             vncService = rpcClient.withService<com.jervis.service.vnc.IVncService>(),
+            dashboardService = rpcClient.withService<com.jervis.service.dashboard.IDashboardService>(),
+            proposalActionService = rpcClient.withService<com.jervis.service.proposal.IProposalActionService>(),
         )
 
     /**
@@ -258,9 +260,11 @@ object NetworkModule {
         val ttsRuleService: com.jervis.service.tts.ITtsRuleService,
         val agentJobService: com.jervis.service.agentjob.IAgentJobService,
         val vncService: com.jervis.service.vnc.IVncService,
+        val dashboardService: com.jervis.service.dashboard.IDashboardService,
+        val proposalActionService: com.jervis.service.proposal.IProposalActionService,
     ) {
         /** Number of service stubs in this container. */
-        fun countServices(): Int = 38
+        fun countServices(): Int = 40
 
         override fun toString() = "Services(${countServices()} stubs)"
     }

@@ -1,6 +1,7 @@
 package com.jervis.dto.user
 
 import com.jervis.dto.chat.AttachmentDto
+import com.jervis.dto.task.TaskProposalInfoDto
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -17,6 +18,12 @@ data class UserTaskDto(
     val pendingQuestion: String? = null,
     val questionContext: String? = null,
     val priorityScore: Int? = null,
+    /**
+     * Claude CLI proposal lifecycle metadata. Non-null = task originated
+     * from a Claude session (or qualifier) and may be in the approval flow.
+     * See [TaskProposalInfoDto].
+     */
+    val proposalInfo: TaskProposalInfoDto? = null,
 )
 
 /** Lightweight DTO for list view — excludes content, attachments, agentCheckpointJson. */
@@ -38,6 +45,8 @@ data class UserTaskListItemDto(
     val completedChildCount: Int = 0,
     val phase: String? = null,
     val priorityScore: Int? = null,
+    /** See [UserTaskDto.proposalInfo]. */
+    val proposalInfo: TaskProposalInfoDto? = null,
 )
 
 @Serializable

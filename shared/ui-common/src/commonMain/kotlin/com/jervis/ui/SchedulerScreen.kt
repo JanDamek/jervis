@@ -43,6 +43,13 @@ import kotlinx.datetime.toLocalDateTime
  * Shows all calendar entries (scheduled tasks, calendar events, deadline tasks)
  * for the displayed week. Overdue items carry forward to today.
  * Tasks without a deadline are shown on today.
+ *
+ * PR4 — entries with `proposalInfo != null` get a "Návrh Claude" badge;
+ * a filter chip "Pouze čekající schválení" reduces the view to entries
+ * in proposalStage=AWAITING_APPROVAL. Filtering is client-side because
+ * the calendar query already returns a bounded set (≤200 entries) and
+ * the field is cheap to read; pushing it server-side would force a new
+ * RPC parameter for a single chip toggle.
  */
 @Composable
 fun SchedulerScreen(
@@ -62,6 +69,7 @@ fun SchedulerScreen(
     var entries by remember { mutableStateOf<List<CalendarEntryDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var awaitingApprovalOnly by remember { mutableStateOf(false) }
 
     fun load() {
         scope.launch {
@@ -86,11 +94,23 @@ fun SchedulerScreen(
         Clock.System.now().toLocalDateTime(tz).date
     }
 
+    // Filter (chip) before grouping. With awaitingApprovalOnly we drop
+    // every entry whose proposalInfo isn't AWAITING_APPROVAL — including
+    // legacy/user entries (proposalInfo == null), since the chip is meant
+    // to surface ONLY proposals waiting for the user.
+    val filteredEntries = remember(entries, awaitingApprovalOnly) {
+        if (awaitingApprovalOnly) {
+            entries.filter { it.proposalInfo?.proposalStage == "AWAITING_APPROVAL" }
+        } else {
+            entries
+        }
+    }
+
     // Group entries by day
-    val entriesByDay = remember(entries, currentMonday, tz) {
+    val entriesByDay = remember(filteredEntries, currentMonday, tz) {
         val days = (0..6).map { currentMonday.plus(it, DateTimeUnit.DAY) }
         val map = days.associateWith { mutableListOf<CalendarEntryDto>() }
-        for (entry in entries) {
+        for (entry in filteredEntries) {
             val entryDate = kotlinx.datetime.Instant.fromEpochMilliseconds(entry.startEpochMs)
                 .toLocalDateTime(tz).date
             // Overdue items show on today
@@ -143,6 +163,25 @@ fun SchedulerScreen(
             ) {
                 Icon(Icons.AutoMirrored.Filled.ArrowForward, "Další týden")
             }
+        }
+
+        // PR4 — proposal filter chip row. Client-side filter; no RPC roundtrip.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = JervisSpacing.outerPadding, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FilterChip(
+                selected = awaitingApprovalOnly,
+                onClick = { awaitingApprovalOnly = !awaitingApprovalOnly },
+                label = { Text("Pouze čekající schválení") },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = Color(0xFF00897B).copy(alpha = 0.2f),
+                    selectedLabelColor = Color(0xFF00695C),
+                ),
+            )
         }
 
         // Content
@@ -299,6 +338,47 @@ private fun CalendarEntryCard(entry: CalendarEntryDto) {
                 style = MaterialTheme.typography.labelSmall,
                 color = typeColor,
             )
+        }
+
+        // PR4 — Claude proposal badge (teal). Renders next to type badge
+        // so the user immediately sees "this entry came from a Claude
+        // session, possibly waiting for my approval".
+        entry.proposalInfo?.let { info ->
+            val proposalColor = Color(0xFF00897B)
+            Spacer(Modifier.width(4.dp))
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(proposalColor.copy(alpha = 0.15f))
+                    .padding(horizontal = 4.dp, vertical = 1.dp),
+            ) {
+                val label = when {
+                    info.proposedBy.startsWith("qualifier", ignoreCase = true) -> "Návrh Q"
+                    else -> "Návrh Claude"
+                }
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = proposalColor,
+                )
+            }
+            // When awaiting approval, also show a tiny hint badge so
+            // the chip's purpose is reflected in the row itself.
+            if (info.proposalStage == "AWAITING_APPROVAL") {
+                Spacer(Modifier.width(4.dp))
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(proposalColor)
+                        .padding(horizontal = 4.dp, vertical = 1.dp),
+                ) {
+                    Text(
+                        text = "Schválit",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                    )
+                }
+            }
         }
 
         Spacer(Modifier.width(6.dp))

@@ -277,12 +277,21 @@ class UserTaskService(
         query: String?,
         offset: Int,
         limit: Int,
+        proposalStageFilter: com.jervis.task.ProposalStage? = null,
     ): PagedTasks {
-        // State-only discriminator: K reakci shows tasks waiting for user input.
-        // ERROR tasks are routed through the retry/escalation path elsewhere.
-        val criteria = Criteria.where("state").`is`(
-            com.jervis.dto.task.TaskStateEnum.USER_TASK.name,
-        )
+        // Discriminator: regular "K reakci" view filters by `state=USER_TASK`;
+        // when [proposalStageFilter] is set (UI chip "Čekající schválení"),
+        // we instead filter by `proposalStage=<stage>` so Claude proposals
+        // sitting in NEW + AWAITING_APPROVAL surface correctly. The two
+        // filters are mutually exclusive on the UI side — one chip at a
+        // time — so we don't need to combine them.
+        val criteria = if (proposalStageFilter != null) {
+            Criteria.where("proposalStage").`is`(proposalStageFilter.name)
+        } else {
+            Criteria.where("state").`is`(
+                com.jervis.dto.task.TaskStateEnum.USER_TASK.name,
+            )
+        }
 
         if (!query.isNullOrBlank()) {
             // Try $text search first (requires text index on taskName + content)

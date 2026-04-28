@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.AccountBalance
@@ -79,12 +80,14 @@ import com.jervis.ui.navigation.Screen
 private enum class TopBarMenuItem(val icon: ImageVector, val title: String) {
     MEETINGS(Icons.Default.Mic, "Meetingy"),
     CALENDAR(Icons.Default.CalendarMonth, "Kalendář"),
+    DASHBOARD(Icons.Outlined.Insights, "Dashboard"),
     SETTINGS(Icons.Default.Settings, "Nastavení"),
 }
 
 private fun TopBarMenuItem.toScreen(): Screen = when (this) {
     TopBarMenuItem.MEETINGS -> Screen.Meetings
     TopBarMenuItem.CALENDAR -> Screen.Calendar
+    TopBarMenuItem.DASHBOARD -> Screen.Dashboard
     TopBarMenuItem.SETTINGS -> Screen.Settings
 }
 

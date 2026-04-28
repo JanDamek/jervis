@@ -55,6 +55,16 @@ class BackgroundViewModel(
     val vncSessions: StateFlow<List<VncSessionSnapshot>> = _vncSessions.asStateFlow()
 
     /**
+     * PR4 — count of Claude proposals in stage AWAITING_APPROVAL across
+     * all clients. Surfaced in the sidebar Background section as
+     * "Návrhy ke schválení (N)". Push-only via
+     * [com.jervis.service.proposal.IProposalActionService.subscribePendingProposalsCount]
+     * (replay=1 on the server).
+     */
+    private val _pendingProposalsCount = MutableStateFlow(0)
+    val pendingProposalsCount: StateFlow<Int> = _pendingProposalsCount.asStateFlow()
+
+    /**
      * Currently expanded agent job snapshot — drives the in-chat detail
      * panel mount. Set by [openNarrative], cleared by [closeNarrative]
      * (or implicitly when [openVncEmbed] takes over the chat area).
@@ -89,6 +99,7 @@ class BackgroundViewModel(
     private var agentJobsJob: Job? = null
     private var vncJob: Job? = null
     private var narrativeJob: Job? = null
+    private var proposalsCountJob: Job? = null
 
     fun start() {
         if (agentJobsJob?.isActive == true) return
@@ -120,6 +131,20 @@ class BackgroundViewModel(
                 throw ce
             } catch (e: Exception) {
                 println("BackgroundViewModel.subscribeActiveSessions failed: ${e.message}")
+            }
+        }
+        // PR4 — pending Claude proposals count (sidebar badge)
+        proposalsCountJob = scope.launch {
+            try {
+                connectionManager.resilientFlow { services ->
+                    services.proposalActionService.subscribePendingProposalsCount()
+                }.collect { count ->
+                    _pendingProposalsCount.value = count
+                }
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (e: Exception) {
+                println("BackgroundViewModel.subscribePendingProposalsCount failed: ${e.message}")
             }
         }
     }
@@ -205,5 +230,6 @@ class BackgroundViewModel(
         agentJobsJob?.cancel(); agentJobsJob = null
         vncJob?.cancel(); vncJob = null
         narrativeJob?.cancel(); narrativeJob = null
+        proposalsCountJob?.cancel(); proposalsCountJob = null
     }
 }

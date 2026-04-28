@@ -59,8 +59,28 @@ class UserTaskRpcImpl(
         )
     }
 
-    override suspend fun listAllLightweight(query: String?, offset: Int, limit: Int): UserTaskListPageDto {
-        val paged = userTaskService.findPagedTasksLightweight(query, offset, limit.coerceAtMost(50))
+    override suspend fun listAllLightweight(
+        query: String?,
+        offset: Int,
+        limit: Int,
+        proposalStageFilter: String?,
+    ): UserTaskListPageDto {
+        val stage = proposalStageFilter
+            ?.takeIf { it.isNotBlank() }
+            ?.let { raw ->
+                ProposalStage.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) }
+                    ?: throw IllegalArgumentException(
+                        "Unknown proposalStageFilter: '$raw' — accepted: ${
+                            ProposalStage.entries.joinToString(", ")
+                        }",
+                    )
+            }
+        val paged = userTaskService.findPagedTasksLightweight(
+            query = query,
+            offset = offset,
+            limit = limit.coerceAtMost(50),
+            proposalStageFilter = stage,
+        )
         return UserTaskListPageDto(
             items = paged.items.map { it.toUserTaskListItemDto() },
             totalCount = paged.totalCount,

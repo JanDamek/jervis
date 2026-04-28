@@ -28,6 +28,12 @@ data class CalendarEntryDto(
     val isOverdue: Boolean = false,
     /** Short preview of task content. */
     val contentPreview: String? = null,
+    /**
+     * Claude CLI proposal lifecycle metadata. Non-null = entry corresponds
+     * to a Claude-proposed task and may be in the approval flow. UI shows
+     * "Návrh Claude" badge + filter for AWAITING_APPROVAL.
+     */
+    val proposalInfo: TaskProposalInfoDto? = null,
 )
 
 @Serializable
