@@ -110,6 +110,26 @@ data class AgentJobRecord(
     val startedAt: Instant? = null,
     /** Moment the Job reached a terminal state. */
     val completedAt: Instant? = null,
+    /**
+     * PR2b — non-null audit invariant. Records who triggered the dispatch:
+     *  - `in_chat_consent`  — user explicit consent inside Claude session chat
+     *  - `ui_approval`      — user clicked Approve on a proposed task
+     *  - `scheduler_cron`   — cron scheduler dispatched a recurring task
+     *  - `manual`           — direct UI / API call (legacy and admin)
+     *
+     * The dispatcher route validates this is non-empty before insert
+     * (returns INVALID_ARGUMENT otherwise). Used to retroactively filter
+     * for "did Claude session dispatch autonomously" audits.
+     */
+    @Indexed
+    val dispatchTriggeredBy: String,
+    /**
+     * PR2b — number of K8s Job restarts (restartPolicy=OnFailure, max 3).
+     * Incremented by `AgentJobWatcher` when it sees a Job pod restart.
+     * Read by the coding-agent restart parser (PR-C3) to bootstrap from
+     * the last `compact_checkpoint` in `claude-stream.jsonl`.
+     */
+    val retryCount: Int = 0,
 ) {
     companion object {
         /**
@@ -143,6 +163,8 @@ data class AgentJobRecord(
             createdAt: Instant?,
             startedAt: Instant?,
             completedAt: Instant?,
+            dispatchTriggeredBy: String?,
+            retryCount: Int?,
         ): AgentJobRecord = AgentJobRecord(
             id = AgentJobId(id),
             flavor = flavor,
@@ -164,6 +186,9 @@ data class AgentJobRecord(
             createdAt = createdAt ?: Instant.now(),
             startedAt = startedAt,
             completedAt = completedAt,
+            dispatchTriggeredBy = dispatchTriggeredBy
+                ?: error("agent_job_records.dispatchTriggeredBy missing on persisted document — backfill migration required (PR2b)"),
+            retryCount = retryCount ?: 0,
         )
     }
 }

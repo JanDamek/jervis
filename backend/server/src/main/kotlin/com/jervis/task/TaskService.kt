@@ -199,8 +199,11 @@ class TaskService(
      */
     suspend fun getNextBackgroundTask(): TaskDocument? {
         val now = java.time.Instant.now()
+        // PR2: Claude-proposed tasks in DRAFT / AWAITING_APPROVAL / REJECTED
+        // never reach the execution loop — only proposalStage IN (null,
+        // APPROVED) is eligible for pickup.
         return taskRepository
-            .findByProcessingModeAndStateOrderByDeadlineAscPriorityScoreDescCreatedAtAsc(
+            .findApprovedByProcessingModeAndStateOrderByDeadlineAscPriorityScoreDescCreatedAtAsc(
                 ProcessingMode.BACKGROUND,
                 TaskStateEnum.QUEUED,
             ).firstOrNull { it.nextDispatchRetryAt == null || it.nextDispatchRetryAt <= now }

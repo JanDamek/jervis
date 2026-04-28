@@ -121,6 +121,15 @@ class AgentJobDispatcher(
     }
 
     companion object {
+        /** PR2b — accepted dispatch trigger enum. Server validates non-empty;
+         *  blank or unknown value returns INVALID_ARGUMENT. */
+        val ALLOWED_DISPATCH_TRIGGERS = setOf(
+            "in_chat_consent",
+            "ui_approval",
+            "scheduler_cron",
+            "manual",
+        )
+
         // K8s deployment constants — mirror reference-k8s-deployment.md.
         private const val NAMESPACE = "jervis"
         private const val CODING_AGENT_IMAGE = "registry.damek-soft.eu/jandamek/jervis-coding-agent:latest"
@@ -165,10 +174,21 @@ class AgentJobDispatcher(
         resourceId: String?,
         dispatchedBy: String,
         branchName: String?,
+        dispatchTriggeredBy: String,
     ): AgentJobRecord {
         require(title.isNotBlank()) { "title must not be blank" }
         require(description.isNotBlank()) { "description must not be blank" }
         require(dispatchedBy.isNotBlank()) { "dispatchedBy must not be blank" }
+        // PR2b — audit invariant: every dispatch must declare its trigger.
+        // Accepted enum: in_chat_consent | ui_approval | scheduler_cron | manual.
+        // Server returns INVALID_ARGUMENT (IllegalArgumentException at this layer)
+        // if the field is empty — there is no legacy default.
+        require(dispatchTriggeredBy.isNotBlank()) {
+            "dispatchTriggeredBy must not be blank — accepted values: in_chat_consent, ui_approval, scheduler_cron, manual"
+        }
+        require(dispatchTriggeredBy in ALLOWED_DISPATCH_TRIGGERS) {
+            "dispatchTriggeredBy='$dispatchTriggeredBy' not in $ALLOWED_DISPATCH_TRIGGERS"
+        }
 
         val jobId = AgentJobId.generate()
 
@@ -188,6 +208,7 @@ class AgentJobDispatcher(
             resourceId = resourceId,
             gitBranch = branchName,
             createdAt = Instant.now(),
+            dispatchTriggeredBy = dispatchTriggeredBy,
         )
         val saved = saveAndEmit(initial)
         logger.info {
@@ -590,13 +611,28 @@ class AgentJobDispatcher(
             .endMetadata()
             .withNewSpec()
                 .withTtlSecondsAfterFinished(TTL_AFTER_FINISHED)
-                .withBackoffLimit(0)
+                // PR-C3 — allow up to 3 retries on transient failures
+                // (OOMKilled, node eviction, etc.). The agent entrypoint
+                // re-uses the same PVC workspace on each restart and the
+                // restart parser (restart_state.py / compact_writer.py)
+                // bootstraps Claude CLI from the last compact_checkpoint
+                // in claude-stream.jsonl, so a restart resumes mid-task
+                // rather than starting from scratch.
+                .withBackoffLimit(3)
                 .withNewTemplate()
                     .withNewMetadata()
                         .addToLabels(labels)
                     .endMetadata()
                     .withNewSpec()
-                        .withRestartPolicy("Never")
+                        // OnFailure → kubelet restarts the pod in-place,
+                        // which keeps the PVC mounted and the workspace
+                        // (.jervis/claude-stream.jsonl etc.) intact.
+                        // Never would discard the pod and the K8s Job
+                        // controller would create a new pod that would
+                        // also re-mount the PVC; both work for the
+                        // restart parser, but OnFailure has a faster
+                        // recovery path and skips the pod-create roundtrip.
+                        .withRestartPolicy("OnFailure")
                         // PVC volume is owned root:root by default — server pod
                         // (which writes .jervis/brief.md, CLAUDE.md) runs as
                         // root, but the coding-agent container runs as uid 1000

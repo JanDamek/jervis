@@ -49,6 +49,20 @@ class ServerAgentJobGrpcImpl(
 
             val clientId = parseClientId(request.clientId)
             val projectId = parseProjectId(request.projectId)
+            // PR2b — non-empty dispatch_triggered_by required (audit
+            // invariant). DispatchAgentJobRequest grew the proto field
+            // ``dispatch_triggered_by``; if it isn't set we surface
+            // INVALID_ARGUMENT instead of guessing a default.
+            val triggeredByRaw = request.dispatchTriggeredBy
+            if (triggeredByRaw.isBlank()) {
+                return DispatchAgentJobResponse.newBuilder()
+                    .setOk(false)
+                    .setError(
+                        "dispatch_triggered_by is required — accepted values: " +
+                            AgentJobDispatcher.ALLOWED_DISPATCH_TRIGGERS.joinToString(", "),
+                    )
+                    .build()
+            }
             val record = dispatcher.dispatch(
                 flavor = flavor,
                 title = request.title,
@@ -58,6 +72,7 @@ class ServerAgentJobGrpcImpl(
                 resourceId = request.resourceId.takeIf { it.isNotBlank() },
                 dispatchedBy = request.dispatchedBy.ifBlank { "mcp:unknown" },
                 branchName = request.branchName.takeIf { it.isNotBlank() },
+                dispatchTriggeredBy = triggeredByRaw,
             )
 
             DispatchAgentJobResponse.newBuilder()

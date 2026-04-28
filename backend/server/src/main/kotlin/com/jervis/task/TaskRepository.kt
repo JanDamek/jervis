@@ -286,6 +286,29 @@ interface TaskRepository : CoroutineCrudRepository<TaskDocument, TaskId> {
     ): Flow<TaskDocument>
 
     /**
+     * PR2 — pickup-eligible variant. Same ordering as the deadline-first
+     * query above, but excludes Claude-proposed tasks that are still in
+     * the proposal flow (DRAFT / AWAITING_APPROVAL / REJECTED). A task is
+     * eligible when `proposalStage` is null (legacy / user-created) OR
+     * `APPROVED` (user has signed off). DRAFT/AWAITING_APPROVAL/REJECTED
+     * tasks must never reach BackgroundEngine.
+     */
+    @Query("""
+        {
+          'processingMode': ?0,
+          'state': ?1,
+          '${'$'}or': [
+            { 'proposalStage': null },
+            { 'proposalStage': 'APPROVED' }
+          ]
+        }
+    """)
+    suspend fun findApprovedByProcessingModeAndStateOrderByDeadlineAscPriorityScoreDescCreatedAtAsc(
+        processingMode: ProcessingMode,
+        state: TaskStateEnum,
+    ): Flow<TaskDocument>
+
+    /**
      * Find task by correlationId for deduplication.
      * Used by AutoTaskCreationService to avoid creating duplicate tasks.
      */
@@ -380,4 +403,37 @@ interface TaskRepository : CoroutineCrudRepository<TaskDocument, TaskId> {
     fun findCalendarTasksReadyForRecordingDispatch(
         now: Instant,
     ): Flow<TaskDocument>
+
+    /**
+     * PR3 (Claude CLI proposal lifecycle) — recent in-flight proposals
+     * authored by a given scope, used by the orchestrator's dedup check
+     * before InsertProposal. Returns DRAFT/AWAITING_APPROVAL within the
+     * dedup lookback window. APPROVED/REJECTED are excluded — the user
+     * has already taken a decision.
+     */
+    fun findByClientIdAndProposedByAndProposalStageInAndCreatedAtAfter(
+        clientId: ClientId,
+        proposedBy: String,
+        proposalStages: Collection<ProposalStage>,
+        createdAt: Instant,
+    ): Flow<TaskDocument>
+
+    /**
+     * Same as above but cross-project (orchestrator runs the project_id
+     * filter client-side from the response). Used when a Klient session
+     * proposes — it should see candidates across all projects under the
+     * client.
+     */
+    fun findByProposedByAndProposalStageInAndCreatedAtAfter(
+        proposedBy: String,
+        proposalStages: Collection<ProposalStage>,
+        createdAt: Instant,
+    ): Flow<TaskDocument>
+
+    /**
+     * PR4 — global count of proposals in a given stage. Drives the
+     * sidebar "Návrhy ke schválení (N)" badge. Filtered by indexed
+     * `proposalStage` field; cheap query.
+     */
+    suspend fun countByProposalStage(proposalStage: ProposalStage): Long
 }

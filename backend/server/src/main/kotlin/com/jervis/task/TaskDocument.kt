@@ -319,6 +319,45 @@ data class TaskDocument(
      * stronger reasoning to avoid being routed to a weaker model.
      */
     val minModelSize: Int = 0,
+    // ── Claude CLI proposal lifecycle (PR2) ────────────────────────────
+    /**
+     * Identifies the Claude session that created this proposal.
+     * Format: ``claude-client-cli:<cid>`` / ``claude-project-cli:<cid>:<pid>`` /
+     * ``qualifier+<scope>``. ``null`` = user-created task (legacy / direct).
+     */
+    @Indexed
+    val proposedBy: String? = null,
+    /** Claude's rationale for proposing the task. Surfaced in the UI. */
+    val proposalReason: String? = null,
+    /**
+     * Approval-flow stage. ``null`` = legacy / user-created (always pickup
+     * eligible). See [ProposalStage] KDoc for the state machine.
+     */
+    @Indexed
+    val proposalStage: ProposalStage? = null,
+    /**
+     * User-provided reason populated when proposalStage transitions to
+     * [ProposalStage.REJECTED]. Visible to the Claude session so it can
+     * re-propose with adjustments.
+     */
+    val proposalRejectionReason: String? = null,
+    /**
+     * Execution-handler discriminator for BackgroundEngine routing once
+     * the proposal is approved. Independent of [type] which describes
+     * the *processing pipeline*.
+     */
+    val proposalTaskType: ProposalTaskType? = null,
+    /**
+     * Cached embedding of [taskName] (or proposed title). Computed once
+     * on insert, used by orchestrator dedup check (cosine similarity ≥
+     * 0.85 inside same scope).
+     */
+    val titleEmbedding: List<Float>? = null,
+    /**
+     * Cached embedding of [content]/description. Used by dedup check
+     * (cosine ≥ 0.80) together with title similarity.
+     */
+    val descriptionEmbedding: List<Float>? = null,
 ) {
     companion object {
         /**
@@ -391,6 +430,13 @@ data class TaskDocument(
             capability: String?,
             tier: String?,
             minModelSize: Int?,
+            proposedBy: String?,
+            proposalReason: String?,
+            proposalStage: ProposalStage?,
+            proposalRejectionReason: String?,
+            proposalTaskType: ProposalTaskType?,
+            titleEmbedding: List<Float>?,
+            descriptionEmbedding: List<Float>?,
         ): TaskDocument = TaskDocument(
             id = TaskId(id),
             type = type,
@@ -453,6 +499,13 @@ data class TaskDocument(
             capability = capability ?: "chat",
             tier = tier,
             minModelSize = minModelSize ?: 0,
+            proposedBy = proposedBy,
+            proposalReason = proposalReason,
+            proposalStage = proposalStage,
+            proposalRejectionReason = proposalRejectionReason,
+            proposalTaskType = proposalTaskType,
+            titleEmbedding = titleEmbedding,
+            descriptionEmbedding = descriptionEmbedding,
         )
     }
 }

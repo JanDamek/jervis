@@ -232,6 +232,9 @@ class AgentJobWatcher(
         val branch = result?.get("branch")?.asText()?.takeIf { it.isNotBlank() }
         val changedFiles = result?.get("changedFiles")?.mapNotNull { it.asText()?.takeIf { f -> f.isNotBlank() } }
             ?: emptyList()
+        // PR2b — capture K8s pod restart count from the latest pod for this Job
+        // (restartPolicy=OnFailure caps at 3). PR-C3 restart parser uses this.
+        val finalRetryCount = capturePodRestartCount(record.kubernetesJobName) ?: record.retryCount
 
         if (success) {
             val updated = record.copy(
@@ -241,6 +244,7 @@ class AgentJobWatcher(
                 gitCommitSha = commitSha,
                 artifacts = changedFiles,
                 completedAt = Instant.now(),
+                retryCount = finalRetryCount,
             )
             agentJobDispatcher.saveAndEmit(updated)
             logger.info { "terminal | job=${record.id} → DONE sha=${commitSha ?: "<none>"} (${changedFiles.size} files)" }
@@ -283,13 +287,43 @@ class AgentJobWatcher(
     }
 
     private suspend fun markError(record: AgentJobRecord, reason: String) {
+        val finalRetryCount = capturePodRestartCount(record.kubernetesJobName) ?: record.retryCount
         val updated = record.copy(
             state = AgentJobState.ERROR,
             errorMessage = reason,
             completedAt = Instant.now(),
+            retryCount = finalRetryCount,
         )
         agentJobDispatcher.saveAndEmit(updated)
-        logger.warn { "terminal | job=${record.id} → ERROR: $reason" }
+        logger.warn { "terminal | job=${record.id} → ERROR: $reason (restartCount=$finalRetryCount)" }
+    }
+
+    /**
+     * PR2b — read pod restartCount for the Job. K8s sets `restartPolicy=
+     * OnFailure` for our Jobs, so a single pod can be restarted up to 3
+     * times before the Job itself fails. Reading from the most recent pod
+     * tied to the Job lets the coding-agent restart parser (PR-C3) know
+     * how many times it has been re-bootstrapped from the workspace.
+     */
+    private suspend fun capturePodRestartCount(jobName: String?): Int? {
+        if (jobName.isNullOrBlank()) return null
+        return try {
+            withContext(Dispatchers.IO) {
+                val client = ensureClient()
+                val pods = client.pods()
+                    .inNamespace(NAMESPACE)
+                    .withLabel("job-name", jobName)
+                    .list()
+                    .items
+                    .sortedByDescending { it.metadata?.creationTimestamp }
+                val pod = pods.firstOrNull() ?: return@withContext null
+                pod.status?.containerStatuses
+                    ?.maxOfOrNull { it.restartCount ?: 0 }
+            }
+        } catch (e: Exception) {
+            logger.debug(e) { "capturePodRestartCount failed for job=$jobName" }
+            null
+        }
     }
 
     private fun readResultJson(workspacePath: Path): JsonNode? {
