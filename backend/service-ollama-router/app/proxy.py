@@ -139,6 +139,14 @@ async def proxy_streaming(
             # cancel the pending next-line read and exit immediately.
             line_iter = upstream.aiter_lines()
             cancel_task = asyncio.create_task(request.cancel_event.wait())
+            # Hoisted out of the while loop so the outer `finally` can also
+            # cancel an in-flight read when the generator gets aclosed
+            # (e.g. consumer cancels mid-stream). Without this, the task
+            # spawned on line `next_task = create_task(...)` is orphaned —
+            # asyncio later prints "Task exception was never retrieved" and
+            # the consumer's `finally` (router cleanup) may have already run
+            # leaving a zombie in gpu.active_requests.
+            next_task: asyncio.Task | None = None
             try:
                 while True:
                     next_task = asyncio.create_task(line_iter.__anext__())
@@ -153,6 +161,7 @@ async def proxy_streaming(
                                 await next_task
                             except (asyncio.CancelledError, Exception):
                                 pass
+                        next_task = None
                         preempted = True
                         logger.warning(
                             "PROXY_STREAM: id=%s PREEMPTED state=%s emitted=%d",
@@ -164,7 +173,9 @@ async def proxy_streaming(
                     try:
                         line = next_task.result()
                     except StopAsyncIteration:
+                        next_task = None
                         break
+                    next_task = None
                     if not line.strip():
                         continue
                     try:
@@ -173,6 +184,12 @@ async def proxy_streaming(
                     except json.JSONDecodeError:
                         logger.debug("PROXY_STREAM: non-JSON line: %s", line[:120])
             finally:
+                if next_task is not None and not next_task.done():
+                    next_task.cancel()
+                    try:
+                        await next_task
+                    except (asyncio.CancelledError, Exception):
+                        pass
                 if not cancel_task.done():
                     cancel_task.cancel()
                     try:
