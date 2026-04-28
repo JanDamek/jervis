@@ -310,15 +310,17 @@ class BrowserManager:
 
     async def _dedupe_tabs(self, client_id: str, context: BrowserContext) -> None:
         """Close redundant tabs that the agent should never have seen:
-          - extra about:blank pages (only one is useful, e.g. for the
-            agent to navigate from)
           - duplicate URLs (same login flow opened multiple times)
-        Keeps the FIRST occurrence of each URL plus at most one
-        about:blank slot.
+          - leftover about:blank pages once at least one productive tab
+            exists (the agent uses `open_tab` which reuses a blank if
+            present, so persistent blanks confuse both the agent and
+            the VNC user — close them aggressively)
+        If no productive tab is present yet (cold start before any
+        navigation), keep one about:blank as the navigation slot.
         """
         seen_urls: set[str] = set()
-        kept_blank = False
-        to_close: list = []
+        productive_pages: list = []
+        blank_pages: list = []
         for page in list(context.pages):
             if page.is_closed():
                 continue
@@ -328,15 +330,25 @@ class BrowserManager:
             except Exception:
                 continue
             if url in ("", "about:blank"):
-                if kept_blank:
-                    to_close.append(page)
-                else:
-                    kept_blank = True
-                continue
+                blank_pages.append(page)
+            else:
+                productive_pages.append((page, url))
+
+        to_close: list = []
+        # Productive duplicates: keep first per URL, close the rest.
+        for page, url in productive_pages:
             if url in seen_urls:
                 to_close.append(page)
-                continue
-            seen_urls.add(url)
+            else:
+                seen_urls.add(url)
+
+        # Blanks: if we have at least one productive tab, close ALL blanks.
+        # Otherwise keep one as the cold-start navigation slot.
+        if seen_urls:
+            to_close.extend(blank_pages)
+        else:
+            to_close.extend(blank_pages[1:])
+
         for page in to_close:
             try:
                 await page.close()
@@ -344,7 +356,8 @@ class BrowserManager:
                 pass
         if to_close:
             logger.info(
-                "Closed %d redundant tab(s) for client %s (duplicates / extra about:blank)",
+                "Closed %d redundant tab(s) for client %s "
+                "(duplicates / leftover about:blank)",
                 len(to_close), client_id,
             )
 
@@ -356,6 +369,17 @@ class BrowserManager:
                     await self.save_tabs(client_id)
                 except Exception:
                     logger.exception("tabs autosave failed for %s", client_id)
+                # Dedupe periodically too — leftover about:blank tabs
+                # accumulate when Chromium opens a fresh tab during a
+                # OAuth flow and the agent doesn't explicitly close it.
+                # Without this the VNC user sees a growing collection
+                # of dead tabs over time.
+                ctx = self._contexts.get(client_id)
+                if ctx is not None:
+                    try:
+                        await self._dedupe_tabs(client_id, ctx)
+                    except Exception:
+                        logger.exception("tabs dedupe failed for %s", client_id)
         except asyncio.CancelledError:
             pass
 

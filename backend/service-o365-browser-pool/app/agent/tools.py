@@ -752,7 +752,25 @@ async def open_tab(url: str, name: str) -> dict:
         except Exception as e:
             return {"ok": False, "error": str(e), "reused": True}
     try:
-        page = await ctx.browser_context.new_page()
+        # Prefer reusing a leftover about:blank page over creating a new
+        # one. Chromium's persistent profile + the cold-start `new_page`
+        # in self-restore typically leave one blank tab behind; without
+        # this the agent always opens product URLs in a fresh tab and
+        # the VNC user sees a permanently empty "tab-1" alongside their
+        # real work — confusing and a tab-switch hazard.
+        page = None
+        for p in ctx.browser_context.pages:
+            if p.is_closed():
+                continue
+            try:
+                purl = p.url or ""
+            except Exception:
+                continue
+            if purl in ("", "about:blank"):
+                page = p
+                break
+        if page is None:
+            page = await ctx.browser_context.new_page()
         await page.goto(url, wait_until="domcontentloaded", timeout=30000)
         ctx.tab_registry.register(ctx.client_id, name, page)
         return {"ok": True, "name": name, "url": page.url, "reused": False}
