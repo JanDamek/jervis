@@ -1,0 +1,76 @@
+# =============================================================================
+# Filebeat 7.17 — VD GPU server (ollama.lan.mazlusek.com)
+#
+# Source of truth: this file in jervis repo (k8s/logging/vd-filebeat.yml).
+# Deployed via k8s/deploy_vd_filebeat.sh (scp + systemctl restart filebeat).
+#
+# What it ships:
+#   - Docker container logs (jervis-whisper-gpu, jervis-xtts-gpu, ollama,
+#     autoheal) via the docker autodiscover provider — container.name,
+#     container.id, container.image are populated automatically.
+#   - System journald (kernel, sshd, filebeat itself) — for VM-level events.
+#
+# Why a dedicated index:
+#   Fluent Bit on K8s populates top-level `log` and `event` as `text`. Filebeat
+#   uses them as objects. Same index = mapper_parsing_exception per event.
+#   We use `k8s-logs-vd-%{+yyyy.MM.dd}` (matches the `k8s-logs-*` glob so MCP
+#   kibana_search_logs picks it up) with its own fresh dynamic mapping.
+#
+# Field mapping for Kibana compatibility:
+#   container.name → kubernetes.labels.app  (so MCP kibana_search_logs
+#   `app=` filter works the same as for K8s pods).
+# =============================================================================
+
+filebeat.autodiscover:
+  providers:
+    - type: docker
+      hints.enabled: false
+      templates:
+        - condition.regexp:
+            docker.container.name: '.+'
+          config:
+            - type: container
+              paths:
+                - /var/lib/docker/containers/${data.docker.container.id}/*.log
+              processors:
+                # Promote autodiscover's docker.container.* into the more
+                # standard top-level container.* (matches Fluent Bit /
+                # ECS shape) and into kubernetes.labels.app / pod.name
+                # so MCP filters work uniformly.
+                - add_fields:
+                    target: container
+                    fields:
+                      name: ${data.docker.container.name}
+                      id: ${data.docker.container.id}
+                      image: ${data.docker.container.image}
+                - add_fields:
+                    target: kubernetes
+                    fields:
+                      labels.app: ${data.docker.container.name}
+                      pod.name: ${data.docker.container.name}
+
+filebeat.inputs:
+  # System-level journald (kernel, sshd, filebeat, autoheal restart hooks).
+  - type: journald
+    id: vd-system
+
+processors:
+  - add_fields:
+      target: kubernetes
+      fields:
+        namespace: gpu-server
+        node: ollama
+  - add_fields:
+      target: host
+      fields:
+        name: gpu-server
+        fqdn: ollama.lan.mazlusek.com
+
+output.elasticsearch:
+  hosts: ["http://elasticsearch.lan.mazlusek.com:80"]
+  index: "k8s-logs-vd-%{+yyyy.MM.dd}"
+
+setup.template.enabled: false
+setup.ilm.enabled: false
+
+logging.level: info
