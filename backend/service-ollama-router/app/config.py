@@ -48,8 +48,14 @@ class Settings(BaseSettings):
     # all subsequent slot acquisition because active_request_count >=
     # max_concurrent_llm). Reaper sweeps on this interval and evicts any
     # request older than the threshold so dispatcher resumes.
-    stale_request_max_age_s: int = 600               # 10 min: any live LLM call past this is dead
-    stale_request_check_interval_s: int = 30         # sweep every 30s
+    # Reaper threshold — must accommodate the longest legitimate generation
+    # (VLM with large context can run 15-30 min). Connection loss is detected
+    # by httpx (RemoteProtocolError / ConnectError) — we do NOT impose hard
+    # timeouts on healthy streams. Per docs/guidelines: NEVER hard timeouts,
+    # stream + heartbeat. Reaper only catches structural zombies (cleanup
+    # races) where the stream is dead but the slot wasn't freed.
+    stale_request_max_age_s: int = 1800              # 30 min — well past worst-case VLM
+    stale_request_check_interval_s: int = 60         # sweep every 60s
 
     # ── Model keep_alive ────────────────────────────────────────────────
     # "-1" = never auto-unload. Router explicitly manages model lifecycle.
