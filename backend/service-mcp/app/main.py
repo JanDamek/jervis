@@ -4060,6 +4060,7 @@ async def dispatch_agent_job(
     flavor: str,
     title: str,
     description: str,
+    dispatch_triggered_by: str,
     client_id: str = "",
     project_id: str = "",
     resource_id: str = "",
@@ -4084,6 +4085,14 @@ async def dispatch_agent_job(
         description: Full task brief — written verbatim into
                      .jervis/brief.md in the worktree. May be kilobytes long;
                      passed via filesystem, not env.
+        dispatch_triggered_by: REQUIRED audit invariant — accepted enum:
+                ``in_chat_consent`` (user explicit "ano spusť" in chat),
+                ``ui_approval`` (BackgroundEngine after task_approve),
+                ``scheduler_cron`` (recurring scheduler), ``manual``
+                (admin / direct). Server returns INVALID_ARGUMENT if blank.
+                Claude session NEVER dispatches autonomously — without
+                explicit user consent in the current chat use the proposal
+                flow (``propose_task`` + ``send_for_approval``).
         client_id: 24-char hex ObjectId or empty for GLOBAL scope.
         project_id: 24-char hex ObjectId or empty for CLIENT scope.
         resource_id: ProjectResource.id — required for CODING when the
@@ -4097,6 +4106,12 @@ async def dispatch_agent_job(
     from jervis.common import types_pb2
     from jervis.server import agent_job_pb2
     from jervis_contracts.interceptors import prepare_context
+
+    if not dispatch_triggered_by or not dispatch_triggered_by.strip():
+        return (
+            "Error: dispatch_triggered_by is required. Accepted values: "
+            "in_chat_consent | ui_approval | scheduler_cron | manual."
+        )
 
     ctx = types_pb2.RequestContext()
     prepare_context(ctx)
@@ -4116,6 +4131,7 @@ async def dispatch_agent_job(
                 resource_id=resource_id,
                 branch_name=branch_name,
                 dispatched_by=dispatched_by or "mcp:unknown",
+                dispatch_triggered_by=dispatch_triggered_by.strip(),
             ),
         )
     except Exception as e:
@@ -4281,6 +4297,244 @@ async def abort_agent_job(agent_job_id: str, reason: str) -> str:
     if not resp.ok:
         return f"Abort failed: {resp.error}"
     return f"Agent job {agent_job_id} → {resp.state}"
+
+
+# ── Proposal lifecycle (Claude CLI) ──────────────────────────────────────
+# Per-(client, project) Claude session's primary dispatch path: instead of
+# spawning a coding agent autonomously, Claude proposes a task; the user
+# approves/rejects in UI; BackgroundEngine then dispatches it. The MCP
+# tools below delegate to the orchestrator's OrchestratorProposalService
+# (which embeds + dedups + forwards to Kotlin) rather than calling the
+# Kotlin server directly — write logic stays in one place.
+#
+# Lifecycle:
+#   propose_task → DRAFT (mutable)
+#     ↳ update_proposed_task → DRAFT (dolaďování)
+#     ↳ send_for_approval   → AWAITING_APPROVAL (immutable)
+#         ↳ user approve UI → APPROVED + state=QUEUED → BackgroundEngine
+#         ↳ user reject UI  → REJECTED (mutable, can re-propose)
+
+
+@mcp.tool
+async def propose_task(
+    client_id: str,
+    title: str,
+    description: str,
+    reason: str,
+    proposal_task_type: str,
+    project_id: str = "",
+    proposed_by: str = "",
+    scheduled_at: str = "",
+    parent_task_id: str = "",
+    depends_on_task_ids: list[str] | None = None,
+) -> str:
+    """Navrhni úkol uživateli ke schválení (proposal lifecycle).
+
+    Toto je preferovaná cesta jak posílat práci do exekuce z Project /
+    Klient session. Místo přímého `dispatch_agent_job` (který vyžaduje
+    explicit user consent v aktuálním chatu) tento tool vytvoří
+    ``DRAFT`` proposal; lifecycle pokračuje přes ``update_proposed_task``
+    (dolaďování), ``send_for_approval`` (AWAITING_APPROVAL — immutable),
+    user approve/reject v UI.
+
+    Embedding + dedup runs on the orchestrator side. 3-tier decision:
+    - Same scope (matching project_id) cosine ≥ thresholds → REJECT,
+      tool returns hint pointing at existing task.
+    - Same client different project → SUGGEST_CONSOLIDATE, tool returns
+      hint; you can decide to update the existing or scope down.
+    - Different client / no near-match → ALLOW, returns task_id.
+
+    Args:
+        client_id: 24-char hex ObjectId. Required.
+        title: Short human-readable title (also used by dedup embedding).
+        description: Full task brief — written into TaskDocument.content.
+        reason: Why are you proposing this? Surfaced in UI to user.
+        proposal_task_type: Execution-handler discriminator. One of:
+            CODING | MAIL_REPLY | TEAMS_REPLY | CALENDAR_RESPONSE |
+            BUGTRACKER_ENTRY | MEETING_ATTEND | OTHER.
+        project_id: 24-char hex ObjectId or empty. Project sessions
+            always pass it; Klient sessions can omit for client-scope.
+        proposed_by: Free-form provenance (defaults
+            ``claude-cli:unknown``); recommended:
+            ``claude-project-cli:<cid>:<pid>`` /
+            ``claude-client-cli:<cid>``.
+        scheduled_at: Optional ISO 8601 instant; blank = no schedule.
+        parent_task_id: Optional 24-char hex of parent task.
+        depends_on_task_ids: Optional list of 24-char hex task ids that
+            must complete before this one runs.
+    """
+    from app.orchestrator_client import orchestrator_proposal_stub
+    from jervis.common import types_pb2
+    from jervis.orchestrator import proposal_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    if not client_id:
+        return "Error: client_id is required."
+    if not title or not title.strip():
+        return "Error: title is required."
+    if not description or not description.strip():
+        return "Error: description is required."
+    if not reason or not reason.strip():
+        return "Error: reason is required (vysvětli proč to navrhuješ)."
+    if not proposal_task_type:
+        return (
+            "Error: proposal_task_type is required. Accepted: "
+            "CODING | MAIL_REPLY | TEAMS_REPLY | CALENDAR_RESPONSE | "
+            "BUGTRACKER_ENTRY | MEETING_ATTEND | OTHER."
+        )
+
+    # Auto-derive proposed_by from scope when caller didn't pass one —
+    # keeps the audit trail clean even if Claude forgets to include it.
+    if not proposed_by or not proposed_by.strip():
+        if project_id:
+            proposed_by = f"claude-project-cli:{client_id}:{project_id}"
+        else:
+            proposed_by = f"claude-client-cli:{client_id}"
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await orchestrator_proposal_stub().ProposeTask(
+            proposal_pb2.ProposeTaskRequest(
+                ctx=ctx,
+                client_id=client_id,
+                project_id=project_id or "",
+                title=title.strip(),
+                description=description.strip(),
+                reason=reason.strip(),
+                proposed_by=proposed_by,
+                proposal_task_type=proposal_task_type.upper(),
+                scheduled_at_iso=scheduled_at or "",
+                parent_task_id=parent_task_id or "",
+                depends_on_task_ids=list(depends_on_task_ids or []),
+            ),
+        )
+    except Exception as e:
+        return f"Error proposing task: {str(e)[:300]}"
+
+    if not resp.ok:
+        # Dedup hints carry the conflicting task — surface them so
+        # Claude can decide what to do (update existing vs. retry with
+        # narrower scope).
+        return json.dumps(
+            {
+                "ok": False,
+                "error": resp.error,
+                "dedupDecision": resp.dedup_decision,
+                "conflictingTaskId": resp.conflicting_task_id,
+                "conflictingTitle": resp.conflicting_title,
+            },
+            ensure_ascii=False,
+        )
+
+    return json.dumps(
+        {
+            "ok": True,
+            "taskId": resp.task_id,
+            "stage": "DRAFT",
+            "next": (
+                "Můžeš dál upravovat přes update_proposed_task(task_id=...) "
+                "nebo poslat ke schválení přes send_for_approval(task_id=...)."
+            ),
+        },
+        ensure_ascii=False,
+    )
+
+
+@mcp.tool
+async def update_proposed_task(
+    task_id: str,
+    title: str = "",
+    description: str = "",
+    reason: str = "",
+    proposal_task_type: str = "",
+    scheduled_at: str = "",
+) -> str:
+    """Doladí pole DRAFT (nebo REJECTED) proposalu.
+
+    AWAITING_APPROVAL / APPROVED proposaly jsou immutable — server
+    vrátí ``INVALID_STATE``. Po update REJECTED proposalu se stage
+    automaticky vrátí na DRAFT (clears proposalRejectionReason).
+
+    Args:
+        task_id: 24-char hex ObjectId returned by propose_task.
+        title: Pokud neprázdné, přepíše taskName + re-embedduje.
+        description: Pokud neprázdné, přepíše content + re-embedduje.
+        reason: Updated proposalReason.
+        proposal_task_type: Optional change to handler discriminator.
+        scheduled_at: Optional ISO 8601 instant.
+    """
+    from app.orchestrator_client import orchestrator_proposal_stub
+    from jervis.common import types_pb2
+    from jervis.orchestrator import proposal_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    if not task_id:
+        return "Error: task_id is required."
+
+    has_change = any([
+        title.strip(),
+        description.strip(),
+        reason.strip(),
+        proposal_task_type.strip(),
+        scheduled_at.strip(),
+    ])
+    if not has_change:
+        return "Error: alespoň jedno pole musí být neprázdné."
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await orchestrator_proposal_stub().UpdateProposedTask(
+            proposal_pb2.UpdateProposedTaskRequest(
+                ctx=ctx,
+                task_id=task_id,
+                title=title or "",
+                description=description or "",
+                reason=reason or "",
+                proposal_task_type=proposal_task_type.upper() if proposal_task_type else "",
+                scheduled_at_iso=scheduled_at or "",
+            ),
+        )
+    except Exception as e:
+        return f"Error updating proposed task: {str(e)[:300]}"
+    if not resp.ok:
+        return f"Update failed: {resp.error}"
+    return f"Proposal {task_id} → DRAFT (updated)"
+
+
+@mcp.tool
+async def send_for_approval(task_id: str) -> str:
+    """Posune DRAFT proposal do AWAITING_APPROVAL — immutable, čeká na
+    user approve/reject v UI.
+
+    Server podmínky:
+    - Pokud proposal není ve stavu DRAFT → vrátí INVALID_STATE.
+    - Po této operaci NELZE volat update_proposed_task (server vrátí
+      INVALID_STATE), jen user může přes UI dělat approve / reject.
+
+    Args:
+        task_id: 24-char hex ObjectId.
+    """
+    from app.orchestrator_client import orchestrator_proposal_stub
+    from jervis.common import types_pb2
+    from jervis.orchestrator import proposal_pb2
+    from jervis_contracts.interceptors import prepare_context
+
+    if not task_id:
+        return "Error: task_id is required."
+
+    ctx = types_pb2.RequestContext()
+    prepare_context(ctx)
+    try:
+        resp = await orchestrator_proposal_stub().SendForApproval(
+            proposal_pb2.TaskIdRequest(ctx=ctx, task_id=task_id),
+        )
+    except Exception as e:
+        return f"Error sending for approval: {str(e)[:300]}"
+    if not resp.ok:
+        return f"Send for approval failed: {resp.error}"
+    return f"Proposal {task_id} → {resp.proposal_stage or 'AWAITING_APPROVAL'}"
 
 
 # ── Thought Map Tools (Claude-owned strategic memory) ────────────────────

@@ -34,6 +34,7 @@ from jervis.server import (
     proactive_pb2_grpc,
     project_management_pb2_grpc,
     task_api_pb2_grpc,
+    task_proposal_pb2_grpc,
     time_tracking_pb2_grpc,
     tts_rules_pb2_grpc,
     urgency_pb2_grpc,
@@ -69,6 +70,9 @@ _meeting_helper_callbacks_stub: Optional[
 ] = None
 _agent_job_events_stub: Optional[
     agent_job_events_pb2_grpc.AgentJobEventsServiceStub
+] = None
+_task_proposal_stub: Optional[
+    task_proposal_pb2_grpc.ServerTaskProposalServiceStub
 ] = None
 
 
@@ -125,7 +129,7 @@ async def _reset_channel() -> None:
     global _project_management_stub, _bug_tracker_stub, _merge_request_stub
     global _environment_stub, _task_api_stub, _foreground_stub
     global _orchestrator_progress_stub, _git_stub, _meeting_helper_callbacks_stub
-    global _agent_job_events_stub
+    global _agent_job_events_stub, _task_proposal_stub
     if _channel is not None:
         try:
             await _channel.close()
@@ -152,6 +156,7 @@ async def _reset_channel() -> None:
     _git_stub = None
     _meeting_helper_callbacks_stub = None
     _agent_job_events_stub = None
+    _task_proposal_stub = None
     logger.info("kotlin-server gRPC channel reset (will recreate on next RPC)")
 
 
@@ -339,6 +344,22 @@ def server_agent_job_events_stub() -> agent_job_events_pb2_grpc.AgentJobEventsSe
             _get_channel()
         )
     return _agent_job_events_stub
+
+
+def server_task_proposal_stub() -> task_proposal_pb2_grpc.ServerTaskProposalServiceStub:
+    """Cached stub for the Claude CLI proposal-lifecycle write surface.
+
+    Used by `app.agent.proposal_service` after embed + dedup to insert /
+    update / transition stage on a TaskDocument. The Kotlin side is the
+    single writer for `tasks` so this stub is the only path proposals
+    flow through.
+    """
+    global _task_proposal_stub
+    if _task_proposal_stub is None:
+        _task_proposal_stub = task_proposal_pb2_grpc.ServerTaskProposalServiceStub(
+            _get_channel()
+        )
+    return _task_proposal_stub
 
 
 def build_request_context() -> types_pb2.RequestContext:

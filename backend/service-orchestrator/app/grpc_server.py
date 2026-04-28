@@ -11,6 +11,7 @@ servicers to the same bootstrap.
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 import logging
 from typing import TYPE_CHECKING
@@ -21,10 +22,12 @@ from grpc_reflection.v1alpha import reflection
 from jervis.orchestrator import chat_pb2, chat_pb2_grpc
 from jervis.orchestrator import companion_pb2, companion_pb2_grpc
 from jervis.orchestrator import control_pb2, control_pb2_grpc
+from jervis.orchestrator import dashboard_pb2, dashboard_pb2_grpc
 from jervis.orchestrator import dispatch_pb2, dispatch_pb2_grpc
 from jervis.orchestrator import graph_pb2, graph_pb2_grpc
 from jervis.orchestrator import job_logs_pb2, job_logs_pb2_grpc
 from jervis.orchestrator import meeting_helper_pb2, meeting_helper_pb2_grpc
+from jervis.orchestrator import proposal_pb2, proposal_pb2_grpc
 from jervis.orchestrator import voice_pb2, voice_pb2_grpc
 from jervis_contracts.interceptors import ServerContextInterceptor
 
@@ -990,10 +993,12 @@ def _chat_request_from_proto(request: chat_pb2.ChatRequest):
 class OrchestratorChatServicer(chat_pb2_grpc.OrchestratorChatServiceServicer):
     """OrchestratorChatService — foreground agentic chat stream.
 
-    Every chat request runs through `ClientSessionManager` — one
-    persistent in-process Claude SDK session per active client, keyed
-    on `active_client_id`. There is no legacy fallback: if the client
-    id is missing, the session manager surfaces an error upstream.
+    Routing rule:
+    - active_client_id + active_project_id → ProjectSessionManager
+      (per-(client, project) Claude session, scope ``project:<cid>:<pid>``)
+    - active_client_id only → ClientSessionManager
+      (per-client Claude session, scope ``client:<cid>``)
+    - missing client_id → ClientSessionManager surfaces an error upstream.
     """
 
     async def Chat(
@@ -1001,12 +1006,10 @@ class OrchestratorChatServicer(chat_pb2_grpc.OrchestratorChatServiceServicer):
         request: chat_pb2.ChatRequest,
         context: grpc.aio.ServicerContext,
     ):
-        from app.sessions.client_session_manager import client_session_manager
-
         session_id = request.session_id or ""
         message = request.message or ""
         client_id = (request.active_client_id or "").strip()
-        project_id = (request.active_project_id or "").strip() or None
+        project_id = (request.active_project_id or "").strip()
 
         logger.info(
             "CHAT_REQUEST | session=%s | client=%s | project=%s | message=%s",
@@ -1014,11 +1017,23 @@ class OrchestratorChatServicer(chat_pb2_grpc.OrchestratorChatServiceServicer):
         )
 
         try:
-            async for evt in client_session_manager.chat(
-                client_id=client_id,
-                project_id=project_id,
-                message=message,
-            ):
+            if client_id and project_id:
+                from app.sessions.project_session_manager import project_session_manager
+
+                stream = project_session_manager.chat(
+                    client_id=client_id,
+                    project_id=project_id,
+                    message=message,
+                )
+            else:
+                from app.sessions.client_session_manager import client_session_manager
+
+                stream = client_session_manager.chat(
+                    client_id=client_id,
+                    project_id=project_id or None,
+                    message=message,
+                )
+            async for evt in stream:
                 if context.cancelled():
                     break
                 meta = {str(k): str(v) for k, v in (evt.get("metadata") or {}).items()}
@@ -1381,6 +1396,242 @@ class OrchestratorJobLogsServicer(
             yield job_logs_pb2.JobLogEvent(type="error", content=f"Log stream failed: {e}")
 
 
+# --------------------------------------------------------------------------
+# OrchestratorDashboardService — read-only view over SessionBroker (PR-D1)
+# --------------------------------------------------------------------------
+
+# Eviction history window — must match the brief copy in the UI
+# ("Eviction history (24h)").
+_DASHBOARD_EVICTION_WINDOW_HOURS = 24
+_DASHBOARD_EVICTION_LIMIT = 50
+
+
+async def _read_recent_evictions(limit: int = _DASHBOARD_EVICTION_LIMIT) -> list[dict]:
+    """Read the last `limit` LRU eviction audit records from
+    `claude_scratchpad` (scope=broker, namespace=audit, event=evict).
+
+    Returns a list of dicts with keys `scope`, `reason`, `ts` (ISO 8601).
+    Newest-first by `data.ts`. Audit failures are logged but never raised
+    so the dashboard never falls because of an audit-side hiccup.
+    """
+    from app.config import settings as _settings
+    from motor.motor_asyncio import AsyncIOMotorClient
+
+    try:
+        client = AsyncIOMotorClient(_settings.mongodb_url)
+        db = client.get_default_database()
+        cutoff = (
+            datetime.datetime.now(datetime.timezone.utc)
+            - datetime.timedelta(hours=_DASHBOARD_EVICTION_WINDOW_HOURS)
+        )
+        cursor = db["claude_scratchpad"].find(
+            {
+                "scope": "broker",
+                "namespace": "audit",
+                "data.event": "evict",
+                "created_at": {"$gte": cutoff},
+            },
+        ).sort("created_at", -1).limit(limit)
+        out: list[dict] = []
+        async for doc in cursor:
+            data = doc.get("data") or {}
+            out.append({
+                "scope": str(data.get("session_scope") or ""),
+                "reason": str(data.get("reason") or "lru_cap"),
+                "ts": str(data.get("ts") or ""),
+            })
+        return out
+    except Exception:
+        logger.exception("dashboard: failed to read eviction history")
+        return []
+
+
+async def _last_compact_age_seconds(scope: str) -> int:
+    """Return the age (in seconds) of the most recent ``compact_snapshots``
+    row for ``scope``. Zero when none exists or on read failure (the UI
+    just shows '—' in that case)."""
+    if not scope:
+        return 0
+    try:
+        from app.sessions.compact_store import load_latest
+
+        snap = await load_latest(scope)
+        if snap is None:
+            return 0
+        delta = datetime.datetime.now(datetime.timezone.utc) - snap.snapshot_at
+        return max(0, int(delta.total_seconds()))
+    except Exception:
+        logger.debug("dashboard: last_compact_age failed for scope=%s", scope, exc_info=True)
+        return 0
+
+
+class OrchestratorDashboardServicer(
+    dashboard_pb2_grpc.OrchestratorDashboardServiceServicer,
+):
+    """Read-only snapshot of the SessionBroker for the desktop UI Dashboard.
+
+    The Kotlin server polls this once every 5 s into a kRPC push-flow
+    (UI ↔ server stays push-only per rule #9). Pull cadence here is an
+    internal implementation detail — the broker holds in-process state
+    that is not (yet) wired to a server-streaming push channel.
+    """
+
+    async def GetSessionSnapshot(
+        self,
+        request: dashboard_pb2.GetSessionSnapshotRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> dashboard_pb2.SessionSnapshotResponse:
+        from app.sessions.session_broker import session_broker
+
+        try:
+            snap = session_broker.snapshot()
+        except Exception as e:
+            logger.exception("dashboard: snapshot failed")
+            return dashboard_pb2.SessionSnapshotResponse(ok=False, error=str(e)[:200])
+
+        sessions_proto: list[dashboard_pb2.ActiveSession] = []
+        for s in snap.get("sessions", []):
+            scope = str(s.get("scope") or "")
+            age = await _last_compact_age_seconds(scope)
+            sessions_proto.append(
+                dashboard_pb2.ActiveSession(
+                    scope=scope,
+                    session_id=str(s.get("session_id") or ""),
+                    client_id=str(s.get("client_id") or ""),
+                    project_id=str(s.get("project_id") or ""),
+                    cumulative_tokens=int(s.get("cumulative_tokens") or 0),
+                    idle_seconds=int(s.get("idle_seconds") or 0),
+                    compact_in_progress=bool(s.get("compact_in_progress") or False),
+                    last_compact_age_seconds=age,
+                ),
+            )
+
+        evictions = await _read_recent_evictions()
+        evictions_proto = [
+            dashboard_pb2.EvictionRecord(
+                scope=str(e.get("scope") or ""),
+                reason=str(e.get("reason") or ""),
+                ts=str(e.get("ts") or ""),
+            )
+            for e in evictions
+        ]
+
+        agent_job_holds = {
+            str(k): str(v) for k, v in (snap.get("agent_job_holds") or {}).items()
+        }
+
+        return dashboard_pb2.SessionSnapshotResponse(
+            ok=True,
+            error="",
+            active_count=int(snap.get("active") or 0),
+            cap=int(snap.get("cap") or 0),
+            paused=bool(snap.get("paused") or False),
+            sessions=sessions_proto,
+            agent_job_holds=agent_job_holds,
+            recent_evictions=evictions_proto,
+        )
+
+
+class OrchestratorProposalServicer(
+    proposal_pb2_grpc.OrchestratorProposalServiceServicer,
+):
+    """OrchestratorProposalService — Claude CLI proposal lifecycle.
+
+    Thin gRPC wrapper around `app.agent.proposal_service`. The real
+    embedding + dedup + Kotlin-write logic lives there; this servicer
+    just maps proto fields and converts results back to proto.
+
+    The MCP server (`propose_task` / `update_proposed_task` /
+    `send_for_approval` tools) calls this servicer rather than the
+    Kotlin server directly so embedding & dedup remain in one place.
+    Approve/Reject (UI actions) bypass this layer and go straight to
+    the Kotlin ServerTaskProposalService — they don't need embedding.
+    """
+
+    async def ProposeTask(
+        self,
+        request: proposal_pb2.ProposeTaskRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> proposal_pb2.ProposeTaskResponse:
+        from app.agent.proposal_service import propose_task
+
+        try:
+            res = await propose_task(
+                client_id=request.client_id,
+                project_id=request.project_id,
+                title=request.title,
+                description=request.description,
+                reason=request.reason,
+                proposed_by=request.proposed_by,
+                proposal_task_type=request.proposal_task_type,
+                scheduled_at_iso=request.scheduled_at_iso,
+                parent_task_id=request.parent_task_id,
+                depends_on_task_ids=list(request.depends_on_task_ids),
+            )
+        except Exception as e:
+            logger.exception("ProposeTask failed")
+            return proposal_pb2.ProposeTaskResponse(
+                ok=False, error=str(e)[:500],
+            )
+        return proposal_pb2.ProposeTaskResponse(
+            ok=res.ok,
+            error=res.error,
+            task_id=res.task_id,
+            dedup_decision=res.decision,
+            conflicting_task_id=res.conflicting_task_id,
+            conflicting_title=res.conflicting_title,
+        )
+
+    async def UpdateProposedTask(
+        self,
+        request: proposal_pb2.UpdateProposedTaskRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> proposal_pb2.UpdateProposedTaskResponse:
+        from app.agent.proposal_service import update_proposed_task
+
+        try:
+            # Best-effort: client_id_for_embed is optional; the embedding
+            # call only uses it for router scope tracking. The Mongo
+            # write is keyed on task_id so the right document is found.
+            res = await update_proposed_task(
+                task_id=request.task_id,
+                title=request.title,
+                description=request.description,
+                reason=request.reason,
+                proposal_task_type=request.proposal_task_type,
+                scheduled_at_iso=request.scheduled_at_iso,
+            )
+        except Exception as e:
+            logger.exception("UpdateProposedTask failed")
+            return proposal_pb2.UpdateProposedTaskResponse(
+                ok=False, error=str(e)[:500],
+            )
+        return proposal_pb2.UpdateProposedTaskResponse(
+            ok=res.ok,
+            error=res.error,
+        )
+
+    async def SendForApproval(
+        self,
+        request: proposal_pb2.TaskIdRequest,
+        context: grpc.aio.ServicerContext,
+    ) -> proposal_pb2.ProposalActionResponse:
+        from app.agent.proposal_service import send_for_approval
+
+        try:
+            res = await send_for_approval(task_id=request.task_id)
+        except Exception as e:
+            logger.exception("SendForApproval failed")
+            return proposal_pb2.ProposalActionResponse(
+                ok=False, error=str(e)[:500],
+            )
+        return proposal_pb2.ProposalActionResponse(
+            ok=res.ok,
+            error=res.error,
+            proposal_stage="AWAITING_APPROVAL" if res.ok else "",
+        )
+
+
 async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     """Start the gRPC server on `port` and return the handle for cleanup."""
     from jervis_contracts.grpc_options import build_server_options
@@ -1413,6 +1664,12 @@ async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     job_logs_pb2_grpc.add_OrchestratorJobLogsServiceServicer_to_server(
         OrchestratorJobLogsServicer(), server,
     )
+    dashboard_pb2_grpc.add_OrchestratorDashboardServiceServicer_to_server(
+        OrchestratorDashboardServicer(), server,
+    )
+    proposal_pb2_grpc.add_OrchestratorProposalServiceServicer_to_server(
+        OrchestratorProposalServicer(), server,
+    )
 
     service_names = (
         control_pb2.DESCRIPTOR.services_by_name["OrchestratorControlService"].full_name,
@@ -1423,6 +1680,8 @@ async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
         voice_pb2.DESCRIPTOR.services_by_name["OrchestratorVoiceService"].full_name,
         meeting_helper_pb2.DESCRIPTOR.services_by_name["OrchestratorMeetingHelperService"].full_name,
         job_logs_pb2.DESCRIPTOR.services_by_name["OrchestratorJobLogsService"].full_name,
+        dashboard_pb2.DESCRIPTOR.services_by_name["OrchestratorDashboardService"].full_name,
+        proposal_pb2.DESCRIPTOR.services_by_name["OrchestratorProposalService"].full_name,
         reflection.SERVICE_NAME,
     )
     reflection.enable_server_reflection(service_names, server)
@@ -1431,7 +1690,7 @@ async def start_grpc_server(port: int = 5501) -> grpc.aio.Server:
     await server.start()
     logger.info(
         "gRPC orchestrator services listening on :%d "
-        "(Control + Graph + Dispatch + Companion + Chat + Voice + MeetingHelper + JobLogs)",
+        "(Control + Graph + Dispatch + Companion + Chat + Voice + MeetingHelper + JobLogs + Dashboard + Proposal)",
         port,
     )
     return server

@@ -111,6 +111,9 @@ async def build_brief(
         f"    scratchpad_query(scope=\"client:{client_id}\", limit=30)"
     )
     brief_parts.append(
+        f"    scratchpad_query(scope=\"client:{client_id}\", namespace=\"inbox\", limit=30)"
+    )
+    brief_parts.append(
         f"    session_compact_load(scope=\"client:{client_id}\")"
     )
     brief_parts.append(
@@ -192,9 +195,19 @@ async def build_brief(
     brief_parts.append("")
     brief_parts.append("**Background coding — dispatch a real K8s Job that edits / commits / pushes code:**")
     brief_parts.append(
-        "- `dispatch_agent_job(flavor=\"CODING\", title, description, client_id, project_id, resource_id, branch_name)` — "
+        "- `dispatch_agent_job(flavor=\"CODING\", title, description, dispatch_triggered_by, client_id, project_id, resource_id, branch_name)` — "
         "spawns `jervis-coding-agent` against a per-agent git worktree, hands it `.jervis/brief.md`, "
         "commits+pushes on `branch_name`, calls `report_done` when finished. Returns the `agentJobId`."
+    )
+    brief_parts.append("")
+    brief_parts.append(
+        "**`dispatch_triggered_by` is REQUIRED** (server returns INVALID_ARGUMENT if blank). "
+        "Accepted enum: `in_chat_consent` | `ui_approval` | `scheduler_cron` | `manual`. "
+        "Use `in_chat_consent` ONLY when the user has just explicitly said \"ano spusť\" / "
+        "\"dispatchni\" / \"spusť to\" in the current chat turn. For ANY proactive idea — "
+        "stale issue, qualifier hint, you reasoning unprompted — DO NOT dispatch directly; "
+        "use the proposal flow instead (`propose_task` + `send_for_approval` → user approves "
+        "in UI → BackgroundEngine dispatches with `ui_approval` itself)."
     )
     brief_parts.append(
         "- `get_agent_job_status(agent_job_id)` — read lifecycle "
@@ -351,6 +364,9 @@ async def build_brief(
                        "narrative from the last session (or empty on cold start)")
     brief_parts.append(f"2. `scratchpad_query(scope=\"client:{client_id}\", limit=30)` — "
                        "structured pending work (todos, pending_reply, decisions, follow-ups)")
+    brief_parts.append(f"3. `scratchpad_query(scope=\"client:{client_id}\", "
+                       f"namespace=\"inbox\", limit=30)` — qualifier hints awaiting your judgement "
+                       "(see *Qualifier inbox* below)")
     brief_parts.append("")
     brief_parts.append(
         "If either returns meaningful content, **open your reply by summarising "
@@ -397,6 +413,80 @@ async def build_brief(
             "may carry state from an earlier orchestrator instance."
         )
         brief_parts.append("")
+
+    brief_parts.append("## Qualifier inbox")
+    brief_parts.append(
+        f"Pending hints from the qualifier layer arrive in "
+        f"`scratchpad_query(scope=\"client:{client_id}\", namespace=\"inbox\")`. "
+        "Each hint has fields `hint_id`, `source_kind`, `sender`, `subject`, "
+        "`body`, `classification`, `urgency` (low / normal / high / urgent), "
+        "`rationale`, `detected_client_id`, `detected_project_id`, "
+        "`target_scope`, `ts`."
+    )
+    brief_parts.append("")
+    brief_parts.append("**Process protocol** on every first turn after seeing pending hints:")
+    brief_parts.append(
+        "1. List hints sorted by urgency (URGENT → HIGH → NORMAL → LOW), then `ts` ASC."
+    )
+    brief_parts.append(
+        "2. For each hint, decide one of:"
+    )
+    brief_parts.append(
+        "   - propose action via `propose_task` (e.g. mail reply text, scheduled "
+        "calendar response, dispatch coding job) — use the proposal flow, not direct dispatch;"
+    )
+    brief_parts.append(
+        f"   - mark handled with `scratchpad_delete(scope=\"client:{client_id}\", "
+        f"namespace=\"inbox\", key=<hint_id>)` once the proposal lands or you've "
+        "decided it doesn't need action;"
+    )
+    brief_parts.append(
+        "   - leave it for the next turn if you need more information."
+    )
+    brief_parts.append(
+        "3. Live hints injected mid-session arrive as "
+        "`[qualifier-hint] <URGENCY> <classification> from <sender> "
+        "(source=<kind>): <subject>` system messages — react in the next turn "
+        "and process via the same flow."
+    )
+    brief_parts.append("")
+    brief_parts.append(
+        "Hints with `urgency=urgent` that arrive while no session was "
+        "running may be accompanied by an `[urgent-consult]` follow-up hint "
+        "carrying a one-line ad-hoc Claude recommendation; treat that as "
+        "advisory only, validate before acting."
+    )
+    brief_parts.append("")
+    brief_parts.append("**Pre-drafted proposals (PR-Q3).**")
+    brief_parts.append(
+        "If a hint carries `data.proposal_task_id`, the qualifier already "
+        "drafted a DRAFT-stage proposal for it (mail reply / Teams reply / "
+        "calendar response / bugtracker triage). Your role is to review and "
+        "ship, not draft from scratch:"
+    )
+    brief_parts.append(
+        "1. Load the task — `mongo_query(collection=\"tasks\", "
+        "filter={\"_id\": <proposal_task_id>})` or `list_tasks(stage=\"DRAFT\")`."
+    )
+    brief_parts.append(
+        "2. Review the heuristic draft. If acceptable → `send_for_approval(task_id=...)` "
+        "so the user sees it in the UI."
+    )
+    brief_parts.append(
+        "3. If it needs adjustment → `update_proposed_task(task_id=..., title=..., "
+        "description=..., reason=...)` (DRAFT is mutable), then send_for_approval."
+    )
+    brief_parts.append(
+        "4. If the heuristic was wrong → either `update_proposed_task` with a "
+        "completely new spec, or leave it (REJECTED on the next dedup pass) and "
+        "propose a fresh one."
+    )
+    brief_parts.append(
+        f"5. After `send_for_approval`, delete the inbox hint: "
+        f"`scratchpad_delete(scope=\"client:{client_id}\", namespace=\"inbox\", "
+        f"key=<hint_id>)`."
+    )
+    brief_parts.append("")
 
     brief_parts.append("## Shutdown protocol (important)")
     brief_parts.append(
