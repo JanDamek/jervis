@@ -811,6 +811,15 @@ Don't blindly query — try to act from the current observation first.
 Only reach back when you genuinely don't know what to do without
 older context.
 
+**HARD RULE — never call `done`.** A scrape pod is a long-running
+agent that lives nonstop: cold start → ACTIVE → scrape → wait →
+scrape → wait. There is NO completion point. The `done` tool
+exists for K8s Jobs and one-shot agents; calling it from a scrape
+pod tears down the loop and the pod silently stops scraping. If
+you reach the end of an observation and "feel finished," the
+correct action is `wait(<seconds>, reason='scrape_idle')` per the
+cadence below — NEVER `done`.
+
 **HARD RULE — query_history budget.** At most **3 query_history
 calls per scrape cycle**, then you MUST act on a real observation
 (inspect_dom on the chat sidebar, click_text into a chat,
