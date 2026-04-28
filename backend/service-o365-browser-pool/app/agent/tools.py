@@ -322,6 +322,51 @@ async def inspect_dom(
                 result["signed_in_indicators"] = matched_indicators
         except Exception as e:
             result["dom_stats"] = {"error": str(e)}
+
+    # Server-side HARD RULE enforcement (product §SCRAPING): chat-sidebar
+    # inspect_dom that returns 6+ matches with chat-shaped text must be
+    # followed by store_chat_row for each REAL row. The agent often
+    # ignores the prompt rule and starts probing for unread badges / VLM
+    # observations — surface the rule in the tool response so the next
+    # turn cannot drift. Detection is selector-based (rail / treeitem)
+    # plus a heuristic skip-list for section headers and pinned tiles.
+    sel_lower = (selector or "").lower()
+    matches = result.get("matches") or []
+    looks_like_chat_rail = (
+        "simple-collab-dnd-rail" in sel_lower
+        or "chat-list-item" in sel_lower
+        or "treeitem" in sel_lower
+    )
+    if looks_like_chat_rail and len(matches) >= 6:
+        skip_names = {
+            "copilot", "chats", "favorites", "channels", "meeting chats",
+            "quick views", "mentions", "discover", "drafts", "see more",
+            "see all channels", "see all your teams", "teams and channels",
+            "general", "unread", "unlock premium", "activity", "chat",
+            "calendar", "calls", "onedrive", "phonebook", "apps", "intranet",
+        }
+        real_chats: list[str] = []
+        for m in matches:
+            first_line = (m.get("text") or "").split("\n", 1)[0].strip()
+            if not first_line or first_line.lower() in skip_names:
+                continue
+            if "(you)" in first_line.lower():
+                continue
+            real_chats.append(first_line)
+        if len(real_chats) >= 3:
+            result["next_action_required"] = "store_chat_row"
+            result["chat_rows_detected"] = real_chats[:30]
+            result["remediation"] = (
+                f"Detected {len(real_chats)} chat rows in the sidebar "
+                f"(of {len(matches)} matches). HARD RULE: your VERY NEXT "
+                "tool call(s) MUST be store_chat_row — one per row above. "
+                "Forbidden until the batch completes: inspect_dom (any "
+                "selector), look_at_screen, click_text, wait. "
+                "Slugify each name for chat_id (lowercase, non-alnum→'-'). "
+                "Use is_direct=True if first line looks like a person, "
+                "is_group=True for group/team names. Set unread_count=0 "
+                "if not visible — do NOT probe for badges first."
+            )
     return result
 
 
