@@ -40,8 +40,46 @@ def memory_graph_summary(*args, **kwargs) -> str:
     return ""
 
 
-def create_task_graph(*args, **kwargs):
-    return None
+def create_task_graph(
+    *,
+    task_id: str,
+    client_id: str,
+    project_id: str | None = None,
+    root_title: str = "",
+    root_description: str = "",
+):
+    """Build a minimal AgentGraph with a single root vertex.
+
+    The Memory Graph abstraction is gone, but `langgraph_runner.node_decompose`
+    still expects a real AgentGraph (with `.vertices[root_vertex_id]`) to seed
+    the LangGraph workflow. Returning None here was a no-op shim left over
+    from the agent-job migration — every background task hit
+    `'NoneType' object has no attribute 'vertices'` at langgraph_runner.py:139
+    and the whole pipeline crashed.
+
+    This factory builds the smallest valid graph: one root vertex, no edges,
+    status=READY so the runner can immediately execute it.
+    """
+    from .models import AgentGraph, GraphStatus, GraphVertex, VertexStatus, VertexType
+    root_id = f"root-{task_id}"
+    root = GraphVertex(
+        id=root_id,
+        title=root_title or task_id,
+        description=root_description,
+        vertex_type=VertexType.ROOT,
+        status=VertexStatus.READY,
+        client_id=client_id,
+        project_id=project_id or "",
+    )
+    return AgentGraph(
+        id=f"graph-{task_id}",
+        task_id=task_id,
+        client_id=client_id,
+        project_id=project_id,
+        root_vertex_id=root_id,
+        vertices={root_id: root},
+        status=GraphStatus.READY,
+    )
 
 
 # Edge/vertex traversal helpers — validators + langgraph_runner still
