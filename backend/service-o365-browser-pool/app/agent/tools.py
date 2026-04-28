@@ -198,7 +198,7 @@ async def inspect_dom(
         tab_name: Named tab. Empty = current first page.
     """
     ctx = get_pod_context()
-    page = ctx.resolve_tab(tab_name)
+    page = await ctx.resolve_and_focus_tab(tab_name)
     if page is None:
         return {"matches": [], "count": 0, "url": "", "truncated": False,
                 "error": f"no page for tab_name={tab_name!r}"}
@@ -428,7 +428,7 @@ async def look_at_screen(
         tab_name: Named tab. Empty = current first page.
     """
     ctx = get_pod_context()
-    page = ctx.resolve_tab(tab_name)
+    page = await ctx.resolve_and_focus_tab(tab_name)
     if page is None:
         return {"app_state": "unknown", "summary": f"no page for tab_name={tab_name!r}",
                 "visible_actions": [], "detected_text": {}}
@@ -824,7 +824,7 @@ async def navigate(url: str, tab_name: str = "") -> dict:
         tab_name: Named tab. Empty = current first page.
     """
     ctx = get_pod_context()
-    page = ctx.resolve_tab(tab_name)
+    page = await ctx.resolve_and_focus_tab(tab_name)
     if page is None:
         return {"ok": False, "error": f"no page for tab_name={tab_name!r}"}
     try:
@@ -1024,7 +1024,7 @@ async def click(selector: str, tab_name: str = "") -> dict:
         tab_name: Named tab. Empty = current first page.
     """
     ctx = get_pod_context()
-    page = ctx.resolve_tab(tab_name)
+    page = await ctx.resolve_and_focus_tab(tab_name)
     if page is None:
         return {"ok": False, "error": f"no page for tab_name={tab_name!r}"}
     try:
@@ -1055,7 +1055,7 @@ async def mouse_click(
         tab_name: Named tab. Empty = current first page.
     """
     ctx = get_pod_context()
-    page = ctx.resolve_tab(tab_name)
+    page = await ctx.resolve_and_focus_tab(tab_name)
     if page is None:
         return {"ok": False, "error": f"no page for tab_name={tab_name!r}"}
     try:
@@ -1091,7 +1091,7 @@ async def click_text(
         tab_name: Named tab. Empty = current first page.
     """
     ctx = get_pod_context()
-    page = ctx.resolve_tab(tab_name)
+    page = await ctx.resolve_and_focus_tab(tab_name)
     if page is None:
         return {"ok": False, "error": f"no page for tab_name={tab_name!r}"}
     try:
@@ -1114,7 +1114,7 @@ async def click_visual(description: str, tab_name: str = "") -> dict:
         tab_name: Named tab. Empty = current first page.
     """
     ctx = get_pod_context()
-    page = ctx.resolve_tab(tab_name)
+    page = await ctx.resolve_and_focus_tab(tab_name)
     if page is None:
         return {"ok": False, "error": f"no page for tab_name={tab_name!r}"}
 
@@ -1163,7 +1163,7 @@ async def fill(selector: str, value: str, tab_name: str = "") -> dict:
         tab_name: Named tab.
     """
     ctx = get_pod_context()
-    page = ctx.resolve_tab(tab_name)
+    page = await ctx.resolve_and_focus_tab(tab_name)
     if page is None:
         return {"ok": False, "error": f"no page for tab_name={tab_name!r}"}
     try:
@@ -1184,7 +1184,7 @@ async def fill_visual(description: str, value: str, tab_name: str = "") -> dict:
         tab_name: Named tab.
     """
     ctx = get_pod_context()
-    page = ctx.resolve_tab(tab_name)
+    page = await ctx.resolve_and_focus_tab(tab_name)
     if page is None:
         return {"ok": False, "error": f"no page for tab_name={tab_name!r}"}
     obs = await look_at_screen.ainvoke({
@@ -1229,7 +1229,7 @@ async def fill_credentials(
         tab_name: Named tab.
     """
     ctx = get_pod_context()
-    page = ctx.resolve_tab(tab_name)
+    page = await ctx.resolve_and_focus_tab(tab_name)
     if page is None:
         return {"ok": False, "error": f"no page for tab_name={tab_name!r}"}
     if field == "email":
@@ -1256,7 +1256,7 @@ async def press(key: str, tab_name: str = "") -> dict:
         tab_name: Named tab.
     """
     ctx = get_pod_context()
-    page = ctx.resolve_tab(tab_name)
+    page = await ctx.resolve_and_focus_tab(tab_name)
     if page is None:
         return {"ok": False, "error": f"no page for tab_name={tab_name!r}"}
     try:
@@ -1706,7 +1706,7 @@ async def start_meeting_recording(
     ctx = get_pod_context()
     if ctx.meeting_recorder is None:
         return {"ok": False, "error": "meeting_recorder not wired"}
-    page = ctx.resolve_tab(tab_name)
+    page = await ctx.resolve_and_focus_tab(tab_name)
     if page is None:
         return {"ok": False, "error": f"no page for tab_name={tab_name!r}"}
     session = await ctx.meeting_recorder.start_adhoc(

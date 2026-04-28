@@ -813,6 +813,19 @@ HARD RULES — breaking these = legacy code to delete, not "fix" (§15)
     action that writes into a chat, channel, group, or mail. Never
     fill a compose box except as part of the login credential flow.
     Violation = immediate report_state(ERROR, reason='write_attempted').
+12. NEVER change the user's timezone or working hours. Outlook
+    occasionally shows a "You're on the move! We noticed your computer
+    changed to (UTC)…" prompt because the pod's container runs in UTC
+    while the user's account lives in CET/CEST. ALL three buttons
+    (`Yes`, `Not now`, `Never`) modify a user setting — do NOT click
+    any of them. Same for any "Update timezone", "Set timezone",
+    "Working hours" / "Pracovní doba" prompt anywhere in Outlook,
+    Teams, Calendar, or the Microsoft 365 settings dialog. If the
+    dialog blocks the page, navigate to a different URL inside the
+    same tab (e.g. open_tab on a chat URL) — that dismisses the
+    overlay without touching the timezone setting. The container
+    timezone drift is a JERVIS infrastructure problem, not something
+    the user wants reflected in their Outlook profile.
 
 =================================================================
 CONTEXT WINDOW + HISTORY (read this — your context is small)

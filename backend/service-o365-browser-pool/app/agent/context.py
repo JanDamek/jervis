@@ -59,6 +59,23 @@ class ToolContext:
                 return page
         return None
 
+    async def resolve_and_focus_tab(self, name: str) -> Page | None:
+        """Resolve a tab AND bring it to the foreground (~50 ms). Use this in
+        every tool that takes a `tab_name` argument so the VNC display tracks
+        the agent's actual working tab instead of whatever tab Chromium had
+        focused last. Without this the user watching VNC sees a stale tab
+        while the agent operates on a hidden one — confusing and a hazard if
+        the user tries to take over manually."""
+        page = self.resolve_tab(name)
+        if page is not None and not page.is_closed():
+            try:
+                await page.bring_to_front()
+            except Exception:
+                # bring_to_front can flake on transient Chromium issues;
+                # the tool can still operate on the page even without focus.
+                pass
+        return page
+
 
 _current_ctx: contextvars.ContextVar[ToolContext | None] = contextvars.ContextVar(
     "pod_tool_context", default=None,
