@@ -1,26 +1,27 @@
-FROM python:3.12-slim
+FROM eclipse-temurin:21-jre-jammy
 
-WORKDIR /app
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    curl && \
+    rm -rf /var/lib/apt/lists/*
 
-# Shared cross-service version constraints (SSOT in repo root).
-COPY constraints.txt /constraints.txt
+WORKDIR /opt/jervis/service-ollama-router
 
-# Pod-to-pod Protobuf contracts package. Copied first so it layer-caches
-# independently of the service's own requirements.
-COPY libs/jervis_contracts /libs/jervis_contracts
-RUN pip install --no-cache-dir -c /constraints.txt -e /libs/jervis_contracts
+COPY backend/service-ollama-router/build/libs/service-ollama-router-*.jar service-ollama-router.jar
 
-COPY backend/service-ollama-router/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -c /constraints.txt -r requirements.txt
-
-COPY backend/service-ollama-router/app/ app/
-
-# Per uid-map.md: shared gid 1000 jervis + per-service uid 1080.
+# Per uid-map.md: shared gid 1000 jervis + per-service uid 1080 (ollama-router).
 RUN groupadd -g 1000 jervis && \
     useradd -u 1080 -g jervis -m -s /bin/bash ollama-router && \
-    chown -R ollama-router:jervis /app
+    chown -R ollama-router:jervis /opt/jervis
 USER ollama-router
 
-EXPOSE 11430 5501
+EXPOSE 5501 8080
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "11430", "--workers", "1"]
+ENV ROUTER_GRPC_PORT=5501
+ENV HEALTH_PORT=8080
+ENV HEALTH_HOST=0.0.0.0
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+  CMD curl -f http://localhost:8080/health || exit 1
+
+ENTRYPOINT ["sh", "-c", "umask 002 && exec java -jar service-ollama-router.jar"]

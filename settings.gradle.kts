@@ -59,5 +59,6 @@ if (System.getenv("DOCKER_BUILD") != "true") {
         ":backend:service-claude",
         ":backend:service-github",
         ":backend:service-o365-gateway",
+        ":backend:service-ollama-router",
     )
 }

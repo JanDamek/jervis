@@ -23,8 +23,8 @@ spec:
           image: registry.damek-soft.eu/jandamek/jervis-ollama-router:latest
           imagePullPolicy: Always
           ports:
-            - name: ollama-http
-              containerPort: 11430
+            - name: health
+              containerPort: 8080
             - name: grpc
               containerPort: 5501
           envFrom:
@@ -32,29 +32,29 @@ spec:
                 name: jervis-config
           resources:
             requests:
-              memory: "128Mi"
+              memory: "256Mi"
               cpu: "100m"
             limits:
-              memory: "512Mi"
-              cpu: "500m"
+              memory: "1Gi"
+              cpu: "1"
           startupProbe:
             httpGet:
-              path: /router/health
-              port: 11430
+              path: /health
+              port: 8080
             initialDelaySeconds: 10
             periodSeconds: 10
             failureThreshold: 30  # 10 + 30*10 = 310s max startup (model preload takes 2-3 min)
           livenessProbe:
             httpGet:
-              path: /router/health
-              port: 11430
+              path: /health
+              port: 8080
             periodSeconds: 15
             timeoutSeconds: 10
             failureThreshold: 6
           readinessProbe:
             httpGet:
-              path: /router/health
-              port: 11430
+              path: /health
+              port: 8080
             periodSeconds: 10
       imagePullSecrets:
         - name: regcred
@@ -68,10 +68,10 @@ spec:
   selector:
     app: jervis-ollama-router
   ports:
-    - name: ollama-http
+    - name: health
       protocol: TCP
-      port: 11430
-      targetPort: 11430
+      port: 8080
+      targetPort: 8080
     - name: grpc
       protocol: TCP
       port: 5501
@@ -82,8 +82,9 @@ spec:
       nodePort: 30501
   type: NodePort
 ---
-# Ingress for local access from GPU VM (whisper → router coordination).
+# Ingress for local access from GPU VM (whisper → router health probe).
 # HTTP only — local domain, no TLS (Let's Encrypt won't sign .local).
+# Whisper coordination itself flows over gRPC (RouterAdminService) on :5501.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -105,7 +106,7 @@ spec:
               service:
                 name: jervis-ollama-router
                 port:
-                  number: 11430
+                  number: 8080
     - host: jervis-router
       http:
         paths:
@@ -115,4 +116,4 @@ spec:
               service:
                 name: jervis-ollama-router
                 port:
-                  number: 11430
+                  number: 8080

@@ -1,43 +1,47 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Source shared validation functions
 source "$SCRIPT_DIR/validate_deployment.sh"
 
-REGISTRY="registry.damek-soft.eu/jandamek"
 SERVICE_NAME="jervis-ollama-router"
-IMAGE="$REGISTRY/$SERVICE_NAME:latest"
+MODULE=":backend:service-ollama-router"
+DOCKERFILE="backend/service-ollama-router/Dockerfile"
+REGISTRY="registry.damek-soft.eu/jandamek"
+IMAGE="${REGISTRY}/${SERVICE_NAME}:latest"
+NAMESPACE="jervis"
 
-echo "=== Building and deploying $SERVICE_NAME (Python) ==="
+echo "=== Building and deploying ${SERVICE_NAME} (Kotlin) ==="
 
-# Step 1: Build Docker image. Build context = PROJECT_ROOT so the
-# Dockerfile can COPY libs/jervis_contracts/ (pod-to-pod contracts).
-echo "Step 1/3: Building Docker image..."
-docker buildx build \
-  --platform linux/amd64 \
-  -t "$IMAGE" \
-  -f "$PROJECT_ROOT/backend/service-ollama-router/Dockerfile" \
-  "$PROJECT_ROOT" || { echo "✗ Docker build failed"; exit 1; }
-echo "✓ Docker image built"
+# 1. Build JAR (Kotlin Gradle multi-module monorepo)
+echo "Step 1/4: Building JAR..."
+cd "$(dirname "$0")/.."
+./gradlew ${MODULE}:clean ${MODULE}:build -x test
+echo "✓ JAR built successfully"
 
-# Step 2: Push Docker image
-echo "Step 2/3: Pushing Docker image..."
-docker push "$IMAGE" || { echo "✗ Docker push failed"; exit 1; }
+# 2. Docker Build
+echo "Step 2/4: Building Docker image..."
+docker build --platform linux/amd64 \
+  -t "${IMAGE}" \
+  -f "${DOCKERFILE}" .
+echo "✓ Docker image ${IMAGE} built successfully"
+
+# 3. Docker Push
+echo "Step 3/4: Pushing Docker image..."
+docker push "${IMAGE}"
 echo "✓ Docker image pushed"
 
-# Step 3: Deploy to Kubernetes
-echo "Step 3/3: Deploying to Kubernetes..."
-cd "$PROJECT_ROOT/k8s"
-kubectl apply -f configmap.yaml
-kubectl apply -f app_ollama_router.yaml
+# 4. Deploy
+echo "Step 4/4: Deploying to Kubernetes..."
+kubectl apply -f "$SCRIPT_DIR/configmap.yaml" -n "${NAMESPACE}"
+kubectl apply -f "$SCRIPT_DIR/app_ollama_router.yaml" -n "${NAMESPACE}"
 
 # Validate YAML changes propagated to K8s
-validate_deployment_spec "$SERVICE_NAME" "jervis"
+validate_deployment_spec "$SERVICE_NAME" "$NAMESPACE"
 
-kubectl rollout restart deployment/$SERVICE_NAME -n jervis
-kubectl rollout status deployment/$SERVICE_NAME -n jervis --timeout=300s
+kubectl rollout restart deployment/${SERVICE_NAME} -n "${NAMESPACE}"
+kubectl rollout status deployment/${SERVICE_NAME} -n "${NAMESPACE}" --timeout=300s
 
-echo "=== ✓ $SERVICE_NAME complete ==="
+echo "=== ✓ ${SERVICE_NAME} complete ==="
