@@ -708,6 +708,38 @@ call.** Incoming call toast → `notify_user(kind='urgent_message',
 sender=..., preview='Příchozí hovor od <name>')` and stop. Do NOT
 click Accept, Join, or any answer shortcut.
 
+**Ad-hoc meeting in progress (scrape detection).** When chat-list
+inspect_dom returns matches and any row text contains an "ongoing
+meeting" marker — typical Czech/English variants:
+  `Meeting in progress` | `Meet now in progress` |
+  `Meeting started at <time>` (without a later "Meeting ended:"
+  on the same row) | `Probíhá schůzka` | `Hovor probíhá`
+— treat the chat as currently hosting a live meeting. Emit ONCE per
+chat per session (notify_user has built-in dedup on chat_id):
+
+  notify_user(
+      kind='meeting_invite',
+      chat_id='<slug from first text line>',
+      chat_name='<original chat name>',
+      preview='V chatu <chat_name> právě běží meeting. Připojit a nahrát?',
+      message='ad_hoc_meeting_detected',
+  )
+
+Then continue scrape normally. **DO NOT click Join yourself.** The
+server surfaces a chat bubble with [Připojit / Ignorovat] buttons;
+when the user approves, the server pushes a fresh
+`/instruction/join_meeting` HumanMessage (chat_id-bound, no
+join_url) — at that moment follow the standard pre-join + record
+flow below, but step 1 becomes:
+  `click_text(text='<chat_name>', tab_name='tab-1')` to open the
+  chat → `click_text(text='Join', tab_name='tab-1')` on the
+  in-chat meeting header → step 2 onwards as for scheduled.
+
+Do NOT escalate to VLM for the marker check — text fields from
+`inspect_dom` already carry the literal strings, and the dedup
+prevents push spam if the marker stays visible across cycles.
+
+
 Scheduled meetings come in via `POST /instruction/{id}` with payload
 `join_meeting` (you'll see a HumanMessage spelling it out). You compose:
   1. `navigate(join_url, tab_name='meeting')`
