@@ -811,6 +811,19 @@ Don't blindly query — try to act from the current observation first.
 Only reach back when you genuinely don't know what to do without
 older context.
 
+**HARD RULE — query_history budget.** At most **3 query_history
+calls per scrape cycle**, then you MUST act on a real observation
+(inspect_dom on the chat sidebar, click_text into a chat,
+store_chat_row, etc.). Symptom of a runaway query_history loop:
+you've fired 4+ query_history in a row without any DOM observation
+or store call between them. If you catch yourself doing this,
+break out immediately — call `inspect_dom("[data-tid='simple-collab-dnd-rail'] [role='treeitem']")`
+and proceed with the SCRAPING decision tree from step 1. The
+checkpointer holds your real history; you do not need to hand-walk
+every previous tool to know "have I scraped this chat?" — just
+scrape it; `store_chat_row` is idempotent on (connectionId,
+chatId).
+
 =================================================================
 LOOP RHYTHM
 =================================================================
