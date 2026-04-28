@@ -14780,7 +14780,7 @@ the pod.
 | Kind | Server behavior |
 |------|-----------------|
 | `urgent_message` | USER_TASK `priorityScore=95`, `alwaysPush=true`, FCM+APNs, kRPC emit. Direct messages + @mentions + incoming direct calls (see §15). |
-| `meeting_invite` | USER_TASK 80, push+kRPC, expects approval via `POST /instruction/{connectionId}` (`join-meeting:<target>` / `skip-meeting`). |
+| `meeting_invite` | USER_TASK 80, push+kRPC, **ad-hoc** (chat-list scrape detected "Meeting in progress" / "Probíhá schůzka"). Server fills `TaskDocument.meetingInviteMeta(connectionId, chatId, chatName)`. Approval via `UserTaskRpc.sendToAgent(taskId)` (empty `additionalInput`) → `BrowserPodMeetingClient.dispatchJoinAdhoc` pushes a chat-bound `INSTRUCTION: join_meeting` (no joinUrl) into the same pod that detected it; the agent opens the chat by name and clicks the in-chat Join header. Distinct from calendar-scheduled meetings (`MeetingMetadata`, `MeetingRecordingDispatcher`). |
 | `meeting_alone_check` | USER_TASK 65, `alwaysPush=true`, chat bubble with `[Odejít] [Zůstat]` buttons. Emitted when user-joined meeting has been alone > 1 min (see §10a). Orchestrator routes button clicks / chat intents to MCP `meeting_alone_leave(meeting_id)` / `meeting_alone_stay(meeting_id)`. |
 | `auth_request` | USER_TASK 75, outside work hours login consent. |
 | `mfa` | USER_TASK 70 with MFA `mfa_code` in metadata — push body shows the 2-digit number (see §17). |

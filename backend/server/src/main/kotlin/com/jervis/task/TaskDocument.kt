@@ -244,6 +244,16 @@ data class TaskDocument(
      */
     val meetingMetadata: MeetingMetadata? = null,
     /**
+     * Ad-hoc meeting invite metadata. Set when the o365 browser pod agent
+     * detects a "Meeting in progress" marker in the chat sidebar (during
+     * scrape) and emits `notify_user(kind='meeting_invite', chat_id, chat_name)`.
+     * Approval (sendToAgent without additionalInput) triggers
+     * `BrowserPodMeetingClient.dispatchJoinAdhoc` — agent opens the chat
+     * by name and clicks the in-chat Join header. Non-null + meetingMetadata=null
+     * is the discriminator for the ad-hoc path vs the calendar-scheduled path.
+     */
+    val meetingInviteMeta: MeetingInviteMeta? = null,
+    /**
      * 2-3 sentence overview of the task content, set by the qualifier agent after KB ingestion.
      * Used in the chat brief and related-tasks list to give the user a quick summary.
      */
@@ -373,6 +383,7 @@ data class TaskDocument(
             lastActivityAt: Instant?,
             mentionsJervis: Boolean?,
             meetingMetadata: MeetingMetadata?,
+            meetingInviteMeta: MeetingInviteMeta?,
             summary: String?,
             needsQualification: Boolean?,
             deadline: Instant?,
@@ -434,6 +445,7 @@ data class TaskDocument(
             lastActivityAt = lastActivityAt,
             mentionsJervis = mentionsJervis ?: false,
             meetingMetadata = meetingMetadata,
+            meetingInviteMeta = meetingInviteMeta,
             summary = summary,
             needsQualification = needsQualification ?: false,
             deadline = deadline,

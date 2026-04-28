@@ -267,6 +267,24 @@ class ServerO365SessionGrpcImpl(
                 .setStatus("ok").setKind(request.kind).setPriority(priority).build()
         }
 
+        // Build embedded meeting-invite metadata once if applicable; the
+        // sendToAgent intercept reads it back to dispatch the ad-hoc join
+        // into the originating pod. Only meaningful when the agent reported
+        // a chatId (otherwise we can't reopen the chat by name).
+        val meetingInviteMeta: com.jervis.task.MeetingInviteMeta? =
+            if (request.kind == "meeting_invite" &&
+                request.chatId.isNotBlank() &&
+                request.connectionId.isNotBlank()
+            ) {
+                com.jervis.task.MeetingInviteMeta(
+                    connectionId = request.connectionId,
+                    chatId = request.chatId,
+                    chatName = request.chatName.takeIf { it.isNotBlank() } ?: request.chatId,
+                )
+            } else {
+                null
+            }
+
         for (cid in clientIds) {
             val hasActiveUi = if (alwaysPush) false else notificationRpc.hasActiveSubscribers(cid.toString())
             val task = TaskDocument(
@@ -281,6 +299,7 @@ class ServerO365SessionGrpcImpl(
                 priorityScore = priority,
                 lastActivityAt = Instant.now(),
                 actionType = request.connectionId,
+                meetingInviteMeta = meetingInviteMeta,
             )
             taskRepository.save(task)
 

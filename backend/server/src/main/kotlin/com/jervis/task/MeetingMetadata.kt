@@ -62,6 +62,32 @@ data class MeetingMetadata(
 )
 
 /**
+ * Embedded ad-hoc meeting invite metadata on TaskDocument.
+ *
+ * Populated by `ServerO365SessionGrpcImpl.notify` when the o365 browser pod
+ * agent emits `notify_user(kind='meeting_invite', chat_id, chat_name)` after
+ * detecting an in-progress meeting marker (Czech / English variants:
+ * "Meeting in progress", "Probíhá schůzka", ...) inside the chat sidebar.
+ *
+ * Distinguished from `MeetingMetadata` (calendar-derived, scheduled meetings):
+ * the invite is created on the fly when the user is OFFERED to attend a live
+ * meeting that is not on their calendar. Approval triggers
+ * `BrowserPodMeetingClient.dispatchJoinAdhoc`, which pushes a chat-bound
+ * `INSTRUCTION: join_meeting` HumanMessage back into the same pod (no joinUrl
+ * — the agent opens the chat by name and clicks the in-chat Join header).
+ */
+data class MeetingInviteMeta(
+    /** ConnectionDocument._id of the pod that detected the meeting. */
+    val connectionId: String,
+    /** Chat slug as the agent reported it (lowercase, dashed). */
+    val chatId: String,
+    /** Original chat display name as it appeared in the sidebar. */
+    val chatName: String,
+    /** When the agent emitted the notify_user push. */
+    val detectedAt: Instant = Instant.now(),
+)
+
+/**
  * Online meeting provider classification.
  *
  * Derived from join URL host (teams.microsoft.com, meet.google.com, zoom.us, ...)

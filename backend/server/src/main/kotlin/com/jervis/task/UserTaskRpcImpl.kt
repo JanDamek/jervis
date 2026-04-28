@@ -40,6 +40,7 @@ class UserTaskRpcImpl(
     private val o365BrowserPoolGrpc: com.jervis.infrastructure.grpc.O365BrowserPoolGrpcClient,
     private val ephemeralPromptRegistry: com.jervis.infrastructure.notification.EphemeralPromptRegistry,
     private val connectionApprovalService: com.jervis.connection.ConnectionApprovalService,
+    private val browserPodMeetingClient: com.jervis.meeting.BrowserPodMeetingClient,
 ) : IUserTaskService {
     private val logger = KotlinLogging.logger {}
 
@@ -127,6 +128,54 @@ class UserTaskRpcImpl(
                 approved = approved,
                 reason = additionalInput?.takeIf { it.isNotBlank() },
             )
+            return updated.toUserTaskDto()
+        }
+
+        // Ad-hoc meeting-invite approval routing — pod detected an in-progress
+        // meeting in the chat sidebar and emitted notify_user(meeting_invite).
+        // APPROVE = empty additionalInput → dispatch chat-bound join into the
+        // SAME pod that surfaced the invite. DENY = any input → just resolve
+        // the task (pod keeps scraping; if the marker stays the dedup in
+        // notify_user prevents another push for the same chat in this session).
+        // Distinguished from calendar path by `meetingMetadata == null` and
+        // `meetingInviteMeta != null` discriminator.
+        if (task.meetingInviteMeta != null) {
+            val invite = task.meetingInviteMeta!!
+            val approved = additionalInput.isNullOrBlank()
+            if (approved) {
+                try {
+                    val ok = browserPodMeetingClient.dispatchJoinAdhoc(
+                        connectionId = invite.connectionId,
+                        chatId = invite.chatId,
+                        chatName = invite.chatName,
+                    )
+                    if (!ok) {
+                        logger.warn {
+                            "MEETING_INVITE_DISPATCH_FAILED | taskId=${task.id} chat=${invite.chatId}"
+                        }
+                    } else {
+                        logger.info {
+                            "MEETING_INVITE_APPROVED | taskId=${task.id} chat=${invite.chatId}"
+                        }
+                    }
+                } catch (e: Exception) {
+                    logger.error(e) {
+                        "MEETING_INVITE_DISPATCH_EX | taskId=${task.id} chat=${invite.chatId}"
+                    }
+                }
+            } else {
+                logger.info {
+                    "MEETING_INVITE_DENIED | taskId=${task.id} chat=${invite.chatId} reason=${additionalInput?.take(120)}"
+                }
+            }
+            val updated = task.copy(
+                state = TaskStateEnum.DONE,
+                pendingUserQuestion = null,
+                userQuestionContext = null,
+                lastActivityAt = Instant.now(),
+            )
+            taskRepository.save(updated)
+            notificationRpc.emitUserTaskCancelled(task.clientId.toString(), task.id.toString(), task.taskName)
             return updated.toUserTaskDto()
         }
 
