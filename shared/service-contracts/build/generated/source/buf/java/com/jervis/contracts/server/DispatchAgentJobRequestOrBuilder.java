@@ -170,4 +170,28 @@ public interface DispatchAgentJobRequestOrBuilder extends
    */
   com.google.protobuf.ByteString
       getBranchNameBytes();
+
+  /**
+   * <pre>
+   * PR2b — audit invariant: who triggered the dispatch.
+   * Accepted: in_chat_consent | ui_approval | scheduler_cron | manual.
+   * Server returns INVALID_ARGUMENT if blank.
+   * </pre>
+   *
+   * <code>string dispatch_triggered_by = 10 [json_name = "dispatchTriggeredBy"];</code>
+   * @return The dispatchTriggeredBy.
+   */
+  java.lang.String getDispatchTriggeredBy();
+  /**
+   * <pre>
+   * PR2b — audit invariant: who triggered the dispatch.
+   * Accepted: in_chat_consent | ui_approval | scheduler_cron | manual.
+   * Server returns INVALID_ARGUMENT if blank.
+   * </pre>
+   *
+   * <code>string dispatch_triggered_by = 10 [json_name = "dispatchTriggeredBy"];</code>
+   * @return The bytes for dispatchTriggeredBy.
+   */
+  com.google.protobuf.ByteString
+      getDispatchTriggeredByBytes();
 }

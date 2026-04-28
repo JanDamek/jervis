@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package jervis.orchestrator;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.orchestrator";
+option java_multiple_files = true;
+option java_outer_classname = "OrchestratorDashboardProto";
+
+// OrchestratorDashboardService — read-only snapshot of the SessionBroker
+// (active Claude sessions, LRU cap, pause state, agent-job holds, recent
+// LRU evictions). Consumed by the Kotlin server which fronts a kRPC
+// push-flow surface for the desktop UI Dashboard screen.
+//
+// Unary for now: server pulls every 5 s into a MutableSharedFlow(replay=1)
+// and the UI subscribes to that flow. A future upgrade to server-streaming
+// keyed off broker audit writes is possible without changing the kRPC
+// contract.
+service OrchestratorDashboardService {
+  rpc GetSessionSnapshot(GetSessionSnapshotRequest) returns (SessionSnapshotResponse);
+}
+
+message GetSessionSnapshotRequest {
+  jervis.common.RequestContext ctx = 1;
+}
+
+message SessionSnapshotResponse {
+  bool ok = 1;
+  string error = 2;
+  int32 active_count = 3;
+  int32 cap = 4;
+  bool paused = 5;
+  repeated ActiveSession sessions = 6;
+  // agent_job_id → holder_scope (Klient/Project that holds itself alive
+  // while a coding-agent K8s Job is in flight).
+  map<string, string> agent_job_holds = 7;
+  // Recent LRU evictions (last 24 h, oldest-first), read from the
+  // claude_scratchpad audit collection (scope=broker, namespace=audit,
+  // event=evict).
+  repeated EvictionRecord recent_evictions = 8;
+}
+
+message ActiveSession {
+  string scope = 1;            // e.g. "client:<id>" or "project:<cid>:<pid>"
+  string session_id = 2;
+  string client_id = 3;
+  string project_id = 4;
+  int32 cumulative_tokens = 5;
+  int32 idle_seconds = 6;
+  bool compact_in_progress = 7;
+  // Age of the most recent compact_snapshots row for this scope, in
+  // seconds. Zero if no compact has been persisted yet.
+  int32 last_compact_age_seconds = 8;
+}
+
+message EvictionRecord {
+  string scope = 1;            // session_scope from the audit doc
+  string reason = 2;           // e.g. "lru_cap"
+  string ts = 3;               // ISO 8601 (audit doc's `data.ts`)
+}

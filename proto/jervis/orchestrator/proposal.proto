@@ -1,0 +1,85 @@
+syntax = "proto3";
+
+package jervis.orchestrator;
+
+import "jervis/common/types.proto";
+
+option java_package = "com.jervis.contracts.orchestrator";
+option java_multiple_files = true;
+option java_outer_classname = "OrchestratorProposalProto";
+
+// OrchestratorProposalService — Python-owned write surface for the
+// Claude CLI proposal lifecycle. The MCP server delegates to this
+// service (rather than calling Kotlin directly) so the embed + dedup
+// logic lives in one place. The orchestrator then forwards to the
+// Kotlin ServerTaskProposalService for the actual Mongo write.
+service OrchestratorProposalService {
+  // Embed title+description, run a 3-tier dedup against recent
+  // proposals authored by the same scope, and INSERT a DRAFT proposal.
+  // Returns the new task_id on success, or a hint when a near-duplicate
+  // already exists.
+  rpc ProposeTask(ProposeTaskRequest) returns (ProposeTaskResponse);
+
+  // Re-embed title/description if changed and forward to Kotlin
+  // UpdateProposal. Stage-guarded server-side (DRAFT/REJECTED only).
+  rpc UpdateProposedTask(UpdateProposedTaskRequest) returns (UpdateProposedTaskResponse);
+
+  // Plain forward to Kotlin SendForApproval — no orchestrator-side
+  // logic beyond audit logging.
+  rpc SendForApproval(TaskIdRequest) returns (ProposalActionResponse);
+}
+
+message ProposeTaskRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+  string title = 4;
+  string description = 5;
+  string reason = 6;
+  string proposed_by = 7;            // claude-{project,client}-cli:<scope>
+  string proposal_task_type = 8;     // ProposalTaskType enum name
+  string scheduled_at_iso = 9;       // optional, RFC3339
+  string parent_task_id = 10;
+  repeated string depends_on_task_ids = 11;
+}
+
+message ProposeTaskResponse {
+  bool ok = 1;
+  string error = 2;
+  string task_id = 3;
+  // Dedup decision when ok=false. One of:
+  //   "REJECT"             — same scope cosine ≥ thresholds, blocked.
+  //   "SUGGEST_CONSOLIDATE" — same client different project — caller
+  //                           should consolidate manually.
+  //   ""                   — generic error (network, validation, …).
+  string dedup_decision = 4;
+  // Existing task_id that triggered the dedup decision (for hints).
+  string conflicting_task_id = 5;
+  string conflicting_title = 6;
+}
+
+message UpdateProposedTaskRequest {
+  jervis.common.RequestContext ctx = 1;
+  string task_id = 2;
+  string title = 3;
+  string description = 4;
+  string reason = 5;
+  string proposal_task_type = 6;
+  string scheduled_at_iso = 7;
+}
+
+message UpdateProposedTaskResponse {
+  bool ok = 1;
+  string error = 2;
+}
+
+message TaskIdRequest {
+  jervis.common.RequestContext ctx = 1;
+  string task_id = 2;
+}
+
+message ProposalActionResponse {
+  bool ok = 1;
+  string error = 2;
+  string proposal_stage = 3;
+}

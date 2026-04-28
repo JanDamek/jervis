@@ -79,7 +79,7 @@ public final class ServerAgentJobProto extends com.google.protobuf.GeneratedFile
       "server\032\031jervis/common/types.proto\"f\n\021Age" +
       "ntJobIdRequest\022/\n\003ctx\030\001 \001(\0132\035.jervis.com" +
       "mon.RequestContextR\003ctx\022 \n\014agent_job_id\030" +
-      "\002 \001(\tR\nagentJobId\"\275\002\n\027DispatchAgentJobRe" +
+      "\002 \001(\tR\nagentJobId\"\361\002\n\027DispatchAgentJobRe" +
       "quest\022/\n\003ctx\030\001 \001(\0132\035.jervis.common.Reque" +
       "stContextR\003ctx\022\026\n\006flavor\030\002 \001(\tR\006flavor\022\024" +
       "\n\005title\030\003 \001(\tR\005title\022 \n\013description\030\004 \001(" +
@@ -87,58 +87,59 @@ public final class ServerAgentJobProto extends com.google.protobuf.GeneratedFile
       "tId\022\035\n\nproject_id\030\006 \001(\tR\tprojectId\022\037\n\013re" +
       "source_id\030\007 \001(\tR\nresourceId\022#\n\rdispatche" +
       "d_by\030\010 \001(\tR\014dispatchedBy\022\037\n\013branch_name\030" +
-      "\t \001(\tR\nbranchName\"\347\001\n\030DispatchAgentJobRe" +
-      "sponse\022\016\n\002ok\030\001 \001(\010R\002ok\022\024\n\005error\030\002 \001(\tR\005e" +
-      "rror\022 \n\014agent_job_id\030\003 \001(\tR\nagentJobId\022\024" +
-      "\n\005state\030\004 \001(\tR\005state\022.\n\023kubernetes_job_n" +
-      "ame\030\005 \001(\tR\021kubernetesJobName\022%\n\016workspac" +
-      "e_path\030\006 \001(\tR\rworkspacePath\022\026\n\006branch\030\007 " +
-      "\001(\tR\006branch\"\211\006\n\031GetAgentJobStatusRespons" +
-      "e\022\016\n\002ok\030\001 \001(\010R\002ok\022\024\n\005error\030\002 \001(\tR\005error\022" +
-      " \n\014agent_job_id\030\003 \001(\tR\nagentJobId\022\026\n\006fla" +
-      "vor\030\004 \001(\tR\006flavor\022\024\n\005state\030\005 \001(\tR\005state\022" +
-      ".\n\023kubernetes_job_name\030\006 \001(\tR\021kubernetes" +
-      "JobName\0220\n\024kubernetes_job_phase\030\007 \001(\tR\022k" +
-      "ubernetesJobPhase\022\033\n\tclient_id\030\010 \001(\tR\010cl" +
-      "ientId\022\035\n\nproject_id\030\t \001(\tR\tprojectId\022\037\n" +
-      "\013resource_id\030\n \001(\tR\nresourceId\022%\n\016worksp" +
-      "ace_path\030\013 \001(\tR\rworkspacePath\022\026\n\006branch\030" +
-      "\014 \001(\tR\006branch\022$\n\016git_commit_sha\030\r \001(\tR\014g" +
-      "itCommitSha\022\024\n\005title\030\016 \001(\tR\005title\022 \n\013des" +
-      "cription\030\017 \001(\tR\013description\022#\n\rdispatche" +
-      "d_by\030\020 \001(\tR\014dispatchedBy\022%\n\016result_summa" +
-      "ry\030\021 \001(\tR\rresultSummary\022\034\n\tartifacts\030\022 \003" +
-      "(\tR\tartifacts\022*\n\021ask_user_question\030\023 \001(\t" +
-      "R\017askUserQuestion\022#\n\rerror_message\030\024 \001(\t" +
-      "R\014errorMessage\022\035\n\ncreated_at\030\025 \001(\tR\tcrea" +
-      "tedAt\022\035\n\nstarted_at\030\026 \001(\tR\tstartedAt\022!\n\014" +
-      "completed_at\030\027 \001(\tR\013completedAt\"\201\001\n\024Abor" +
-      "tAgentJobRequest\022/\n\003ctx\030\001 \001(\0132\035.jervis.c" +
-      "ommon.RequestContextR\003ctx\022 \n\014agent_job_i" +
-      "d\030\002 \001(\tR\nagentJobId\022\026\n\006reason\030\003 \001(\tR\006rea" +
-      "son\"S\n\025AbortAgentJobResponse\022\016\n\002ok\030\001 \001(\010" +
-      "R\002ok\022\024\n\005error\030\002 \001(\tR\005error\022\024\n\005state\030\003 \001(" +
-      "\tR\005state\"\373\001\n\026ReportAgentDoneRequest\022/\n\003c" +
-      "tx\030\001 \001(\0132\035.jervis.common.RequestContextR" +
-      "\003ctx\022 \n\014agent_job_id\030\002 \001(\tR\nagentJobId\022\030" +
-      "\n\007success\030\003 \001(\010R\007success\022\030\n\007summary\030\004 \001(" +
-      "\tR\007summary\022\035\n\ncommit_sha\030\005 \001(\tR\tcommitSh" +
-      "a\022\026\n\006branch\030\006 \001(\tR\006branch\022#\n\rchanged_fil" +
-      "es\030\007 \003(\tR\014changedFiles\"U\n\027ReportAgentDon" +
-      "eResponse\022\016\n\002ok\030\001 \001(\010R\002ok\022\024\n\005error\030\002 \001(\t" +
-      "R\005error\022\024\n\005state\030\003 \001(\tR\005state2\233\003\n\025Server" +
-      "AgentJobService\022c\n\020DispatchAgentJob\022&.je" +
-      "rvis.server.DispatchAgentJobRequest\032\'.je" +
-      "rvis.server.DispatchAgentJobResponse\022_\n\021" +
-      "GetAgentJobStatus\022 .jervis.server.AgentJ" +
-      "obIdRequest\032(.jervis.server.GetAgentJobS" +
-      "tatusResponse\022Z\n\rAbortAgentJob\022#.jervis." +
-      "server.AbortAgentJobRequest\032$.jervis.ser" +
-      "ver.AbortAgentJobResponse\022`\n\017ReportAgent" +
-      "Done\022%.jervis.server.ReportAgentDoneRequ" +
-      "est\032&.jervis.server.ReportAgentDoneRespo" +
-      "nseB4\n\033com.jervis.contracts.serverB\023Serv" +
-      "erAgentJobProtoP\001b\006proto3"
+      "\t \001(\tR\nbranchName\0222\n\025dispatch_triggered_" +
+      "by\030\n \001(\tR\023dispatchTriggeredBy\"\347\001\n\030Dispat" +
+      "chAgentJobResponse\022\016\n\002ok\030\001 \001(\010R\002ok\022\024\n\005er" +
+      "ror\030\002 \001(\tR\005error\022 \n\014agent_job_id\030\003 \001(\tR\n" +
+      "agentJobId\022\024\n\005state\030\004 \001(\tR\005state\022.\n\023kube" +
+      "rnetes_job_name\030\005 \001(\tR\021kubernetesJobName" +
+      "\022%\n\016workspace_path\030\006 \001(\tR\rworkspacePath\022" +
+      "\026\n\006branch\030\007 \001(\tR\006branch\"\211\006\n\031GetAgentJobS" +
+      "tatusResponse\022\016\n\002ok\030\001 \001(\010R\002ok\022\024\n\005error\030\002" +
+      " \001(\tR\005error\022 \n\014agent_job_id\030\003 \001(\tR\nagent" +
+      "JobId\022\026\n\006flavor\030\004 \001(\tR\006flavor\022\024\n\005state\030\005" +
+      " \001(\tR\005state\022.\n\023kubernetes_job_name\030\006 \001(\t" +
+      "R\021kubernetesJobName\0220\n\024kubernetes_job_ph" +
+      "ase\030\007 \001(\tR\022kubernetesJobPhase\022\033\n\tclient_" +
+      "id\030\010 \001(\tR\010clientId\022\035\n\nproject_id\030\t \001(\tR\t" +
+      "projectId\022\037\n\013resource_id\030\n \001(\tR\nresource" +
+      "Id\022%\n\016workspace_path\030\013 \001(\tR\rworkspacePat" +
+      "h\022\026\n\006branch\030\014 \001(\tR\006branch\022$\n\016git_commit_" +
+      "sha\030\r \001(\tR\014gitCommitSha\022\024\n\005title\030\016 \001(\tR\005" +
+      "title\022 \n\013description\030\017 \001(\tR\013description\022" +
+      "#\n\rdispatched_by\030\020 \001(\tR\014dispatchedBy\022%\n\016" +
+      "result_summary\030\021 \001(\tR\rresultSummary\022\034\n\ta" +
+      "rtifacts\030\022 \003(\tR\tartifacts\022*\n\021ask_user_qu" +
+      "estion\030\023 \001(\tR\017askUserQuestion\022#\n\rerror_m" +
+      "essage\030\024 \001(\tR\014errorMessage\022\035\n\ncreated_at" +
+      "\030\025 \001(\tR\tcreatedAt\022\035\n\nstarted_at\030\026 \001(\tR\ts" +
+      "tartedAt\022!\n\014completed_at\030\027 \001(\tR\013complete" +
+      "dAt\"\201\001\n\024AbortAgentJobRequest\022/\n\003ctx\030\001 \001(" +
+      "\0132\035.jervis.common.RequestContextR\003ctx\022 \n" +
+      "\014agent_job_id\030\002 \001(\tR\nagentJobId\022\026\n\006reaso" +
+      "n\030\003 \001(\tR\006reason\"S\n\025AbortAgentJobResponse" +
+      "\022\016\n\002ok\030\001 \001(\010R\002ok\022\024\n\005error\030\002 \001(\tR\005error\022\024" +
+      "\n\005state\030\003 \001(\tR\005state\"\373\001\n\026ReportAgentDone" +
+      "Request\022/\n\003ctx\030\001 \001(\0132\035.jervis.common.Req" +
+      "uestContextR\003ctx\022 \n\014agent_job_id\030\002 \001(\tR\n" +
+      "agentJobId\022\030\n\007success\030\003 \001(\010R\007success\022\030\n\007" +
+      "summary\030\004 \001(\tR\007summary\022\035\n\ncommit_sha\030\005 \001" +
+      "(\tR\tcommitSha\022\026\n\006branch\030\006 \001(\tR\006branch\022#\n" +
+      "\rchanged_files\030\007 \003(\tR\014changedFiles\"U\n\027Re" +
+      "portAgentDoneResponse\022\016\n\002ok\030\001 \001(\010R\002ok\022\024\n" +
+      "\005error\030\002 \001(\tR\005error\022\024\n\005state\030\003 \001(\tR\005stat" +
+      "e2\233\003\n\025ServerAgentJobService\022c\n\020DispatchA" +
+      "gentJob\022&.jervis.server.DispatchAgentJob" +
+      "Request\032\'.jervis.server.DispatchAgentJob" +
+      "Response\022_\n\021GetAgentJobStatus\022 .jervis.s" +
+      "erver.AgentJobIdRequest\032(.jervis.server." +
+      "GetAgentJobStatusResponse\022Z\n\rAbortAgentJ" +
+      "ob\022#.jervis.server.AbortAgentJobRequest\032" +
+      "$.jervis.server.AbortAgentJobResponse\022`\n" +
+      "\017ReportAgentDone\022%.jervis.server.ReportA" +
+      "gentDoneRequest\032&.jervis.server.ReportAg" +
+      "entDoneResponseB4\n\033com.jervis.contracts." +
+      "serverB\023ServerAgentJobProtoP\001b\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
@@ -156,7 +157,7 @@ public final class ServerAgentJobProto extends com.google.protobuf.GeneratedFile
     internal_static_jervis_server_DispatchAgentJobRequest_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_jervis_server_DispatchAgentJobRequest_descriptor,
-        new java.lang.String[] { "Ctx", "Flavor", "Title", "Description", "ClientId", "ProjectId", "ResourceId", "DispatchedBy", "BranchName", });
+        new java.lang.String[] { "Ctx", "Flavor", "Title", "Description", "ClientId", "ProjectId", "ResourceId", "DispatchedBy", "BranchName", "DispatchTriggeredBy", });
     internal_static_jervis_server_DispatchAgentJobResponse_descriptor =
       getDescriptor().getMessageType(2);
     internal_static_jervis_server_DispatchAgentJobResponse_fieldAccessorTable = new

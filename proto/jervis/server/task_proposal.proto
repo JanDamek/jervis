@@ -1,0 +1,146 @@
+syntax = "proto3";
+
+package jervis.server;
+
+import "jervis/common/types.proto";
+import "jervis/server/task_api.proto";
+
+option java_package = "com.jervis.contracts.server";
+option java_multiple_files = true;
+option java_outer_classname = "ServerTaskProposalProto";
+
+// ServerTaskProposalService is the Kotlin-owned surface for the
+// Claude CLI proposal lifecycle. The MCP tools `propose_task`,
+// `update_proposed_task`, `send_for_approval`, `task_approve`,
+// `task_reject` ultimately delegate to these RPCs (via the
+// orchestrator's OrchestratorProposalService for create/update — which
+// also runs embedding + dedup — and directly here for approve/reject).
+//
+// The server is the single writer for `tasks` documents; proposal
+// stage transitions are atomic via MongoTemplate findOneAndUpdate
+// guarded by the current `proposalStage` so out-of-order calls return
+// INVALID_STATE rather than racing.
+service ServerTaskProposalService {
+  // Insert a fresh proposal in DRAFT state.
+  rpc InsertProposal(InsertProposalRequest) returns (InsertProposalResponse);
+
+  // Update mutable fields of a DRAFT or REJECTED proposal (atomic
+  // findOneAndUpdate filtered by stage). AWAITING_APPROVAL / APPROVED
+  // proposals are immutable; the call returns INVALID_STATE.
+  rpc UpdateProposal(UpdateProposalRequest) returns (UpdateProposalResponse);
+
+  // DRAFT → AWAITING_APPROVAL transition. Idempotent on terminal states
+  // returns INVALID_STATE.
+  rpc SendForApproval(TaskIdRequest) returns (ProposalActionResponse);
+
+  // AWAITING_APPROVAL → APPROVED + state=QUEUED. Used by UI on
+  // user approve action.
+  rpc ApproveTask(TaskIdRequest) returns (ProposalActionResponse);
+
+  // AWAITING_APPROVAL → REJECTED + proposalRejectionReason set. Used by
+  // UI on user reject action.
+  rpc RejectTask(RejectTaskRequest) returns (ProposalActionResponse);
+
+  // List recent (last 7 days) DRAFT/AWAITING_APPROVAL proposals
+  // authored by the same `proposed_by` scope so the orchestrator can
+  // run a cosine-similarity dedup check before InsertProposal. Empty
+  // `project_id` matches all projects under the client.
+  rpc ListPendingProposalsForDedup(DedupRequest) returns (DedupResponse);
+}
+
+// ── Insert ────────────────────────────────────────────────────────────────
+
+message InsertProposalRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  string project_id = 3;
+  string title = 4;
+  string description = 5;
+  string reason = 6;
+  // claude-client-cli:<cid> | claude-project-cli:<cid>:<pid> | qualifier+<scope>
+  string proposed_by = 7;
+  // ProposalTaskType enum name: CODING | MAIL_REPLY | TEAMS_REPLY |
+  // CALENDAR_RESPONSE | BUGTRACKER_ENTRY | MEETING_ATTEND | OTHER.
+  string proposal_task_type = 8;
+  string scheduled_at_iso = 9;       // optional, RFC3339; blank = no schedule
+  string parent_task_id = 10;        // optional, 24-char hex ObjectId
+  repeated string depends_on_task_ids = 11;
+  // Cached embeddings — orchestrator computes these once before insert.
+  repeated float title_embedding = 12;
+  repeated float description_embedding = 13;
+}
+
+message InsertProposalResponse {
+  bool ok = 1;
+  string error = 2;
+  string task_id = 3;
+}
+
+// ── Update ────────────────────────────────────────────────────────────────
+
+message UpdateProposalRequest {
+  jervis.common.RequestContext ctx = 1;
+  string task_id = 2;
+  // Empty string means "leave unchanged" for the string-typed fields.
+  string title = 3;
+  string description = 4;
+  string reason = 5;
+  string proposal_task_type = 6;
+  string scheduled_at_iso = 7;
+  // Send fresh embeddings only when title/description actually changed.
+  // Empty repeated = leave existing.
+  repeated float title_embedding = 8;
+  repeated float description_embedding = 9;
+}
+
+message UpdateProposalResponse {
+  bool ok = 1;
+  string error = 2;
+}
+
+// ── Stage transitions ────────────────────────────────────────────────────
+// `TaskIdRequest` reuses the shared definition in `task_api.proto` — single
+// `jervis.server.TaskIdRequest` symbol across the package, no duplicate.
+
+message RejectTaskRequest {
+  jervis.common.RequestContext ctx = 1;
+  string task_id = 2;
+  string reason = 3;
+}
+
+message ProposalActionResponse {
+  bool ok = 1;
+  string error = 2;
+  // Resulting proposalStage on success ("AWAITING_APPROVAL", "APPROVED",
+  // "REJECTED"). Blank on failure.
+  string proposal_stage = 3;
+}
+
+// ── Dedup lookup ─────────────────────────────────────────────────────────
+
+message DedupRequest {
+  jervis.common.RequestContext ctx = 1;
+  string client_id = 2;
+  // Empty = all projects under the client; otherwise filter exactly to
+  // this project. Orchestrator picks the strategy based on whether the
+  // calling Claude session is project-scoped or client-scoped.
+  string project_id = 3;
+  string proposed_by = 4;
+}
+
+message DedupResponse {
+  bool ok = 1;
+  string error = 2;
+  repeated DedupCandidate candidates = 3;
+}
+
+message DedupCandidate {
+  string task_id = 1;
+  string title = 2;
+  string description = 3;
+  string client_id = 4;
+  string project_id = 5;
+  repeated float title_embedding = 6;
+  repeated float description_embedding = 7;
+  string proposal_stage = 8;
+}

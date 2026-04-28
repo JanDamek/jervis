@@ -16,7 +16,7 @@ class AgentJobIdRequest(_message.Message):
     def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., agent_job_id: _Optional[str] = ...) -> None: ...
 
 class DispatchAgentJobRequest(_message.Message):
-    __slots__ = ("ctx", "flavor", "title", "description", "client_id", "project_id", "resource_id", "dispatched_by", "branch_name")
+    __slots__ = ("ctx", "flavor", "title", "description", "client_id", "project_id", "resource_id", "dispatched_by", "branch_name", "dispatch_triggered_by")
     CTX_FIELD_NUMBER: _ClassVar[int]
     FLAVOR_FIELD_NUMBER: _ClassVar[int]
     TITLE_FIELD_NUMBER: _ClassVar[int]
@@ -26,6 +26,7 @@ class DispatchAgentJobRequest(_message.Message):
     RESOURCE_ID_FIELD_NUMBER: _ClassVar[int]
     DISPATCHED_BY_FIELD_NUMBER: _ClassVar[int]
     BRANCH_NAME_FIELD_NUMBER: _ClassVar[int]
+    DISPATCH_TRIGGERED_BY_FIELD_NUMBER: _ClassVar[int]
     ctx: _types_pb2.RequestContext
     flavor: str
     title: str
@@ -35,7 +36,8 @@ class DispatchAgentJobRequest(_message.Message):
     resource_id: str
     dispatched_by: str
     branch_name: str
-    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., flavor: _Optional[str] = ..., title: _Optional[str] = ..., description: _Optional[str] = ..., client_id: _Optional[str] = ..., project_id: _Optional[str] = ..., resource_id: _Optional[str] = ..., dispatched_by: _Optional[str] = ..., branch_name: _Optional[str] = ...) -> None: ...
+    dispatch_triggered_by: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., flavor: _Optional[str] = ..., title: _Optional[str] = ..., description: _Optional[str] = ..., client_id: _Optional[str] = ..., project_id: _Optional[str] = ..., resource_id: _Optional[str] = ..., dispatched_by: _Optional[str] = ..., branch_name: _Optional[str] = ..., dispatch_triggered_by: _Optional[str] = ...) -> None: ...
 
 class DispatchAgentJobResponse(_message.Message):
     __slots__ = ("ok", "error", "agent_job_id", "state", "kubernetes_job_name", "workspace_path", "branch")

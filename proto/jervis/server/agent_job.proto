@@ -46,6 +46,10 @@ message DispatchAgentJobRequest {
   string resource_id = 7; // required for CODING (picks ProjectResource)
   string dispatched_by = 8; // e.g. "claude-session:<sid>", "scheduler:<name>"
   string branch_name = 9;  // required for CODING
+  // PR2b — audit invariant: who triggered the dispatch.
+  // Accepted: in_chat_consent | ui_approval | scheduler_cron | manual.
+  // Server returns INVALID_ARGUMENT if blank.
+  string dispatch_triggered_by = 10;
 }
 
 message DispatchAgentJobResponse {
