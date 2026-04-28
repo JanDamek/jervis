@@ -44,6 +44,7 @@ RUN pip install --no-cache-dir \
 RUN pip install --no-cache-dir \
     faster-whisper \
     'pyannote.audio<4' \
+    'huggingface_hub<0.30' \
     'grpcio>=1.66.0,<1.80' 'grpcio-reflection>=1.66.0,<1.80' 'protobuf>=5.28.0,<7' \
     fastapi uvicorn python-multipart sse-starlette
 
