@@ -108,13 +108,15 @@ class RequestQueue(
      */
     suspend fun submit(envelope: RequestEnvelope): DispatchResult {
         // Fast path
-        val backend = findSlotMutating(envelope)
-        if (backend != null) {
-            preClaimSlot(backend, envelope)
-            return runCatching { dispatchToBackend(backend, envelope) }
+        val slot = findSlotMutating(envelope)
+        if (slot != null) {
+            val (backend, redirect) = slot
+            val effective = redirect?.let { envelope.redirectTo(it, backend.name) } ?: envelope
+            preClaimSlot(backend, effective)
+            return runCatching { dispatchToBackend(backend, effective) }
                 .onFailure {
-                    cleanupBackend(backend, envelope)
-                    notifySlotFreed(envelope.queueGroup)
+                    cleanupBackend(backend, effective)
+                    notifySlotFreed(effective.queueGroup)
                 }.getOrThrow()
         }
 
@@ -193,10 +195,12 @@ class RequestQueue(
                 }
                 continue
             }
-            val backend = findSlotMutating(entry.envelope)
-            if (backend != null) {
-                preClaimSlot(backend, entry.envelope)
-                dispatcherScope.launch { resolveQueued(backend, entry) }
+            val slot = findSlotMutating(entry.envelope)
+            if (slot != null) {
+                val (backend, redirect) = slot
+                val effective = redirect?.let { entry.envelope.redirectTo(it, backend.name) } ?: entry.envelope
+                preClaimSlot(backend, effective)
+                dispatcherScope.launch { resolveQueued(backend, entry, effective) }
                 continue
             }
             // No slot — put back and stop draining for this group until next wakeup.
@@ -206,8 +210,7 @@ class RequestQueue(
         }
     }
 
-    private suspend fun resolveQueued(backend: GpuBackend, entry: QueueEntry) {
-        val envelope = entry.envelope
+    private suspend fun resolveQueued(backend: GpuBackend, entry: QueueEntry, envelope: RequestEnvelope) {
         if (envelope.state.get() is RequestState.Preempted) {
             logger.info { "QUEUE_SKIP: id=${envelope.id} preempted before dispatch — releasing slot" }
             cleanupBackend(backend, envelope)
@@ -228,7 +231,19 @@ class RequestQueue(
 
     // ── Slot finding ──────────────────────────────────────────────────────
 
-    private suspend fun findSlotMutating(envelope: RequestEnvelope): GpuBackend? {
+    /**
+     * Returns null when no GPU can serve this request right now, otherwise
+     * `(backend, redirectModel)`. `redirectModel` is non-null when the
+     * dispatcher is substituting a different model (per
+     * [ModelCatalog.modelEquivalents]) — caller MUST rewrite the envelope's
+     * `body.model` field before forwarding to the proxy.
+     *
+     * Selection order mirrors Python `_find_slot`:
+     *   1. exact match (gpuSet contains envelope.model AND backend already loaded it)
+     *   2. equivalent model already loaded on a candidate backend
+     *   3. any candidate (will load on demand)
+     */
+    private suspend fun findSlotMutating(envelope: RequestEnvelope): Pair<GpuBackend, String?>? {
         val isCritical = envelope.priority.rank <= Priority.CRITICAL.rank
         val isEmbedding = envelope.model in ModelCatalog.embeddingModels
         val maxConcurrent = if (isEmbedding) maxConcurrentEmbed else maxConcurrentLlm
@@ -260,19 +275,17 @@ class RequestQueue(
         if (candidates.isEmpty()) return null
 
         val exact = candidates.filter { (b, eq) -> eq == null && b.hasModel(envelope.model) }
-        if (exact.isNotEmpty()) return pickLeastBusyRoundRobin(exact).first
+        if (exact.isNotEmpty()) return pickLeastBusyRoundRobin(exact)
 
         val equiv = candidates.filter { (b, eq) -> eq != null && b.hasModel(eq) }
         if (equiv.isNotEmpty()) {
-            val (best, equivModel) = pickLeastBusyRoundRobin(equiv)
-            if (equivModel != null) {
-                logger.info { "MODEL_REDIRECT: ${envelope.originalModel ?: envelope.model} → $equivModel on GPU ${best.name}" }
-                // Mutate envelope to use equivalent model — body model field too.
-                // (envelope.body is JsonObject; we encode replacement at proxy layer.)
+            val pick = pickLeastBusyRoundRobin(equiv)
+            logger.info {
+                "MODEL_REDIRECT: ${envelope.originalModel ?: envelope.model} → ${pick.second} on GPU ${pick.first.name}"
             }
-            return best
+            return pick
         }
-        return pickLeastBusyRoundRobin(candidates).first
+        return pickLeastBusyRoundRobin(candidates)
     }
 
     private fun pickLeastBusyRoundRobin(

@@ -59,4 +59,29 @@ data class RequestEnvelope(
     val cancelToken: Job,
     val createdAt: Instant = Instant.now(),
     val reservedBy: String? = null,
-)
+) {
+    /**
+     * Re-target the envelope to an equivalent model on [targetGpu]. Returns
+     * a copy with the new model + body.model rewritten so the proxy forwards
+     * the substitute to Ollama. Mutable identity (cancelToken, outbox, state)
+     * is shared with the original — preempts and cancels still propagate.
+     */
+    fun redirectTo(redirectedModel: String, targetGpu: GpuName): RequestEnvelope = copy(
+        model = redirectedModel,
+        originalModel = originalModel ?: model,
+        body = body.withModel(redirectedModel),
+    )
+}
+
+private fun JsonObject.withModel(model: String): JsonObject = kotlinx.serialization.json.buildJsonObject {
+    var seen = false
+    for ((k, v) in entries) {
+        if (k == "model") {
+            put("model", kotlinx.serialization.json.JsonPrimitive(model))
+            seen = true
+        } else {
+            put(k, v)
+        }
+    }
+    if (!seen) put("model", kotlinx.serialization.json.JsonPrimitive(model))
+}
