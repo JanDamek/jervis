@@ -33,14 +33,17 @@ RUN pip install --no-cache-dir \
     --index-url https://download.pytorch.org/whl/cu124
 
 # --- Whisper + diarization stack ---
-# `av` (PyAV) is required by pyannote.audio>=4.0 — without it the optional
-# `from pyannote.audio.io import AudioDecoder` silently fails and a downstream
-# call to `AudioDecoder(file["audio"]).metadata` raises NameError, which the
-# old whisper_rest_server logged as "Diarization failed: name 'AudioDecoder'
-# is not defined" and dropped speakers across all meetings (2026-04-26 → 28).
+# Pin pyannote.audio<4 — 4.x switched audio I/O to torchcodec, whose .so
+# libraries refuse to load on this image (libavutil.so.{57..60} +
+# libpython3.10.so.1.0 are missing from Ubuntu 22.04 base + the FFmpeg
+# we install via apt). The diarization pipeline import succeeds with a
+# warning, then crashes at runtime with `NameError: name 'AudioDecoder'
+# is not defined` (the symbol came from the failed torchcodec import).
+# pyannote 3.x uses torchaudio + soundfile which work out of the box.
+# Drop the pin once the upstream torchcodec wheel ships matching libs.
 RUN pip install --no-cache-dir \
     faster-whisper \
-    pyannote.audio av \
+    'pyannote.audio<4' \
     'grpcio>=1.66.0,<1.80' 'grpcio-reflection>=1.66.0,<1.80' 'protobuf>=5.28.0,<7' \
     fastapi uvicorn python-multipart sse-starlette
 

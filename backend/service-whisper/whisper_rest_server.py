@@ -106,9 +106,11 @@ def _load_diarization_pipeline():
     from pyannote.audio import Pipeline
     import torch
     print("Loading pyannote speaker diarization pipeline (CPU mode)...", flush=True)
+    # pyannote.audio 3.x uses `use_auth_token=`; 4.x renamed it to `token=`.
+    # We pin to <4 in Dockerfile.gpu (torchcodec libs missing on base image).
     _diarization_pipeline = Pipeline.from_pretrained(
         "pyannote/speaker-diarization-3.1",
-        token=HF_TOKEN,
+        use_auth_token=HF_TOKEN,
     )
     # Force CPU — P40 Pascal lacks CUDA kernels for PyTorch ops used by pyannote
     _diarization_pipeline.to(torch.device("cpu"))
